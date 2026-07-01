@@ -1,62 +1,62 @@
-import Link from "next/link";
-import { supabaseServer } from "../../../../lib/supabase-server";
+import { supabaseServer } from "@/lib/supabase-server";
 import QRPassCard from "@/components/qr/QRPassCard";
 
-export default async function PassPage({
-    params,
+export default async function QRPassPage({
     searchParams,
 }: {
-    params: Promise<{ slug: string }>;
     searchParams: Promise<{ registration?: string }>;
 }) {
-    const { slug } = await params;
     const { registration } = await searchParams;
 
     if (!registration) {
-        return <main className="p-8">Registration not found.</main>;
+        return <main className="p-8">QR pass not found. Missing registration ID.</main>;
     }
 
-    const { data: event } = await supabaseServer
+    const { data: guest, error: guestError } = await supabaseServer
+        .from("registrations")
+        .select("*")
+        .eq("id", registration)
+        .maybeSingle();
+
+    if (guestError || !guest) {
+        return (
+            <main className="p-8">
+                Guest not found.
+                <pre className="mt-4 whitespace-pre-wrap text-xs text-red-600">
+                    {guestError?.message}
+                </pre>
+            </main>
+        );
+    }
+
+    const { data: event, error: eventError } = await supabaseServer
         .from("events")
         .select("*")
-        .eq("event_slug", slug)
-        .single();
+        .eq("id", guest.event_id)
+        .maybeSingle();
 
-    const { data: guest } = await supabaseServer
-        .from("registrations")
-        .select(`
-    *,
-    table_assignments(
-      *,
-    event_tables(*)
-    )
-    `)
-        .eq("id", registration)
-        .single();
-
-    const { data: ticket } = await supabaseServer
+    const { data: ticket, error: ticketError } = await supabaseServer
         .from("qr_tickets")
         .select("*")
         .eq("registration_id", registration)
-        .single();
+        .eq("is_active", true)
+        .maybeSingle();
 
-    if (!event || !guest || !ticket) {
-        return <main className="p-8">QR pass not found.</main>;
+    if (eventError || ticketError || !event || !ticket) {
+        return (
+            <main className="p-8">
+                QR pass not found.
+                <pre className="mt-4 whitespace-pre-wrap text-xs text-red-600">
+                    {eventError?.message || ticketError?.message}
+                </pre>
+            </main>
+        );
     }
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] px-6 py-10 text-slate-950">
-            <div className="w-full max-w-xl">
+        <main className="min-h-screen bg-[#F7F5FF] p-8">
+            <div className="mx-auto max-w-xl">
                 <QRPassCard event={event} guest={guest} ticket={ticket} />
-
-                <div className="mt-6 text-center">
-                    <Link
-                        href={`/event/${slug}`}
-                        className="font-bold text-[#4F46E5]"
-                    >
-                        Back to Event Page
-                    </Link>
-                </div>
             </div>
         </main>
     );
