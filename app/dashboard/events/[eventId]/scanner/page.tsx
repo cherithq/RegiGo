@@ -2,12 +2,14 @@ import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
 import CameraScanner from "@/components/scanner/CameraScanner";
 import ManualCheckIn from "@/components/scanner/ManualCheckIn";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function ScannerPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    await requirePermission("can_scan_qr");
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function GuestsPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    await requirePermission("can_manage_events");
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

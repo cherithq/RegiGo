@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
 import ExportGuestsButton from "@/components/reports/ExportGuestsButton";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function ReportsPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    await requirePermission("can_manage_reports");
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

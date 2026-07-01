@@ -17,6 +17,7 @@ import {
     ChevronLeft,
     ChevronRight,
     X,
+    ShieldCheck,
 } from "lucide-react";
 
 const navGroups = [
@@ -33,6 +34,7 @@ const navGroups = [
         items: [
             { href: "/dashboard/company", label: "Company", icon: Building2 },
             { href: "/dashboard/team", label: "Team Members", icon: Users },
+            { href: "/dashboard/roles", label: "Roles & Permissions", icon: ShieldCheck },
         ],
     },
     {

@@ -73,6 +73,17 @@ export default function DynamicRegistrationForm({
             return;
         }
 
+        await fetch("/api/send-registration-email", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                registrationId: registration.id,
+                slug,
+            }),
+        });
+
         setLoading(false);
         window.location.href = `/event/${slug}/success?registration=${registration.id}`;
     }

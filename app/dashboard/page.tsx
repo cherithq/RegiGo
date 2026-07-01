@@ -155,6 +155,14 @@ export default async function DashboardPage() {
                         title="Add Team"
                         text="Add check-in staff and event managers."
                     />
+
+                    <ChecklistCard
+                        href="/dashboard/roles"
+                        icon="🛡️"
+                        title="Roles"
+                        text="Manage staff permissions."
+                    />
+
                 </div>
             </section>
         </div>

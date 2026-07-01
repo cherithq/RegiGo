@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
-import EmailCentre from "@/components/forms/EmailCentre";
+import BadgeDesigner from "@/components/badges/BadgeDesigner";
 
-export default async function EmailsPage({
+export default async function BadgesPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
@@ -17,11 +17,23 @@ export default async function EmailsPage({
 
     if (!event) return <div>Event not found.</div>;
 
-    const { data: templates } = await supabaseServer
-        .from("email_templates")
+    const { data: template } = await supabaseServer
+        .from("badge_templates")
         .select("*")
         .eq("event_id", eventId)
-        .order("created_at", { ascending: false });
+        .maybeSingle();
+
+    const { data: guests } = await supabaseServer
+        .from("registrations")
+        .select(`
+      *,
+        table_assignments(
+        *,
+        event_tables(*)
+    )
+    `)
+        .eq("event_id", eventId)
+        .order("full_name", { ascending: true });
 
     return (
         <div className="mx-auto max-w-7xl">
@@ -30,11 +42,15 @@ export default async function EmailsPage({
             </Link>
 
             <div className="mt-6 rounded-[2rem] bg-white p-8 shadow-xl">
-                <h1 className="text-4xl font-black">Email Centre</h1>
+                <h1 className="text-4xl font-black">Badge Designer</h1>
                 <p className="mt-2 text-slate-600">{event.event_name}</p>
 
                 <div className="mt-8">
-                    <EmailCentre event={event} templates={templates || []} />
+                    <BadgeDesigner
+                        event={event}
+                        template={template}
+                        guests={guests || []}
+                    />
                 </div>
             </div>
         </div>

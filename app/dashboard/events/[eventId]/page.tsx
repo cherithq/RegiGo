@@ -132,6 +132,55 @@ export default async function EventOverviewPage({
                         title="Tables"
                         desc="Create and manage event tables."
                     />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/emails`}
+                        icon="📧"
+                        title="Email Centre"
+                        desc="Create and manage event email templates."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/badges`}
+                        icon="🖨️"
+                        title="Badge Designer"
+                        desc="Design and print guest badges."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/website`}
+                        icon="🌐"
+                        title="Website Builder"
+                        desc="Edit event page sections."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/analytics`}
+                        icon="📊"
+                        title="Analytics"
+                        desc="View event insights and attendance trends."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/tickets`}
+                        icon="🎟️"
+                        title="Ticket Types"
+                        desc="Create VIP, Standard, Staff or custom guest categories."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/speakers`}
+                        icon="🎤"
+                        title="Speakers"
+                        desc="Add speakers and session details."
+                    />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/agenda`}
+                        icon="🗓️"
+                        title="Agenda Builder"
+                        desc="Build the event programme and schedule."
+                    />
                 </section>
 
                 <SectionTitle title="Event Experience" icon="🎨" />

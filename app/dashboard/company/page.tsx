@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { supabaseServer } from "../../../lib/supabase-server";
 import CompanyForm from "@/components/forms/CompanyForm";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function CompanyPage() {
+    await requirePermission("can_manage_company");
     const { data: company } = await supabaseServer
         .from("companies")
         .select("*")

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
 import RegistrationFieldsBuilder from "@/components/forms/RegistrationFieldsBuilder";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function RegistrationBuilderPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    await requirePermission("can_manage_settings");
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

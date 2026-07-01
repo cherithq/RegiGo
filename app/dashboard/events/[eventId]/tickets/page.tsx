@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
-import EmailCentre from "@/components/forms/EmailCentre";
+import TicketTypesManager from "@/components/forms/TicketTypesManager";
 
-export default async function EmailsPage({
+export default async function TicketsPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
@@ -17,24 +17,24 @@ export default async function EmailsPage({
 
     if (!event) return <div>Event not found.</div>;
 
-    const { data: templates } = await supabaseServer
-        .from("email_templates")
+    const { data: tickets } = await supabaseServer
+        .from("ticket_types")
         .select("*")
         .eq("event_id", eventId)
-        .order("created_at", { ascending: false });
+        .order("display_order", { ascending: true });
 
     return (
-        <div className="mx-auto max-w-7xl">
+        <div className="mx-auto max-w-6xl">
             <Link href={`/dashboard/events/${eventId}`} className="font-bold text-[#4F46E5]">
                 ← Back to Event
             </Link>
 
             <div className="mt-6 rounded-[2rem] bg-white p-8 shadow-xl">
-                <h1 className="text-4xl font-black">Email Centre</h1>
+                <h1 className="text-4xl font-black">Ticket Types</h1>
                 <p className="mt-2 text-slate-600">{event.event_name}</p>
 
                 <div className="mt-8">
-                    <EmailCentre event={event} templates={templates || []} />
+                    <TicketTypesManager eventId={eventId} initialTickets={tickets || []} />
                 </div>
             </div>
         </div>

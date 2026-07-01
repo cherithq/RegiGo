@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { supabaseServer } from "../../../lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
 
 export default async function EventsPage() {
+    await requirePermission("can_manage_events");
     const { data: events } = await supabaseServer
         .from("events")
         .select("*")
