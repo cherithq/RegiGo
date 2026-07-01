@@ -1,5 +1,11 @@
-import Link from "next/link";
-import { supabaseServer } from "../../../lib/supabase-server";
+import { supabaseServer } from "@/lib/supabase-server";
+import EventHero from "@/components/website/EventHero";
+import EventAgenda from "@/components/website/EventAgenda";
+import EventSpeakers from "@/components/website/EventSpeakers";
+import EventTickets from "@/components/website/EventTickets";
+import EventSections from "@/components/website/EventSections";
+import RegistrationCTA from "@/components/website/RegistrationCTA";
+import WebsiteFooter from "@/components/website/WebsiteFooter";
 
 export default async function PublicEventPage({
     params,
@@ -8,13 +14,13 @@ export default async function PublicEventPage({
 }) {
     const { slug } = await params;
 
-    const { data: event, error } = await supabaseServer
+    const { data: event } = await supabaseServer
         .from("events")
         .select("*, event_branding(*)")
         .eq("event_slug", slug)
         .single();
 
-    if (error || !event) {
+    if (!event) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] text-slate-950">
                 Event not found.
@@ -40,15 +46,36 @@ export default async function PublicEventPage({
         ? event.event_branding[0]
         : event.event_branding;
 
-    const primary = branding?.primary_color || "#4F46E5";
-    const secondary = branding?.secondary_color || "#EC4899";
-    const background = branding?.background_color || "#F7F5FF";
+    const { data: sections } = await supabaseServer
+        .from("event_page_sections")
+        .select("*")
+        .eq("event_id", event.id)
+        .eq("is_visible", true)
+        .order("sort_order", { ascending: true });
+
+    const { data: speakers } = await supabaseServer
+        .from("speakers")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("display_order", { ascending: true });
+
+    const { data: agenda } = await supabaseServer
+        .from("event_agenda")
+        .select("*, speakers(*)")
+        .eq("event_id", event.id)
+        .order("display_order", { ascending: true });
+
+    const { data: tickets } = await supabaseServer
+        .from("ticket_types")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("display_order", { ascending: true });
 
     return (
         <main
-            className="min-h-screen px-6 py-16 text-slate-950"
+            className="min-h-screen text-slate-950"
             style={{
-                backgroundColor: background,
+                backgroundColor: branding?.background_color || "#F7F5FF",
                 backgroundImage: branding?.page_background_url
                     ? `url(${branding.page_background_url})`
                     : undefined,
@@ -57,69 +84,21 @@ export default async function PublicEventPage({
                 backgroundAttachment: "fixed",
             }}
         >
-            <section className="mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] bg-white shadow-2xl">
-                <div
-                    className="relative min-h-[380px] px-12 py-14"
-                    style={{
-                        backgroundImage: branding?.banner_background_url
-                            ? `url(${branding.banner_background_url})`
-                            : `linear-gradient(135deg, ${primary}, ${secondary})`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
-                        color: branding?.banner_text_color || "#FFFFFF",
-                    }}
-                >
-                    {branding?.banner_background_url && (
-                        <div
-                            className="absolute inset-0 bg-black"
-                            style={{
-                                opacity: branding?.banner_overlay_opacity ?? 0.45,
-                            }}
-                        />
-                    )}
+            <EventHero event={event} branding={branding} />
 
-                    <div className="relative z-10">
-                        <p className="mb-6 inline-flex rounded-full bg-white/20 px-5 py-2 text-sm font-black backdrop-blur">
-                            Powered by RegiGo
-                        </p>
+            <section className="mx-auto max-w-7xl px-6 py-12">
+                <RegistrationCTA event={event} />
 
-                        <h1 className="max-w-4xl text-6xl font-black leading-tight">
-                            {branding?.hero_title || event.event_name}
-                        </h1>
+                <EventSections sections={sections || []} />
 
-                        <p className="mt-6 max-w-2xl text-xl leading-8 opacity-90">
-                            {branding?.hero_subtitle || event.description}
-                        </p>
-                    </div>
-                </div>
+                <EventAgenda agenda={agenda || []} />
 
-                <div className="p-10">
-                    <div className="grid gap-6 md:grid-cols-3">
-                        <Info label="Date" value={event.event_date || "-"} />
-                        <Info label="Time" value={event.event_time || "-"} />
-                        <Info label="Venue" value={event.venue || "-"} />
-                    </div>
+                <EventSpeakers speakers={speakers || []} />
 
-                    <Link
-                        href={`/event/${event.event_slug}/register`}
-                        className="mt-10 inline-flex rounded-2xl px-8 py-4 text-lg font-black text-white shadow-lg"
-                        style={{
-                            background: `linear-gradient(135deg, ${primary}, ${secondary})`,
-                        }}
-                    >
-                        Register Now
-                    </Link>
-                </div>
+                <EventTickets tickets={tickets || []} />
+
+                <WebsiteFooter event={event} />
             </section>
         </main>
-    );
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="rounded-3xl bg-[#F7F5FF] p-7">
-            <p className="text-sm font-bold text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
-        </div>
     );
 }

@@ -181,6 +181,13 @@ export default async function EventOverviewPage({
                         title="Agenda Builder"
                         desc="Build the event programme and schedule."
                     />
+
+                    <ActionCard
+                        href={`/dashboard/events/${eventId}/floor-plan`}
+                        icon="🗺️"
+                        title="Floor Plan"
+                        desc="Arrange tables visually on the venue layout."
+                    />
                 </section>
 
                 <SectionTitle title="Event Experience" icon="🎨" />
