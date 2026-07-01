@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 type Field = {
     id: string;
@@ -10,32 +9,27 @@ type Field = {
     field_type: string;
     is_required?: boolean;
     options?: string[] | string | null;
-    sort_order?: number;
 };
 
 export default function DynamicRegistrationForm({
-    eventId,
-    slug,
+    event,
     fields,
+    tickets = [],
 }: {
-    eventId: string;
-    slug: string;
+    event: any;
     fields: Field[];
+    tickets?: any[];
 }) {
     const [answers, setAnswers] = useState<Record<string, any>>({});
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
 
     function updateAnswer(key: string, value: any) {
-        setAnswers((prev) => ({
-            ...prev,
-            [key]: value,
-        }));
+        setAnswers((prev) => ({ ...prev, [key]: value }));
     }
 
     function getOptions(options: any): string[] {
         if (!options) return [];
-
         if (Array.isArray(options)) return options;
 
         if (typeof options === "string") {
@@ -43,10 +37,7 @@ export default function DynamicRegistrationForm({
                 const parsed = JSON.parse(options);
                 if (Array.isArray(parsed)) return parsed;
             } catch {
-                return options
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean);
+                return options.split(",").map((item) => item.trim()).filter(Boolean);
             }
         }
 
@@ -58,91 +49,69 @@ export default function DynamicRegistrationForm({
         setLoading(true);
         setMessage("");
 
-        try {
-            const fullName =
-                answers.full_name ||
-                answers.name ||
-                answers.guest_name ||
-                answers.FullName ||
-                "";
+        const fullName =
+            answers.full_name || answers.name || answers.guest_name || "";
 
-            const email = answers.email || answers.Email || "";
+        const email = answers.email || "";
 
-            if (!fullName || !email) {
-                setMessage("Please enter full name and email.");
-                setLoading(false);
-                return;
-            }
-
-            const { data: registration, error: regError } = await supabase
-                .from("registrations")
-                .insert({
-                    event_id: eventId,
-                    full_name: fullName,
-                    email,
-                    phone: answers.phone || answers.Phone || null,
-                    country_code: answers.country_code || "+65",
-                    department: answers.department || null,
-                    dietary_request: answers.dietary_request || null,
-                    require_transport: answers.require_transport || null,
-                    ticket_type_id: answers.ticket_type_id || null,
-                    custom_answers: answers,
-                    registration_status: "pending",
-                    email_verified: false,
-                })
-                .select("*")
-                .single();
-
-            if (regError || !registration) {
-                setMessage(regError?.message || "Unable to create registration.");
-                setLoading(false);
-                return;
-            }
-
-            const qrToken =
-                typeof crypto !== "undefined" && "randomUUID" in crypto
-                    ? crypto.randomUUID()
-                    : `${registration.id}-${Date.now()}`;
-
-            const { error: qrError } = await supabase.from("qr_tickets").insert({
-                registration_id: registration.id,
-                event_id: eventId,
-                qr_token: qrToken,
-                is_active: true,
-            });
-
-            if (qrError) {
-                setMessage(qrError.message);
-                setLoading(false);
-                return;
-            }
-
-            const { error: emailJobError } = await supabase.from("email_jobs").insert({
-                event_id: eventId,
-                registration_id: registration.id,
-                recipient_email: email,
-                email_type: "registration_confirmation",
-                status: "pending",
-            });
-
-            if (emailJobError) {
-                console.error("Email job error:", emailJobError.message);
-            } else {
-                await fetch("/api/email-worker?secret=regigo-worker-secret-123", {
-                    method: "POST",
-                });
-            }
-
+        if (!fullName || !email) {
+            setMessage("Please enter full name and email.");
             setLoading(false);
-            window.location.href = `/event/${slug}/pass?registration=${registration.id}`;
-        } catch (error: any) {
-            setMessage(error.message || "Registration failed.");
-            setLoading(false);
+            return;
         }
+
+        if (event.enable_ticket_types && !answers.ticket_type_id) {
+            setMessage("Please select a ticket type.");
+            setLoading(false);
+            return;
+        }
+
+        const res = await fetch("/api/register", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                eventId: event.id,
+                answers,
+            }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            setMessage(data.error || "Registration failed.");
+            setLoading(false);
+            return;
+        }
+
+        window.location.href = data.passUrl;
     }
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
+            {event.enable_ticket_types && (
+                <div>
+                    <label className="mb-2 block font-semibold">
+                        Ticket Type <span className="text-red-500">*</span>
+                    </label>
+
+                    <select
+                        required
+                        value={answers.ticket_type_id || ""}
+                        onChange={(e) => updateAnswer("ticket_type_id", e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3"
+                    >
+                        <option value="">Select ticket type</option>
+                        {tickets.map((ticket) => (
+                            <option key={ticket.id} value={ticket.id}>
+                                {ticket.ticket_name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
             {(fields || []).map((field) => (
                 <FieldInput
                     key={field.id}
@@ -207,6 +176,7 @@ function FieldInput({
                     {field.field_label}
                     {field.is_required && <span className="text-red-500"> *</span>}
                 </label>
+
                 <select
                     required={field.is_required}
                     value={value}
@@ -231,6 +201,7 @@ function FieldInput({
                     {field.field_label}
                     {field.is_required && <span className="text-red-500"> *</span>}
                 </label>
+
                 <div className="space-y-2">
                     {options.map((option) => (
                         <label
@@ -260,6 +231,7 @@ function FieldInput({
                 {field.field_label}
                 {field.is_required && <span className="text-red-500"> *</span>}
             </label>
+
             <input
                 required={field.is_required}
                 type={type === "email" ? "email" : type === "number" ? "number" : "text"}

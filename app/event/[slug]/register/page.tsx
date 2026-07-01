@@ -14,6 +14,12 @@ export default async function RegisterPage({
         .eq("event_slug", slug)
         .single();
 
+    const { data: tickets } = await supabaseServer
+        .from("ticket_types")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("display_order", { ascending: true });
+
     if (!event) {
         return <main className="p-8">Event not found.</main>;
     }
@@ -124,9 +130,9 @@ export default async function RegisterPage({
 
                         <div className="mt-8">
                             <DynamicRegistrationForm
-                                eventId={event.id}
-                                slug={slug}
+                                event={event}
                                 fields={fields || []}
+                                tickets={tickets || []}
                             />
                         </div>
                     </section>

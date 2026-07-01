@@ -52,38 +52,39 @@ async function runEmailWorker(req: Request) {
                     })
                     .eq("id", job.id);
 
-                const { data: registration, error: regError } = await supabaseServer
+                const { data: registration } = await supabaseServer
                     .from("registrations")
                     .select("*")
                     .eq("id", job.registration_id)
                     .maybeSingle();
 
-                if (regError || !registration) {
-                    throw new Error(`Registration not found: ${regError?.message || job.registration_id}`);
+                if (!registration) {
+                    throw new Error("Registration not found.");
                 }
 
-                const { data: event, error: eventError } = await supabaseServer
+                const { data: event } = await supabaseServer
                     .from("events")
                     .select("*")
                     .eq("id", registration.event_id)
                     .maybeSingle();
 
-                if (eventError || !event) {
-                    throw new Error(`Event not found: ${eventError?.message || registration.event_id}`);
+                if (!event) {
+                    throw new Error("Event not found.");
                 }
 
-                const { data: ticket, error: ticketError } = await supabaseServer
+                const { data: ticket } = await supabaseServer
                     .from("qr_tickets")
                     .select("*")
                     .eq("registration_id", registration.id)
                     .eq("is_active", true)
                     .maybeSingle();
 
-                if (ticketError || !ticket) {
-                    throw new Error(`QR ticket not found: ${ticketError?.message || registration.id}`);
+                if (!ticket) {
+                    throw new Error("QR ticket not found.");
                 }
 
                 let ticketName = "-";
+
                 if (registration.ticket_type_id) {
                     const { data: ticketType } = await supabaseServer
                         .from("ticket_types")
@@ -95,6 +96,7 @@ async function runEmailWorker(req: Request) {
                 }
 
                 let tableName = "-";
+
                 const { data: tableAssignment } = await supabaseServer
                     .from("table_assignments")
                     .select("*")
@@ -111,13 +113,17 @@ async function runEmailWorker(req: Request) {
                     tableName = table?.table_name || "-";
                 }
 
-                const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+                const siteUrl =
+                    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
                 const passUrl = `${siteUrl}/event/${event.event_slug}/pass?registration=${registration.id}`;
 
-                const qrDataUrl = await QRCode.toDataURL(ticket.qr_token, {
-                    width: 260,
+                const qrDataUrl = await QRCode.toDataURL(passUrl, {
+                    width: 300,
                     margin: 2,
                 });
+
+                const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
 
                 await transporter.sendMail({
                     from: `"${process.env.EMAIL_FROM_NAME || "RegiGo"}" <${process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER
@@ -138,7 +144,13 @@ async function runEmailWorker(req: Request) {
                   <p>Thank you for registering. Please show this QR code during check-in.</p>
 
                   <div style="text-align:center;margin:28px 0">
-                    <img src="cid:qrpass" alt="QR Code" style="width:220px;height:220px" />
+                    <img
+                      src="cid:qrpass@regigo"
+                      alt="QR Code"
+                      width="220"
+                      height="220"
+                      style="display:block;margin:auto;width:220px;height:220px;border:0"
+                    />
                   </div>
 
                   <div style="background:#F7F5FF;border-radius:20px;padding:20px">
@@ -154,6 +166,10 @@ async function runEmailWorker(req: Request) {
                       View QR Pass
                     </a>
                   </div>
+
+                  <p style="margin-top:28px;color:#64748b;font-size:14px">
+                    If the QR image does not show, click View QR Pass.
+                  </p>
                 </div>
               </div>
             </div>
@@ -161,9 +177,10 @@ async function runEmailWorker(req: Request) {
                     attachments: [
                         {
                             filename: "qr-pass.png",
-                            content: qrDataUrl.split("base64,")[1],
+                            content: qrBase64,
                             encoding: "base64",
-                            cid: "qrpass",
+                            cid: "qrpass@regigo",
+                            contentType: "image/png",
                         },
                     ],
                 });
@@ -177,7 +194,11 @@ async function runEmailWorker(req: Request) {
                     })
                     .eq("id", job.id);
 
-                results.push({ id: job.id, email: job.recipient_email, status: "sent" });
+                results.push({
+                    id: job.id,
+                    email: job.recipient_email,
+                    status: "sent",
+                });
             } catch (error: any) {
                 await supabaseServer
                     .from("email_jobs")
