@@ -20,12 +20,22 @@ export default function EventForm() {
         venue: "",
         description: "",
         max_guests: "",
+        enable_ticket_types: false,
+        enable_tables: false,
     });
 
     function handleChange(
         e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
     ) {
-        setForm({ ...form, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        setForm({ ...form, [name]: value });
+    }
+
+    function handleToggle(name: "enable_ticket_types" | "enable_tables") {
+        setForm((prev) => ({
+            ...prev,
+            [name]: !prev[name],
+        }));
     }
 
     async function uploadImage(file: File, folder: string) {
@@ -85,6 +95,8 @@ export default function EventForm() {
                     description: form.description,
                     max_guests: Number(form.max_guests || 0),
                     status: "draft",
+                    enable_ticket_types: form.enable_ticket_types,
+                    enable_tables: form.enable_tables,
                 })
                 .select()
                 .single();
@@ -222,6 +234,28 @@ export default function EventForm() {
                 />
             </div>
 
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="mb-4 text-lg font-bold text-slate-900">
+                    Registration Options
+                </h3>
+
+                <ToggleSwitch
+                    title="Enable Ticket Types"
+                    description="Turn on if guests must select a ticket type during registration."
+                    checked={form.enable_ticket_types}
+                    onChange={() => handleToggle("enable_ticket_types")}
+                />
+
+                <div className="mt-4">
+                    <ToggleSwitch
+                        title="Enable Tables"
+                        description="Turn on if guests must select a table during registration."
+                        checked={form.enable_tables}
+                        onChange={() => handleToggle("enable_tables")}
+                    />
+                </div>
+            </div>
+
             <ImageUpload
                 title="Banner Image"
                 description="This appears at the top of the event page."
@@ -257,6 +291,39 @@ export default function EventForm() {
                 {loading ? "Creating..." : "Create Event"}
             </button>
         </form>
+    );
+}
+
+function ToggleSwitch({
+    title,
+    description,
+    checked,
+    onChange,
+}: {
+    title: string;
+    description: string;
+    checked: boolean;
+    onChange: () => void;
+}) {
+    return (
+        <div className="flex items-center justify-between gap-4 rounded-xl bg-white p-4">
+            <div>
+                <p className="font-bold text-slate-900">{title}</p>
+                <p className="text-sm text-slate-500">{description}</p>
+            </div>
+
+            <button
+                type="button"
+                onClick={onChange}
+                className={`relative h-8 w-14 rounded-full transition ${checked ? "bg-[#4F46E5]" : "bg-slate-300"
+                    }`}
+            >
+                <span
+                    className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${checked ? "left-7" : "left-1"
+                        }`}
+                />
+            </button>
+        </div>
     );
 }
 

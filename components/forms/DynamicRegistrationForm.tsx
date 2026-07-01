@@ -15,14 +15,19 @@ export default function DynamicRegistrationForm({
     event,
     fields,
     tickets = [],
+    tables = [],
 }: {
     event: any;
     fields: Field[];
     tickets?: any[];
+    tables?: any[];
 }) {
     const [answers, setAnswers] = useState<Record<string, any>>({});
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+
+    const enableTicketTypes = event?.enable_ticket_types ?? true;
+    const enableTables = event?.enable_tables ?? false;
 
     function updateAnswer(key: string, value: any) {
         setAnswers((prev) => ({ ...prev, [key]: value }));
@@ -60,8 +65,14 @@ export default function DynamicRegistrationForm({
             return;
         }
 
-        if (event.enable_ticket_types && !answers.ticket_type_id) {
+        if (enableTicketTypes && !answers.ticket_type_id) {
             setMessage("Please select a ticket type.");
+            setLoading(false);
+            return;
+        }
+
+        if (enableTables && !answers.table_id) {
+            setMessage("Please select a table.");
             setLoading(false);
             return;
         }
@@ -90,7 +101,7 @@ export default function DynamicRegistrationForm({
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            {event.enable_ticket_types && (
+            {enableTicketTypes && (
                 <div>
                     <label className="mb-2 block font-semibold">
                         Ticket Type <span className="text-red-500">*</span>
@@ -105,7 +116,32 @@ export default function DynamicRegistrationForm({
                         <option value="">Select ticket type</option>
                         {tickets.map((ticket) => (
                             <option key={ticket.id} value={ticket.id}>
-                                {ticket.ticket_name}
+                                {ticket.ticket_name || ticket.name || ticket.title}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {enableTables && (
+                <div>
+                    <label className="mb-2 block font-semibold">
+                        Table <span className="text-red-500">*</span>
+                    </label>
+
+                    <select
+                        required
+                        value={answers.table_id || ""}
+                        onChange={(e) => onTableChange(e.target.value, tables, updateAnswer)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3"
+                    >
+                        <option value="">Select table</option>
+                        {tables.map((table) => (
+                            <option key={table.id} value={table.id}>
+                                {table.table_name ||
+                                    table.name ||
+                                    table.table_number ||
+                                    `Table ${table.id}`}
                             </option>
                         ))}
                     </select>
@@ -136,6 +172,26 @@ export default function DynamicRegistrationForm({
             </button>
         </form>
     );
+}
+
+function onTableChange(
+    tableId: string,
+    tables: any[],
+    updateAnswer: (key: string, value: any) => void
+) {
+    const selectedTable = tables.find((table) => String(table.id) === String(tableId));
+
+    updateAnswer("table_id", tableId);
+
+    if (selectedTable) {
+        updateAnswer(
+            "table_name",
+            selectedTable.table_name ||
+            selectedTable.name ||
+            selectedTable.table_number ||
+            `Table ${selectedTable.id}`
+        );
+    }
 }
 
 function FieldInput({
