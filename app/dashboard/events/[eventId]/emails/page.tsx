@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EmailCentre from "@/components/forms/EmailCentre";
 
 export default async function EmailsPage({
@@ -7,6 +7,7 @@ export default async function EmailsPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { supabaseServer } from "../../lib/supabase-server";
+import { createSupabaseServerClient } from "../../lib/supabase-server";
 
 export default async function DashboardPage() {
+    const supabaseServer = await createSupabaseServerClient();
+
     const today = new Date().toISOString().slice(0, 10);
 
     const { count: totalEvents } = await supabaseServer

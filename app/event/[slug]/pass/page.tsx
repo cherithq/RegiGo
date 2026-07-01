@@ -1,4 +1,4 @@
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import QRPassCard from "@/components/qr/QRPassCard";
 
 export default async function QRPassPage({
@@ -6,6 +6,7 @@ export default async function QRPassPage({
 }: {
     searchParams: Promise<{ registration?: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { registration } = await searchParams;
 
     if (!registration) {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import ExportGuestsButton from "@/components/reports/ExportGuestsButton";
 import { requirePermission } from "@/lib/permissions";
 
@@ -8,6 +8,7 @@ export default async function ReportsPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     await requirePermission("can_manage_reports");
     const { eventId } = await params;
 

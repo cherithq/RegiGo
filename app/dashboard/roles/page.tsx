@@ -1,8 +1,9 @@
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import RolePermissionsManager from "@/components/forms/RolePermissionsManager";
 import { requirePermission } from "@/lib/permissions";
 
 export default async function RolesPage() {
+    const supabaseServer = await createSupabaseServerClient();
     await requirePermission("can_manage_settings");
     const { data } = await supabaseServer
         .from("role_permissions")

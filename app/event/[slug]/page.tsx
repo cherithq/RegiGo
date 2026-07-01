@@ -1,4 +1,4 @@
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EventHero from "@/components/website/EventHero";
 import EventAgenda from "@/components/website/EventAgenda";
 import EventSpeakers from "@/components/website/EventSpeakers";
@@ -12,6 +12,7 @@ export default async function PublicEventPage({
 }: {
     params: Promise<{ slug: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { slug } = await params;
 
     const { data: event } = await supabaseServer

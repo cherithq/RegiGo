@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import TableAssignmentForm from "@/components/forms/TableAssignmentForm";
 
 export default async function AssignTablesPage({
@@ -7,6 +7,7 @@ export default async function AssignTablesPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

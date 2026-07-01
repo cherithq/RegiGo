@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export default async function AnalyticsPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

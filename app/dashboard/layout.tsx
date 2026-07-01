@@ -12,24 +12,36 @@ export default function DashboardLayout({
     const [checking, setChecking] = useState(true);
 
     useEffect(() => {
-        async function checkUser() {
-            const { data } = await supabase.auth.getUser();
+        const checkUser = async () => {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
 
-            if (!data.user) {
+            if (!session?.user) {
                 window.location.href = "/auth/login";
                 return;
             }
 
             setChecking(false);
-        }
+        };
 
         checkUser();
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!session?.user) {
+                window.location.href = "/auth/login";
+            }
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
     if (checking) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF]">
-                <p className="font-bold">Checking login...</p>
+                <p className="font-bold text-slate-700">Checking login...</p>
             </main>
         );
     }

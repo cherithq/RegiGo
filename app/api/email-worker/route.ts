@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 async function runEmailWorker(req: Request) {
     try {
@@ -227,6 +227,7 @@ async function runEmailWorker(req: Request) {
 }
 
 export async function POST(req: Request) {
+    const supabaseServer = await createSupabaseServerClient();
     return runEmailWorker(req);
 }
 

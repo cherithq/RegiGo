@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import FloorPlanEditor from "@/components/floor/FloorPlanEditor";
 
 export default async function FloorPlanPage({
@@ -7,6 +7,7 @@ export default async function FloorPlanPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export default async function EventOverviewPage({
     params,
@@ -8,6 +8,7 @@ export default async function EventOverviewPage({
 }) {
     const { eventId } = await params;
 
+    const supabaseServer = await createSupabaseServerClient();
     const { data: event } = await supabaseServer
         .from("events")
         .select("*")

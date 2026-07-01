@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { supabaseServer } from "../../../lib/supabase-server";
+import { createSupabaseServerClient } from "../../../lib/supabase-server";
 import TeamMemberForm from "../../../components/forms/TeamMemberForm";
 import { requirePermission } from "@/lib/permissions";
 
 export default async function TeamPage() {
+    const supabaseServer = await createSupabaseServerClient();
     await requirePermission("can_manage_team");
     const { data: company } = await supabaseServer
         .from("companies")

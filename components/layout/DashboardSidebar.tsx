@@ -20,73 +20,28 @@ import {
     ShieldCheck,
 } from "lucide-react";
 
-type PermissionKey =
-    | "can_manage_events"
-    | "can_manage_company"
-    | "can_manage_team"
-    | "can_manage_settings";
-
-type NavItem = {
-    href: string;
-    label: string;
-    icon: any;
-    permission?: PermissionKey;
-    exact?: boolean;
-};
-
-const navGroups: { title: string; items: NavItem[] }[] = [
+const navGroups = [
     {
         title: "Main",
         items: [
             { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
-            {
-                href: "/dashboard/events",
-                label: "My Events",
-                icon: CalendarDays,
-                permission: "can_manage_events",
-            },
-            {
-                href: "/dashboard/events/new",
-                label: "Create Event",
-                icon: PlusCircle,
-                permission: "can_manage_events",
-                exact: true,
-            },
+            { href: "/dashboard/events", label: "My Events", icon: CalendarDays, exact: true },
+            { href: "/dashboard/events/new", label: "Create Event", icon: PlusCircle, exact: true },
         ],
     },
     {
         title: "Management",
         items: [
-            {
-                href: "/dashboard/company",
-                label: "Company",
-                icon: Building2,
-                permission: "can_manage_company",
-            },
-            {
-                href: "/dashboard/team",
-                label: "Team Members",
-                icon: Users,
-                permission: "can_manage_team",
-            },
-            {
-                href: "/dashboard/roles",
-                label: "Roles & Permissions",
-                icon: ShieldCheck,
-                permission: "can_manage_settings",
-            },
+            { href: "/dashboard/company", label: "Company", icon: Building2, exact: true },
+            { href: "/dashboard/team", label: "Team Members", icon: Users, exact: true },
+            { href: "/dashboard/roles", label: "Roles & Permissions", icon: ShieldCheck, exact: true },
         ],
     },
     {
         title: "Account",
         items: [
-            { href: "/dashboard/profile", label: "My Profile", icon: UserCircle },
-            {
-                href: "/dashboard/settings",
-                label: "Settings",
-                icon: Settings,
-                permission: "can_manage_settings",
-            },
+            { href: "/dashboard/profile", label: "My Profile", icon: UserCircle, exact: true },
+            { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: true },
         ],
     },
 ];
@@ -109,11 +64,9 @@ export default function DashboardSidebar() {
             )}
 
             <aside
-                className={`fixed left-0 top-0 z-50 h-screen border-r border-slate-200 bg-white p-5 transition-all duration-300 ${
-                    collapsed ? "lg:w-24" : "lg:w-72"
-                } ${
-                    mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-                } w-72`}
+                className={`fixed left-0 top-0 z-50 h-screen border-r border-slate-200 bg-white p-5 transition-all duration-300 ${collapsed ? "lg:w-24" : "lg:w-72"
+                    } ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+                    } w-72`}
             >
                 <div className="flex items-center justify-between">
                     {!collapsed && <Logo />}
@@ -141,7 +94,9 @@ export default function DashboardSidebar() {
                             {group.items.map((item) => (
                                 <SideLink
                                     key={item.href}
-                                    item={item}
+                                    href={item.href}
+                                    label={item.label}
+                                    Icon={item.icon}
                                     collapsed={collapsed}
                                     onClick={() => setMobileOpen(false)}
                                 />
@@ -154,9 +109,8 @@ export default function DashboardSidebar() {
                     <button
                         type="button"
                         onClick={logout}
-                        className={`flex w-full items-center rounded-2xl px-4 py-3 font-semibold text-red-600 transition hover:bg-red-50 ${
-                            collapsed ? "justify-center" : "gap-3"
-                        }`}
+                        className={`flex w-full items-center rounded-2xl px-4 py-3 font-semibold text-red-600 transition hover:bg-red-50 ${collapsed ? "justify-center" : "gap-3"
+                            }`}
                     >
                         <LogOut size={20} />
                         {!collapsed && <span>Logout</span>}
@@ -189,48 +143,45 @@ function NavGroup({
 }
 
 function SideLink({
-    item,
+    href,
+    label,
+    Icon,
     collapsed,
     onClick,
 }: {
-    item: NavItem;
+    href: string;
+    label: string;
+    Icon: any;
     collapsed: boolean;
     onClick: () => void;
 }) {
     const pathname = usePathname();
-    const Icon = item.icon;
 
-    const active = isActivePath(pathname, item.href, item.exact);
+    let active = false;
+
+    if (href === "/dashboard") {
+        active = pathname === "/dashboard";
+    } else if (href === "/dashboard/events") {
+        active = pathname === "/dashboard/events";
+    } else if (href === "/dashboard/events/new") {
+        active = pathname === "/dashboard/events/new";
+    } else {
+        active = pathname === href;
+    }
 
     return (
         <Link
-            href={item.href}
-            title={item.label}
+            href={href}
+            title={label}
             onClick={onClick}
-            className={`flex items-center rounded-2xl px-4 py-3 font-semibold transition ${
-                collapsed ? "justify-center" : "gap-3"
-            } ${
-                active
+            className={`flex items-center rounded-2xl px-4 py-3 font-semibold transition ${collapsed ? "justify-center" : "gap-3"
+                } ${active
                     ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-lg"
                     : "text-slate-700 hover:bg-[#EEF2FF] hover:text-[#4F46E5]"
-            }`}
+                }`}
         >
             <Icon size={20} />
-            {!collapsed && <span>{item.label}</span>}
+            {!collapsed && <span>{label}</span>}
         </Link>
     );
-}
-
-function isActivePath(pathname: string, href: string, exact?: boolean) {
-    if (exact) return pathname === href;
-
-    if (href === "/dashboard/events") {
-        if (pathname === "/dashboard/events") return true;
-        if (pathname === "/dashboard/events/new") return false;
-        return pathname.startsWith("/dashboard/events/");
-    }
-
-    if (href === "/dashboard") return pathname === "/dashboard";
-
-    return pathname === href || pathname.startsWith(`${href}/`);
 }

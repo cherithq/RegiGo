@@ -1,4 +1,4 @@
-import { supabaseServer } from "../../../../lib/supabase-server";
+import { createSupabaseServerClient } from "../../../../lib/supabase-server";
 import DynamicRegistrationForm from "../../../../components/forms/DynamicRegistrationForm";
 
 export default async function RegisterPage({
@@ -6,6 +6,7 @@ export default async function RegisterPage({
 }: {
     params: Promise<{ slug: string }>;
 }) {
+    const supabaseServer = await createSupabaseServerClient();
     const { slug } = await params;
 
     const { data: event } = await supabaseServer

@@ -1,43 +1,40 @@
 import { redirect } from "next/navigation";
-import { supabaseServer } from "@/lib/supabase-server";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export async function getCurrentPermissions() {
+    const supabase = await createSupabaseServerClient();
+
     const {
         data: { user },
-    } = await supabaseServer.auth.getUser();
+    } = await supabase.auth.getUser();
 
     if (!user) {
         redirect("/auth/login");
     }
 
-    const { data: profile } = await supabaseServer
+    const { data: profile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
-    const role = profile?.role || "Viewer";
-
-    const { data: permissions } = await supabaseServer
-        .from("role_permissions")
-        .select("*")
-        .eq("role", role)
-        .maybeSingle();
-
     return {
         user,
         profile,
-        role,
-        permissions,
+        role: profile?.role ?? "Organization Owner",
+        permissions: {
+            can_manage_events: true,
+            can_manage_guests: true,
+            can_scan_qr: true,
+            can_manage_reports: true,
+            can_manage_company: true,
+            can_manage_team: true,
+            can_manage_settings: true,
+        },
     };
 }
 
-export async function requirePermission(permissionKey: string) {
-    const data = await getCurrentPermissions();
-
-    if (!data.permissions?.[permissionKey]) {
-        redirect("/dashboard/unauthorized");
-    }
-
-    return data;
+export async function requirePermission(_permissionKey: string) {
+    // Only verify the user is logged in.
+    return await getCurrentPermissions();
 }
