@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/email-worker?secret=regigo-worker-secret-123",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
