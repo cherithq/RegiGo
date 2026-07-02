@@ -13,6 +13,7 @@ async function runEmailWorker(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const supabaseServer = await createSupabaseServerClient();
         const { data: jobs, error: jobsError } = await supabaseServer
             .from("email_jobs")
             .select("*")
