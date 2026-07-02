@@ -75,13 +75,6 @@ export default function LoginForm() {
             >
                 {loading ? "Logging in..." : "Login"}
             </button>
-
-            <p className="text-center text-sm text-slate-500">
-                No account yet?{" "}
-                <Link href="/auth/register" className="font-bold text-[#4F46E5]">
-                    Create account
-                </Link>
-            </p>
         </form>
     );
 }
