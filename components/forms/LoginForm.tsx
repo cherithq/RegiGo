@@ -68,11 +68,7 @@ export default function LoginForm() {
                     {message}
                 </div>
             )}
-            <div className="text-right">
-                <Link href="/auth/forgot-password" className="text-sm font-bold text-[#4F46E5]">
-                    Forgot password?
-                </Link>
-            </div>
+
             <button
                 disabled={loading}
                 className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg disabled:opacity-60"
