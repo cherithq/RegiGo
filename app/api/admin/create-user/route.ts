@@ -12,12 +12,23 @@ export async function POST(req: Request) {
             process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
         const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-        if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+        if (!supabaseUrl) {
             return NextResponse.json(
-                {
-                    error:
-                        "Missing env values. Check NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY.",
-                },
+                { error: "Missing NEXT_PUBLIC_SUPABASE_URL in .env.local" },
+                { status: 500 }
+            );
+        }
+
+        if (!anonKey) {
+            return NextResponse.json(
+                { error: "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local" },
+                { status: 500 }
+            );
+        }
+
+        if (!serviceRoleKey) {
+            return NextResponse.json(
+                { error: "Missing SUPABASE_SERVICE_ROLE_KEY in .env.local" },
                 { status: 500 }
             );
         }
@@ -37,6 +48,7 @@ export async function POST(req: Request) {
         const token = authHeader.replace("Bearer ", "");
 
         const supabaseUser = createClient(supabaseUrl, anonKey);
+
         const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
             auth: {
                 autoRefreshToken: false,
@@ -51,7 +63,11 @@ export async function POST(req: Request) {
 
         if (currentUserError || !currentUser) {
             return NextResponse.json(
-                { error: "Invalid session. Please log out and log in again." },
+                {
+                    error:
+                        currentUserError?.message ||
+                        "Invalid session. Please log out and log in again.",
+                },
                 { status: 401 }
             );
         }
@@ -65,7 +81,11 @@ export async function POST(req: Request) {
 
         if (currentProfileError || !currentProfile) {
             return NextResponse.json(
-                { error: "Could not find your profile in the profiles table." },
+                {
+                    error:
+                        currentProfileError?.message ||
+                        "Could not find your profile in the profiles table.",
+                },
                 { status: 403 }
             );
         }
@@ -128,7 +148,7 @@ export async function POST(req: Request) {
 
             if (eventError || !eventExists) {
                 return NextResponse.json(
-                    { error: "Selected event does not exist or cannot be accessed." },
+                    { error: "Selected event does not exist." },
                     { status: 400 }
                 );
             }
@@ -153,25 +173,48 @@ export async function POST(req: Request) {
             );
         }
 
-        const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
-            {
-                id: newUser.id,
-                full_name: fullName,
-                email,
-                role,
-            },
-            {
-                onConflict: "id",
-            }
-        );
+        const { data: existingProfile } = await supabaseAdmin
+            .from("profiles")
+            .select("id")
+            .eq("id", newUser.id)
+            .maybeSingle();
 
-        if (profileError) {
-            return NextResponse.json(
-                {
-                    error: `User was created in Auth, but profile failed: ${profileError.message}`,
-                },
-                { status: 400 }
-            );
+        if (existingProfile) {
+            const { error: updateProfileError } = await supabaseAdmin
+                .from("profiles")
+                .update({
+                    full_name: fullName,
+                    email,
+                    role,
+                })
+                .eq("id", newUser.id);
+
+            if (updateProfileError) {
+                return NextResponse.json(
+                    {
+                        error: `User was created in Auth, but profile update failed: ${updateProfileError.message}`,
+                    },
+                    { status: 400 }
+                );
+            }
+        } else {
+            const { error: insertProfileError } = await supabaseAdmin
+                .from("profiles")
+                .insert({
+                    id: newUser.id,
+                    full_name: fullName,
+                    email,
+                    role,
+                });
+
+            if (insertProfileError) {
+                return NextResponse.json(
+                    {
+                        error: `User was created in Auth, but profile insert failed: ${insertProfileError.message}`,
+                    },
+                    { status: 400 }
+                );
+            }
         }
 
         if (role !== "admin" && eventId) {
@@ -184,26 +227,56 @@ export async function POST(req: Request) {
                             ? "viewer"
                             : "organizer";
 
-            const { error: eventMemberError } = await supabaseAdmin
-                .from("event_members")
-                .upsert(
-                    {
-                        event_id: eventId,
-                        profile_id: newUser.id,
-                        role: cleanEventRole,
-                    },
-                    {
-                        onConflict: "event_id,profile_id",
-                    }
-                );
+            const { data: existingMember, error: existingMemberError } =
+                await supabaseAdmin
+                    .from("event_members")
+                    .select("id")
+                    .eq("event_id", eventId)
+                    .eq("profile_id", newUser.id)
+                    .maybeSingle();
 
-            if (eventMemberError) {
+            if (existingMemberError) {
                 return NextResponse.json(
                     {
-                        error: `User was created, but event assignment failed: ${eventMemberError.message}`,
+                        error: `Failed to check existing event assignment: ${existingMemberError.message}`,
                     },
                     { status: 400 }
                 );
+            }
+
+            if (existingMember) {
+                const { error: updateMemberError } = await supabaseAdmin
+                    .from("event_members")
+                    .update({
+                        role: cleanEventRole,
+                    })
+                    .eq("id", existingMember.id);
+
+                if (updateMemberError) {
+                    return NextResponse.json(
+                        {
+                            error: `User was created, but event assignment update failed: ${updateMemberError.message}`,
+                        },
+                        { status: 400 }
+                    );
+                }
+            } else {
+                const { error: insertMemberError } = await supabaseAdmin
+                    .from("event_members")
+                    .insert({
+                        event_id: eventId,
+                        profile_id: newUser.id,
+                        role: cleanEventRole,
+                    });
+
+                if (insertMemberError) {
+                    return NextResponse.json(
+                        {
+                            error: `User was created, but event assignment insert failed: ${insertMemberError.message}`,
+                        },
+                        { status: 400 }
+                    );
+                }
             }
         }
 
@@ -212,11 +285,13 @@ export async function POST(req: Request) {
             message: "User created successfully.",
             userId: newUser.id,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Create user API error:", error);
 
         return NextResponse.json(
-            { error: "Server error creating user. Check VS Code terminal." },
+            {
+                error: error?.message || "Server error creating user.",
+            },
             { status: 500 }
         );
     }

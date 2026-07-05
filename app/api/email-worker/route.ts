@@ -14,6 +14,7 @@ async function runEmailWorker(req: Request) {
         }
 
         const supabaseServer = await createSupabaseServerClient();
+
         const { data: jobs, error: jobsError } = await supabaseServer
             .from("email_jobs")
             .select("*")
@@ -30,15 +31,34 @@ async function runEmailWorker(req: Request) {
             return NextResponse.json({ message: "No pending email jobs." });
         }
 
+        const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+        const smtpPort = Number(process.env.SMTP_PORT || 587);
+        const smtpUser = (process.env.SMTP_USER || "").trim();
+        const smtpPass = (process.env.SMTP_PASS || "").replace(/\s/g, "");
+        const smtpSecure =
+            process.env.SMTP_SECURE === "true" || smtpPort === 465;
+
+        if (!smtpUser || !smtpPass) {
+            return NextResponse.json(
+                {
+                    error:
+                        "Missing SMTP_USER or SMTP_PASS. Check your .env.local file and restart npm run dev.",
+                },
+                { status: 500 }
+            );
+        }
+
         const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: Number(process.env.SMTP_PORT || 587),
-            secure: Number(process.env.SMTP_PORT || 587) === 465,
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
             auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
+                user: smtpUser,
+                pass: smtpPass,
             },
         });
+
+        await transporter.verify();
 
         const results = [];
 
@@ -53,32 +73,45 @@ async function runEmailWorker(req: Request) {
                     })
                     .eq("id", job.id);
 
-                const { data: registration } = await supabaseServer
-                    .from("registrations")
-                    .select("*")
-                    .eq("id", job.registration_id)
-                    .maybeSingle();
+                const { data: registration, error: registrationError } =
+                    await supabaseServer
+                        .from("registrations")
+                        .select("*")
+                        .eq("id", job.registration_id)
+                        .maybeSingle();
+
+                if (registrationError) {
+                    throw new Error(registrationError.message);
+                }
 
                 if (!registration) {
                     throw new Error("Registration not found.");
                 }
 
-                const { data: event } = await supabaseServer
+                const { data: event, error: eventError } = await supabaseServer
                     .from("events")
                     .select("*")
                     .eq("id", registration.event_id)
                     .maybeSingle();
 
+                if (eventError) {
+                    throw new Error(eventError.message);
+                }
+
                 if (!event) {
                     throw new Error("Event not found.");
                 }
 
-                const { data: ticket } = await supabaseServer
+                const { data: ticket, error: ticketError } = await supabaseServer
                     .from("qr_tickets")
                     .select("*")
                     .eq("registration_id", registration.id)
                     .eq("is_active", true)
                     .maybeSingle();
+
+                if (ticketError) {
+                    throw new Error(ticketError.message);
+                }
 
                 if (!ticket) {
                     throw new Error("QR ticket not found.");
@@ -106,7 +139,7 @@ async function runEmailWorker(req: Request) {
 
                 if (tableAssignment?.table_id) {
                     const { data: table } = await supabaseServer
-                        .from("event_tables")
+                        .from("tables")
                         .select("*")
                         .eq("id", tableAssignment.table_id)
                         .maybeSingle();
@@ -126,9 +159,13 @@ async function runEmailWorker(req: Request) {
 
                 const qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
 
+                const fromAddress =
+                    process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || smtpUser;
+
+                const fromName = process.env.EMAIL_FROM_NAME || "RegiGo";
+
                 await transporter.sendMail({
-                    from: `"${process.env.EMAIL_FROM_NAME || "RegiGo"}" <${process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER
-                        }>`,
+                    from: `"${fromName}" <${fromAddress}>`,
                     to: job.recipient_email,
                     subject: `Registration confirmed for ${event.event_name}`,
                     html: `
@@ -228,7 +265,6 @@ async function runEmailWorker(req: Request) {
 }
 
 export async function POST(req: Request) {
-    const supabaseServer = await createSupabaseServerClient();
     return runEmailWorker(req);
 }
 
