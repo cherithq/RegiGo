@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Logo from "./Logo";
@@ -18,40 +19,254 @@ import {
     ChevronRight,
     X,
     ShieldCheck,
+    QrCode,
+    ClipboardList,
+    Table2,
+    Mic2,
+    Mail,
+    BarChart3,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const navGroups = [
-    {
-        title: "Main",
-        items: [
-            { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
-            { href: "/dashboard/events", label: "My Events", icon: CalendarDays, exact: true },
-            { href: "/dashboard/events/new", label: "Create Event", icon: PlusCircle, exact: true },
-        ],
-    },
-    {
-        title: "Management",
-        items: [
-            { href: "/dashboard/company", label: "Company", icon: Building2, exact: true },
-            { href: "/dashboard/team", label: "Team Members", icon: Users, exact: true },
-            { href: "/dashboard/roles", label: "Roles & Permissions", icon: ShieldCheck, exact: true },
-        ],
-    },
-    {
-        title: "Account",
-        items: [
-            { href: "/dashboard/profile", label: "My Profile", icon: UserCircle, exact: true },
-            { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: true },
-        ],
-    },
-];
+type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+
+type Profile = {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    role: UserRole;
+};
+
+type NavItem = {
+    href: string;
+    label: string;
+    icon: LucideIcon;
+    exact?: boolean;
+    roles: UserRole[];
+};
+
+type NavGroupType = {
+    title: string;
+    items: NavItem[];
+};
+
+const allRoles: UserRole[] = ["admin", "organizer", "viewer", "scanner"];
+const adminOnly: UserRole[] = ["admin"];
+const organizerOnly: UserRole[] = ["organizer"];
+const eventManagers: UserRole[] = ["admin", "organizer"];
+const scanners: UserRole[] = ["admin", "organizer", "scanner"];
+const reportViewers: UserRole[] = ["admin", "organizer", "viewer"];
 
 export default function DashboardSidebar() {
+    const pathname = usePathname();
     const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
+
+    const [profile, setProfile] = useState<Profile | null>(null);
+    const [loadingProfile, setLoadingProfile] = useState(true);
+
+    useEffect(() => {
+        async function loadProfile() {
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+
+            if (!user) {
+                setProfile(null);
+                setLoadingProfile(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("id, full_name, email, role")
+                .eq("id", user.id)
+                .single();
+
+            if (error) {
+                console.error("Failed to load profile:", error);
+                setProfile(null);
+            } else {
+                setProfile(data as Profile);
+            }
+
+            setLoadingProfile(false);
+        }
+
+        loadProfile();
+    }, []);
+
+    const eventId = useMemo(() => {
+        const match = pathname.match(/^\/dashboard\/events\/([^/]+)/);
+        const id = match?.[1];
+
+        if (!id || id === "new") {
+            return null;
+        }
+
+        return id;
+    }, [pathname]);
 
     async function logout() {
         await supabase.auth.signOut();
         window.location.href = "/auth/login";
+    }
+
+    const navGroups: NavGroupType[] = [
+        {
+            title: "Main",
+            items: [
+                {
+                    href: "/dashboard",
+                    label: "Dashboard",
+                    icon: Home,
+                    exact: true,
+                    roles: allRoles,
+                },
+                {
+                    href: "/dashboard/events",
+                    label: "My Events",
+                    icon: CalendarDays,
+                    exact: true,
+                    roles: allRoles,
+                },
+                {
+                    href: "/dashboard/events/new",
+                    label: "Create Event",
+                    icon: PlusCircle,
+                    exact: true,
+                    roles: adminOnly,
+                },
+            ],
+        },
+        {
+            title: "Management",
+            items: [
+                {
+                    href: "/dashboard/company",
+                    label: "Company",
+                    icon: Building2,
+                    exact: true,
+                    roles: organizerOnly,
+                },
+                {
+                    href: "/dashboard/team",
+                    label: "Team Members",
+                    icon: Users,
+                    exact: true,
+                    roles: organizerOnly,
+                },
+                {
+                    href: "/dashboard/users",
+                    label: "Users & Permissions",
+                    icon: Users,
+                    exact: true,
+                    roles: adminOnly,
+                },
+                {
+                    href: "/dashboard/roles",
+                    label: "Roles & Permissions",
+                    icon: ShieldCheck,
+                    exact: true,
+                    roles: adminOnly,
+                },
+            ],
+        },
+        ...(eventId
+            ? [
+                {
+                    title: "Event Workspace",
+                    items: [
+                        {
+                            href: `/dashboard/events/${eventId}`,
+                            label: "Event Overview",
+                            icon: ClipboardList,
+                            exact: true,
+                            roles: allRoles,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/guests`,
+                            label: "Guests",
+                            icon: Users,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/scanner`,
+                            label: "QR Scanner",
+                            icon: QrCode,
+                            exact: true,
+                            roles: scanners,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/tables`,
+                            label: "Tables",
+                            icon: Table2,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/speakers`,
+                            label: "Speakers",
+                            icon: Mic2,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/emails`,
+                            label: "Email Templates",
+                            icon: Mail,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/reports`,
+                            label: "Reports",
+                            icon: BarChart3,
+                            exact: true,
+                            roles: reportViewers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/settings`,
+                            label: "Event Settings",
+                            icon: Settings,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                    ],
+                },
+            ]
+            : []),
+        {
+            title: "Account",
+            items: [
+                {
+                    href: "/dashboard/profile",
+                    label: "My Profile",
+                    icon: UserCircle,
+                    exact: true,
+                    roles: allRoles,
+                },
+                {
+                    href: "/dashboard/settings",
+                    label: "Settings",
+                    icon: Settings,
+                    exact: true,
+                    roles: adminOnly,
+                },
+            ],
+        },
+    ];
+
+    function canShowItem(item: NavItem) {
+        if (loadingProfile) {
+            return false;
+        }
+
+        if (!profile) {
+            return false;
+        }
+
+        return item.roles.includes(profile.role);
     }
 
     return (
@@ -71,6 +286,16 @@ export default function DashboardSidebar() {
                 <div className="flex items-center justify-between">
                     {!collapsed && <Logo />}
 
+                    {collapsed && (
+                        <Link
+                            href="/dashboard/events"
+                            onClick={() => setMobileOpen(false)}
+                            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] font-black text-white"
+                        >
+                            R
+                        </Link>
+                    )}
+
                     <button
                         type="button"
                         onClick={() => setCollapsed(!collapsed)}
@@ -89,23 +314,56 @@ export default function DashboardSidebar() {
                 </div>
 
                 <nav className="mt-10 max-h-[calc(100vh-180px)] space-y-7 overflow-y-auto pb-24">
-                    {navGroups.map((group) => (
-                        <NavGroup key={group.title} title={group.title} collapsed={collapsed}>
-                            {group.items.map((item) => (
-                                <SideLink
-                                    key={item.href}
-                                    href={item.href}
-                                    label={item.label}
-                                    Icon={item.icon}
+                    {loadingProfile ? (
+                        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-400">
+                            {!collapsed && "Loading menu..."}
+                        </div>
+                    ) : (
+                        navGroups.map((group) => {
+                            const visibleItems = group.items.filter(canShowItem);
+
+                            if (visibleItems.length === 0) {
+                                return null;
+                            }
+
+                            return (
+                                <NavGroup
+                                    key={group.title}
+                                    title={group.title}
                                     collapsed={collapsed}
-                                    onClick={() => setMobileOpen(false)}
-                                />
-                            ))}
-                        </NavGroup>
-                    ))}
+                                >
+                                    {visibleItems.map((item) => (
+                                        <SideLink
+                                            key={item.href}
+                                            href={item.href}
+                                            label={item.label}
+                                            Icon={item.icon}
+                                            exact={item.exact}
+                                            collapsed={collapsed}
+                                            onClick={() => setMobileOpen(false)}
+                                        />
+                                    ))}
+                                </NavGroup>
+                            );
+                        })
+                    )}
                 </nav>
 
                 <div className="absolute bottom-5 left-0 w-full px-5">
+                    {!collapsed && profile && (
+                        <div className="mb-3 rounded-2xl bg-[#F7F5FF] px-4 py-3">
+                            <p className="truncate text-sm font-black text-slate-800">
+                                {profile.full_name || "User"}
+                            </p>
+                            <p className="truncate text-xs text-slate-500">
+                                {profile.email}
+                            </p>
+                            <p className="mt-1 text-xs font-bold capitalize text-[#4F46E5]">
+                                {profile.role}
+                            </p>
+                        </div>
+                    )}
+
                     <button
                         type="button"
                         onClick={logout}
@@ -146,28 +404,22 @@ function SideLink({
     href,
     label,
     Icon,
+    exact,
     collapsed,
     onClick,
 }: {
     href: string;
     label: string;
-    Icon: any;
+    Icon: LucideIcon;
+    exact?: boolean;
     collapsed: boolean;
     onClick: () => void;
 }) {
     const pathname = usePathname();
 
-    let active = false;
-
-    if (href === "/dashboard") {
-        active = pathname === "/dashboard";
-    } else if (href === "/dashboard/events") {
-        active = pathname === "/dashboard/events";
-    } else if (href === "/dashboard/events/new") {
-        active = pathname === "/dashboard/events/new";
-    } else {
-        active = pathname === href;
-    }
+    const active = exact
+        ? pathname === href
+        : pathname === href || pathname.startsWith(`${href}/`);
 
     return (
         <Link

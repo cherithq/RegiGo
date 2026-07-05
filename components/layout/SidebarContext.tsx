@@ -11,9 +11,9 @@ type SidebarContextType = {
 
 const SidebarContext = createContext<SidebarContextType>({
     collapsed: false,
-    setCollapsed: () => {},
+    setCollapsed: () => { },
     mobileOpen: false,
-    setMobileOpen: () => {},
+    setMobileOpen: () => { },
 });
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {

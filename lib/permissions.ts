@@ -1,40 +1,154 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-export async function getCurrentPermissions() {
-    const supabase = await createSupabaseServerClient();
+export type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+
+export type PermissionKey =
+    | "can_create_events"
+    | "can_manage_events"
+    | "can_manage_guests"
+    | "can_scan_qr"
+    | "can_manage_reports"
+    | "can_manage_company"
+    | "can_manage_team"
+    | "can_manage_settings";
+
+export type Profile = {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    role: UserRole;
+};
+
+const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
+    admin: {
+        can_create_events: true,
+        can_manage_events: true,
+        can_manage_guests: true,
+        can_scan_qr: true,
+        can_manage_reports: true,
+        can_manage_company: true,
+        can_manage_team: true,
+        can_manage_settings: true,
+    },
+    organizer: {
+        can_create_events: false,
+        can_manage_events: true,
+        can_manage_guests: true,
+        can_scan_qr: true,
+        can_manage_reports: true,
+        can_manage_company: false,
+        can_manage_team: false,
+        can_manage_settings: false,
+    },
+    viewer: {
+        can_create_events: false,
+        can_manage_events: false,
+        can_manage_guests: false,
+        can_scan_qr: false,
+        can_manage_reports: true,
+        can_manage_company: false,
+        can_manage_team: false,
+        can_manage_settings: false,
+    },
+    scanner: {
+        can_create_events: false,
+        can_manage_events: false,
+        can_manage_guests: false,
+        can_scan_qr: true,
+        can_manage_reports: false,
+        can_manage_company: false,
+        can_manage_team: false,
+        can_manage_settings: false,
+    },
+};
+
+export function isAdmin(profile: Profile | null) {
+    return profile?.role === "admin";
+}
+
+export function hasPermission(
+    profileOrRole: Profile | UserRole | null,
+    permission: PermissionKey
+) {
+    const role =
+        typeof profileOrRole === "string" ? profileOrRole : profileOrRole?.role;
+
+    if (!role) return false;
+
+    return Boolean(ROLE_PERMISSIONS[role]?.[permission]);
+}
+
+export async function getSessionProfile() {
+    const supabaseServer = await createSupabaseServerClient();
 
     const {
         data: { user },
-    } = await supabase.auth.getUser();
+        error: userError,
+    } = await supabaseServer.auth.getUser();
 
-    if (!user) {
-        redirect("/auth/login");
+    if (userError || !user) {
+        return {
+            supabaseServer,
+            user: null,
+            profile: null as Profile | null,
+        };
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabaseServer
         .from("profiles")
-        .select("*")
+        .select("id, full_name, email, role")
         .eq("id", user.id)
         .maybeSingle();
 
+    if (profileError || !profile) {
+        return {
+            supabaseServer,
+            user,
+            profile: null as Profile | null,
+        };
+    }
+
     return {
+        supabaseServer,
         user,
-        profile,
-        role: profile?.role ?? "Organization Owner",
-        permissions: {
-            can_manage_events: true,
-            can_manage_guests: true,
-            can_scan_qr: true,
-            can_manage_reports: true,
-            can_manage_company: true,
-            can_manage_team: true,
-            can_manage_settings: true,
-        },
+        profile: profile as Profile,
     };
 }
 
-export async function requirePermission(_permissionKey: string) {
-    // Only verify the user is logged in.
-    return await getCurrentPermissions();
+export async function requireProfile() {
+    const session = await getSessionProfile();
+
+    if (!session.user) {
+        redirect("/auth/login");
+    }
+
+    if (!session.profile) {
+        redirect("/auth/login?error=missing-profile");
+    }
+
+    return session as Awaited<ReturnType<typeof getSessionProfile>> & {
+        user: NonNullable<Awaited<ReturnType<typeof getSessionProfile>>["user"]>;
+        profile: Profile;
+    };
+}
+
+export async function requireAdmin() {
+    const session = await requireProfile();
+
+    if (!isAdmin(session.profile)) {
+        redirect("/dashboard/events");
+    }
+
+    return session;
+}
+
+export async function requirePermission(permission: PermissionKey) {
+    const session = await requireProfile();
+
+    if (!hasPermission(session.profile, permission)) {
+        redirect("/dashboard/events");
+    }
+
+    return session;
 }
