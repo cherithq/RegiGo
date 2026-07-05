@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
+import GuestListTable from "@/components/events/GuestListTable";
 
 export default async function GuestsPage({
     params,
@@ -8,7 +10,8 @@ export default async function GuestsPage({
     params: Promise<{ eventId: string }>;
 }) {
     const supabaseServer = await createSupabaseServerClient();
-    await requirePermission("can_manage_events");
+    await requirePermission("can_manage_guests");
+
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer
@@ -17,7 +20,15 @@ export default async function GuestsPage({
         .eq("id", eventId)
         .single();
 
-    if (!event) return <main className="p-8">Event not found.</main>;
+    if (!event) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
+                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+                    <p className="font-black text-red-600">Event not found.</p>
+                </div>
+            </main>
+        );
+    }
 
     const { data: guests } = await supabaseServer
         .from("registrations")
@@ -42,62 +53,34 @@ export default async function GuestsPage({
             <div className="mx-auto max-w-7xl">
                 <Link
                     href={`/dashboard/events/${eventId}`}
-                    className="font-bold text-[#4F46E5]"
+                    className="inline-flex items-center gap-2 font-bold text-[#4F46E5] transition hover:text-[#EC4899]"
                 >
-                    ← Back to Event
+                    <ArrowLeft size={18} />
+                    Back to Event
                 </Link>
 
-                <h1 className="mt-6 text-4xl font-black">Guest List</h1>
-                <p className="mt-2 text-slate-600">{event.event_name}</p>
+                <section className="mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#4F46E5]">
+                                Guest Management
+                            </p>
 
-                <div className="mt-8 overflow-x-auto rounded-[2rem] bg-white shadow-xl">
-                    <table className="w-full min-w-[900px] text-left text-sm">
-                        <thead className="bg-slate-100 text-slate-600">
-                            <tr>
-                                {(fields || []).map((field) => (
-                                    <th key={field.id} className="p-4">
-                                        {field.field_label}
-                                    </th>
-                                ))}
-                                <th className="p-4">Registered At</th>
-                            </tr>
-                        </thead>
+                            <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
+                                Guest List
+                            </h1>
 
-                        <tbody>
-                            {guests?.map((guest) => (
-                                <tr key={guest.id} className="border-t border-slate-100">
-                                    {(fields || []).map((field) => {
-                                        const value =
-                                            guest[field.field_key] ||
-                                            guest.custom_answers?.[field.field_key] ||
-                                            "-";
+                            <p className="mt-2 text-slate-600">{event.event_name}</p>
+                        </div>
 
-                                        return (
-                                            <td key={field.id} className="p-4">
-                                                {value}
-                                            </td>
-                                        );
-                                    })}
+                        <div className="rounded-2xl bg-[#F7F5FF] px-5 py-4 text-sm font-black text-[#4F46E5]">
+                            {(guests || []).length} guest
+                            {(guests || []).length === 1 ? "" : "s"} registered
+                        </div>
+                    </div>
+                </section>
 
-                                    <td className="p-4 text-slate-500">
-                                        {new Date(guest.created_at).toLocaleString()}
-                                    </td>
-                                </tr>
-                            ))}
-
-                            {(!guests || guests.length === 0) && (
-                                <tr>
-                                    <td
-                                        colSpan={(fields?.length || 0) + 1}
-                                        className="p-8 text-center text-slate-500"
-                                    >
-                                        No guests registered yet.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                <GuestListTable guests={guests || []} fields={fields || []} />
             </div>
         </main>
     );

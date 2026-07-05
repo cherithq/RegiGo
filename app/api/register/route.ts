@@ -1,8 +1,49 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
+async function triggerEmailWorker(req: Request) {
+    try {
+        const triggerUrl = new URL("/api/email-worker/trigger", req.url);
+
+        const response = await fetch(triggerUrl, {
+            method: "POST",
+            cache: "no-store",
+        });
+
+        const text = await response.text();
+
+        let result: any = {};
+
+        try {
+            result = text ? JSON.parse(text) : {};
+        } catch {
+            result = { raw: text };
+        }
+
+        if (!response.ok) {
+            console.error("Email worker trigger failed:", result);
+            return {
+                success: false,
+                error: result,
+            };
+        }
+
+        return {
+            success: true,
+            result,
+        };
+    } catch (error: any) {
+        console.error("Email worker trigger failed:", error);
+        return {
+            success: false,
+            error: error?.message || "Email worker trigger failed.",
+        };
+    }
+}
+
 export async function POST(req: Request) {
     const supabaseServer = await createSupabaseServerClient();
+
     try {
         const { eventId, answers } = await req.json();
 
@@ -20,9 +61,13 @@ export async function POST(req: Request) {
             .maybeSingle();
 
         if (eventError || !event) {
+            return NextResponse.json({ error: "Event not found." }, { status: 404 });
+        }
+
+        if (event.registration_open === false) {
             return NextResponse.json(
-                { error: "Event not found." },
-                { status: 404 }
+                { error: "Registration is currently closed for this event." },
+                { status: 400 }
             );
         }
 
@@ -94,27 +139,26 @@ export async function POST(req: Request) {
                 recipient_email: email,
                 email_type: "registration_confirmation",
                 status: "pending",
+                attempts: 0,
+                last_error: null,
+                sent_at: null,
             });
+
+        let emailTriggered = false;
 
         if (emailJobError) {
             console.error("Email job error:", emailJobError.message);
+        } else {
+            const triggerResult = await triggerEmailWorker(req);
+            emailTriggered = triggerResult.success;
         }
-
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-
-        await fetch(
-            `${siteUrl}/api/email-worker?secret=${process.env.EMAIL_WORKER_SECRET}`,
-            {
-                method: "POST",
-            }
-        ).catch((error) => {
-            console.error("Email worker trigger failed:", error);
-        });
 
         return NextResponse.json({
             success: true,
             registrationId: registration.id,
             passUrl: `/event/${event.event_slug}/pass?registration=${registration.id}`,
+            emailQueued: !emailJobError,
+            emailTriggered,
         });
     } catch (error: any) {
         return NextResponse.json(

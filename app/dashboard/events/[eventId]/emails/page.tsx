@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EmailCentre from "@/components/forms/EmailCentre";
+import { redirect } from "next/navigation";
 
 export default async function EmailsPage({
     params,
@@ -8,6 +9,24 @@ export default async function EmailsPage({
     params: Promise<{ eventId: string }>;
 }) {
     const supabaseServer = await createSupabaseServerClient();
+
+    const {
+        data: { user },
+    } = await supabaseServer.auth.getUser();
+
+    if (!user) {
+        redirect("/login");
+    }
+
+    const { data: profile } = await supabaseServer
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+    if (profile?.role !== "admin") {
+        redirect("/dashboard");
+    }
     const { eventId } = await params;
 
     const { data: event } = await supabaseServer

@@ -25,6 +25,11 @@ import {
     Mic2,
     Mail,
     BarChart3,
+    Ticket,
+    Map,
+    ListTodo,
+    Globe2,
+    Palette,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -85,8 +90,20 @@ export default function DashboardSidebar() {
             if (error) {
                 console.error("Failed to load profile:", error);
                 setProfile(null);
-            } else {
+            } else if (
+                data?.role === "admin" ||
+                data?.role === "organizer" ||
+                data?.role === "viewer" ||
+                data?.role === "scanner"
+            ) {
                 setProfile(data as Profile);
+            } else {
+                setProfile({
+                    id: user.id,
+                    full_name: data?.full_name || null,
+                    email: data?.email || user.email || null,
+                    role: "viewer",
+                });
             }
 
             setLoadingProfile(false);
@@ -99,7 +116,7 @@ export default function DashboardSidebar() {
         const match = pathname.match(/^\/dashboard\/events\/([^/]+)/);
         const id = match?.[1];
 
-        if (!id || id === "new") {
+        if (!id || id === "new" || id === "create") {
             return null;
         }
 
@@ -141,20 +158,7 @@ export default function DashboardSidebar() {
         {
             title: "Management",
             items: [
-                {
-                    href: "/dashboard/company",
-                    label: "Company",
-                    icon: Building2,
-                    exact: true,
-                    roles: organizerOnly,
-                },
-                {
-                    href: "/dashboard/team",
-                    label: "Team Members",
-                    icon: Users,
-                    exact: true,
-                    roles: organizerOnly,
-                },
+
                 {
                     href: "/dashboard/users",
                     label: "Users & Permissions",
@@ -185,22 +189,29 @@ export default function DashboardSidebar() {
                         },
                         {
                             href: `/dashboard/events/${eventId}/guests`,
-                            label: "Guests",
+                            label: "Guest List",
                             icon: Users,
                             exact: true,
                             roles: eventManagers,
                         },
                         {
-                            href: `/dashboard/events/${eventId}/scanner`,
-                            label: "QR Scanner",
-                            icon: QrCode,
+                            href: `/dashboard/events/${eventId}/tickets`,
+                            label: "Ticket Types",
+                            icon: Ticket,
                             exact: true,
-                            roles: scanners,
+                            roles: eventManagers,
                         },
                         {
                             href: `/dashboard/events/${eventId}/tables`,
                             label: "Tables",
                             icon: Table2,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/floor-plan`,
+                            label: "Floor Plan",
+                            icon: Map,
                             exact: true,
                             roles: eventManagers,
                         },
@@ -212,25 +223,70 @@ export default function DashboardSidebar() {
                             roles: eventManagers,
                         },
                         {
+                            href: `/dashboard/events/${eventId}/agenda`,
+                            label: "Agenda",
+                            icon: ListTodo,
+                            exact: true,
+                            roles: eventManagers,
+                        },
+                    ],
+                },
+                {
+                    title: "Event Day",
+                    items: [
+                        {
+                            href: `/dashboard/events/${eventId}/scanner`,
+                            label: "QR Scanner",
+                            icon: QrCode,
+                            exact: true,
+                            roles: scanners,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/analytics`,
+                            label: "Analytics",
+                            icon: BarChart3,
+                            exact: true,
+                            roles: reportViewers,
+                        },
+                    ],
+                },
+                {
+                    title: "Administration",
+                    items: [
+                        {
+                            href: `/dashboard/events/${eventId}/registration`,
+                            label: "Registration Builder",
+                            icon: ClipboardList,
+                            exact: true,
+                            roles: adminOnly,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/website`,
+                            label: "Website Builder",
+                            icon: Globe2,
+                            exact: true,
+                            roles: adminOnly,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/branding`,
+                            label: "Branding",
+                            icon: Palette,
+                            exact: true,
+                            roles: adminOnly,
+                        },
+                        {
                             href: `/dashboard/events/${eventId}/emails`,
                             label: "Email Templates",
                             icon: Mail,
                             exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/reports`,
-                            label: "Reports",
-                            icon: BarChart3,
-                            exact: true,
-                            roles: reportViewers,
+                            roles: adminOnly,
                         },
                         {
                             href: `/dashboard/events/${eventId}/settings`,
                             label: "Event Settings",
                             icon: Settings,
                             exact: true,
-                            roles: eventManagers,
+                            roles: adminOnly,
                         },
                     ],
                 },
@@ -258,13 +314,8 @@ export default function DashboardSidebar() {
     ];
 
     function canShowItem(item: NavItem) {
-        if (loadingProfile) {
-            return false;
-        }
-
-        if (!profile) {
-            return false;
-        }
+        if (loadingProfile) return false;
+        if (!profile) return false;
 
         return item.roles.includes(profile.role);
     }
@@ -274,7 +325,7 @@ export default function DashboardSidebar() {
             {mobileOpen && (
                 <div
                     onClick={() => setMobileOpen(false)}
-                    className="fixed inset-0 z-50 bg-black/40 lg:hidden"
+                    className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm lg:hidden"
                 />
             )}
 
@@ -307,7 +358,7 @@ export default function DashboardSidebar() {
                     <button
                         type="button"
                         onClick={() => setMobileOpen(false)}
-                        className="rounded-xl bg-[#F7F5FF] p-2 lg:hidden"
+                        className="rounded-xl bg-[#F7F5FF] p-2 text-[#4F46E5] lg:hidden"
                     >
                         <X size={20} />
                     </button>
@@ -395,6 +446,7 @@ function NavGroup({
                     {title}
                 </p>
             )}
+
             <div className="space-y-1">{children}</div>
         </div>
     );

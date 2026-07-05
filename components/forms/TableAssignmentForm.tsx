@@ -16,13 +16,18 @@ export default function TableAssignmentForm({
 }) {
     const [items, setItems] = useState(assignments);
     const [message, setMessage] = useState("");
+    const [messageType, setMessageType] = useState<"success" | "error" | "">("");
+    const [assigningGuestId, setAssigningGuestId] = useState<string | null>(null);
+    const [removingGuestId, setRemovingGuestId] = useState<string | null>(null);
 
     const assignedGuestIds = useMemo(
         () => new Set(items.map((item) => item.registration_id)),
         [items]
     );
 
-    const unassignedGuests = guests.filter((guest) => !assignedGuestIds.has(guest.id));
+    const unassignedGuests = guests.filter(
+        (guest) => !assignedGuestIds.has(guest.id)
+    );
 
     function guestsForTable(tableId: string) {
         return guests.filter((guest) =>
@@ -34,14 +39,48 @@ export default function TableAssignmentForm({
         );
     }
 
+    async function triggerEmailWorker() {
+        try {
+            const response = await fetch("/api/email-worker/trigger", {
+                method: "POST",
+            });
+
+            const text = await response.text();
+
+            let result: any = {};
+
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch {
+                result = { raw: text };
+            }
+
+            if (!response.ok) {
+                console.error("Email worker trigger failed:", result);
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error("Email worker trigger failed:", error);
+            return false;
+        }
+    }
+
     async function assignGuest(registrationId: string, tableId: string) {
+        if (!tableId) return;
+
         setMessage("");
+        setMessageType("");
+        setAssigningGuestId(registrationId);
 
         const table = tables.find((item) => item.id === tableId);
         const currentCount = items.filter((item) => item.table_id === tableId).length;
 
         if (table && currentCount >= Number(table.table_capacity || 0)) {
             setMessage(`${table.table_name} is already full.`);
+            setMessageType("error");
+            setAssigningGuestId(null);
             return;
         }
 
@@ -62,6 +101,8 @@ export default function TableAssignmentForm({
 
         if (error) {
             setMessage(error.message);
+            setMessageType("error");
+            setAssigningGuestId(null);
             return;
         }
 
@@ -69,10 +110,26 @@ export default function TableAssignmentForm({
             ...prev.filter((item) => item.registration_id !== registrationId),
             data,
         ]);
+
+        const emailSent = await triggerEmailWorker();
+
+        if (emailSent) {
+            setMessage("Table assigned and email sent.");
+            setMessageType("success");
+        } else {
+            setMessage(
+                "Table assigned, but the email worker did not run. You can run it manually from /api/email-worker."
+            );
+            setMessageType("error");
+        }
+
+        setAssigningGuestId(null);
     }
 
     async function removeAssignment(registrationId: string) {
         setMessage("");
+        setMessageType("");
+        setRemovingGuestId(registrationId);
 
         const { error } = await supabase
             .from("table_assignments")
@@ -82,18 +139,29 @@ export default function TableAssignmentForm({
 
         if (error) {
             setMessage(error.message);
+            setMessageType("error");
+            setRemovingGuestId(null);
             return;
         }
 
         setItems((prev) =>
             prev.filter((item) => item.registration_id !== registrationId)
         );
+
+        setMessage("Table assignment removed.");
+        setMessageType("success");
+        setRemovingGuestId(null);
     }
 
     return (
         <div className="space-y-8">
             {message && (
-                <div className="rounded-xl bg-red-50 p-4 font-semibold text-red-600">
+                <div
+                    className={`rounded-xl p-4 font-semibold ${messageType === "success"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                >
                     {message}
                 </div>
             )}
@@ -101,7 +169,8 @@ export default function TableAssignmentForm({
             <section className="rounded-[2rem] bg-[#F7F5FF] p-6">
                 <h2 className="text-2xl font-black">Unassigned Guests</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                    Select a table for each guest.
+                    Select a table for each guest. Once assigned, the guest will receive a
+                    table assignment email automatically.
                 </p>
 
                 <div className="mt-5 space-y-3">
@@ -118,12 +187,16 @@ export default function TableAssignmentForm({
 
                                 <select
                                     defaultValue=""
-                                    onChange={(e) => assignGuest(guest.id, e.target.value)}
-                                    className="rounded-xl border border-slate-300 bg-white px-4 py-3"
+                                    disabled={assigningGuestId === guest.id}
+                                    onChange={(event) => assignGuest(guest.id, event.target.value)}
+                                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <option value="" disabled>
-                                        Assign table
+                                        {assigningGuestId === guest.id
+                                            ? "Assigning..."
+                                            : "Assign table"}
                                     </option>
+
                                     {tables.map((table) => (
                                         <option key={table.id} value={table.id}>
                                             {table.table_name}
@@ -174,10 +247,12 @@ export default function TableAssignmentForm({
                                             </div>
 
                                             <button
+                                                type="button"
                                                 onClick={() => removeAssignment(guest.id)}
-                                                className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600"
+                                                disabled={removingGuestId === guest.id}
+                                                className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
-                                                Remove
+                                                {removingGuestId === guest.id ? "Removing..." : "Remove"}
                                             </button>
                                         </div>
                                     ))
