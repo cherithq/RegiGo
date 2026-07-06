@@ -10,7 +10,6 @@ import {
     Home,
     CalendarDays,
     PlusCircle,
-    Building2,
     Users,
     UserCircle,
     Settings,
@@ -30,6 +29,7 @@ import {
     ListTodo,
     Globe2,
     Palette,
+    Gift,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -57,7 +57,6 @@ type NavGroupType = {
 
 const allRoles: UserRole[] = ["admin", "organizer", "viewer", "scanner"];
 const adminOnly: UserRole[] = ["admin"];
-const organizerOnly: UserRole[] = ["organizer"];
 const eventManagers: UserRole[] = ["admin", "organizer"];
 const scanners: UserRole[] = ["admin", "organizer", "scanner"];
 const reportViewers: UserRole[] = ["admin", "organizer", "viewer"];
@@ -158,7 +157,6 @@ export default function DashboardSidebar() {
         {
             title: "Management",
             items: [
-
                 {
                     href: "/dashboard/users",
                     label: "Users & Permissions",
@@ -238,6 +236,13 @@ export default function DashboardSidebar() {
                             href: `/dashboard/events/${eventId}/scanner`,
                             label: "QR Scanner",
                             icon: QrCode,
+                            exact: true,
+                            roles: scanners,
+                        },
+                        {
+                            href: `/dashboard/events/${eventId}/lucky-draw`,
+                            label: "Lucky Draw",
+                            icon: Gift,
                             exact: true,
                             roles: scanners,
                         },

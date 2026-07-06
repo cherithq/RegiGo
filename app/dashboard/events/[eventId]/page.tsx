@@ -23,6 +23,7 @@ import {
     Utensils,
     Mic2,
     ListTodo,
+    Gift,
 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
@@ -292,6 +293,13 @@ export default async function EventOverviewPage({
                             href={`/dashboard/events/${eventId}/scanner`}
                             icon={UserRoundCheck}
                         />
+
+                        <ModuleCard
+                            title="Lucky Draw"
+                            description="Spin a Wheel of Fortune using checked-in guests only."
+                            href={`/dashboard/events/${eventId}/lucky-draw`}
+                            icon={Gift}
+                        />
                     </WorkspaceSection>
                 )}
 
@@ -422,14 +430,14 @@ function ModuleCard({
         <Link
             href={href}
             className={`group rounded-[2rem] border p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${highlight
-                    ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
-                    : "border-slate-200 bg-white text-slate-950"
+                ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
+                : "border-slate-200 bg-white text-slate-950"
                 }`}
         >
             <div
                 className={`w-fit rounded-2xl p-3 transition ${highlight
-                        ? "bg-white/20 text-white"
-                        : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
+                    ? "bg-white/20 text-white"
+                    : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
                     }`}
             >
                 <Icon size={24} />
