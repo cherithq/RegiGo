@@ -30,7 +30,7 @@ type Prize = {
     event_id: string;
     prize_name: string;
     prize_order: number;
-    eligible_registration_ids: string[];
+    eligible_registration_ids?: string[] | null;
     eligible_group_id?: string | null;
     created_at: string | null;
     updated_at?: string | null;
@@ -60,9 +60,15 @@ export default function LuckyDrawAudienceDisplay({
     initialWinners: Winner[];
     initialPrizes: Prize[];
 }) {
+    const sortedPrizes = useMemo(() => {
+        return [...initialPrizes].sort(
+            (a, b) => Number(a.prize_order || 0) - Number(b.prize_order || 0)
+        );
+    }, [initialPrizes]);
+
     const [winners, setWinners] = useState<Winner[]>(initialWinners);
     const [selectedPrizeId, setSelectedPrizeId] = useState(
-        initialPrizes[0]?.id || ""
+        sortedPrizes[0]?.id || ""
     );
     const [rotation, setRotation] = useState(0);
     const [spinning, setSpinning] = useState(false);
@@ -71,15 +77,11 @@ export default function LuckyDrawAudienceDisplay({
     );
     const [message, setMessage] = useState("");
 
-    const prizes = useMemo(() => {
-        return [...initialPrizes].sort(
-            (a, b) => Number(a.prize_order || 0) - Number(b.prize_order || 0)
-        );
-    }, [initialPrizes]);
-
     const selectedPrize = useMemo(() => {
-        return prizes.find((prize) => prize.id === selectedPrizeId) || null;
-    }, [prizes, selectedPrizeId]);
+        return sortedPrizes.find((prize) => prize.id === selectedPrizeId) || null;
+    }, [sortedPrizes, selectedPrizeId]);
+
+    const effectivePrizeName = selectedPrize?.prize_name || "Lucky Draw";
 
     const winnerRegistrationIds = useMemo(() => {
         return new Set(winners.map((winner) => winner.registration_id));
@@ -90,7 +92,9 @@ export default function LuckyDrawAudienceDisplay({
     }, [selectedPrize]);
 
     const prizePoolGuests = useMemo(() => {
-        if (!selectedPrize) return [];
+        if (!selectedPrize) {
+            return guests;
+        }
 
         if (selectedPrizeEligibleIds.length === 0) {
             return guests;
@@ -106,26 +110,35 @@ export default function LuckyDrawAudienceDisplay({
     }, [prizePoolGuests, winnerRegistrationIds]);
 
     async function saveWinner(winner: CheckedInGuest) {
-        if (!selectedPrize) {
-            setMessage("Select a prize first.");
-            return;
-        }
-
         const { data, error } = await supabase
             .from("lucky_draw_winners")
             .insert({
                 event_id: eventId,
                 registration_id: winner.id,
-                prize_id: selectedPrize.id,
+                prize_id: selectedPrize?.id || null,
                 winner_name: winner.full_name || "Unnamed Guest",
                 winner_email: winner.email || "",
-                prize_name: selectedPrize.prize_name,
+                prize_name: effectivePrizeName,
                 draw_round: winners.length + 1,
             })
             .select("*")
             .single();
 
         if (error) {
+            if (error.code === "23505") {
+                setMessage(
+                    "This guest has already won before. Spin again to draw another eligible guest."
+                );
+
+                const { data: latestWinnerRows } = await supabase
+                    .from("lucky_draw_winners")
+                    .select("*")
+                    .eq("event_id", eventId);
+
+                setWinners((latestWinnerRows || []) as Winner[]);
+                return;
+            }
+
             setMessage(error.message);
             return;
         }
@@ -141,20 +154,44 @@ export default function LuckyDrawAudienceDisplay({
         setMessage("");
         setSelectedWinner(null);
 
-        if (!selectedPrize) {
-            setMessage("Select a prize first.");
+        if (guests.length === 0) {
+            setMessage("No checked-in guests yet.");
             return;
         }
 
-        if (eligibleGuests.length === 0) {
-            setMessage("No eligible guests available for this prize.");
+        const { data: latestWinnerRows, error: latestWinnerError } = await supabase
+            .from("lucky_draw_winners")
+            .select("*")
+            .eq("event_id", eventId);
+
+        if (latestWinnerError) {
+            setMessage(latestWinnerError.message);
             return;
         }
 
-        const winnerIndex = Math.floor(Math.random() * eligibleGuests.length);
-        const winner = eligibleGuests[winnerIndex];
+        const latestWinnerList = (latestWinnerRows || []) as Winner[];
 
-        const segmentAngle = 360 / eligibleGuests.length;
+        setWinners(latestWinnerList);
+
+        const latestWinnerIds = new Set(
+            latestWinnerList.map((winner) => winner.registration_id)
+        );
+
+        const freshEligibleGuests = prizePoolGuests.filter(
+            (guest) => !latestWinnerIds.has(guest.id)
+        );
+
+        if (freshEligibleGuests.length === 0) {
+            setMessage(
+                "No eligible guests available. Everyone in this draw pool may have already won."
+            );
+            return;
+        }
+
+        const winnerIndex = Math.floor(Math.random() * freshEligibleGuests.length);
+        const winner = freshEligibleGuests[winnerIndex];
+
+        const segmentAngle = 360 / freshEligibleGuests.length;
         const winnerCenterAngle = winnerIndex * segmentAngle + segmentAngle / 2;
 
         const targetAngle = 360 - winnerCenterAngle;
@@ -175,28 +212,39 @@ export default function LuckyDrawAudienceDisplay({
     return (
         <div className="grid w-full items-center gap-10 xl:grid-cols-[1fr_0.7fr]">
             <section className="flex flex-col items-center">
-                <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
-                    <p className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-white/50">
-                        Current Prize
-                    </p>
+                {sortedPrizes.length > 0 && (
+                    <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
+                        <p className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-white/50">
+                            Current Prize
+                        </p>
 
-                    <select
-                        value={selectedPrizeId}
-                        onChange={(event) => {
-                            setSelectedPrizeId(event.target.value);
-                            setSelectedWinner(null);
-                            setMessage("");
-                        }}
-                        className="h-16 w-full rounded-2xl border border-white/10 bg-slate-900 px-5 text-xl font-black text-white outline-none"
-                    >
-                        <option value="">Select prize</option>
-                        {prizes.map((prize) => (
-                            <option key={prize.id} value={prize.id}>
-                                {prize.prize_order}. {prize.prize_name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                        <select
+                            value={selectedPrizeId}
+                            onChange={(event) => {
+                                setSelectedPrizeId(event.target.value);
+                                setSelectedWinner(null);
+                                setMessage("");
+                            }}
+                            className="h-16 w-full rounded-2xl border border-white/10 bg-slate-900 px-5 text-xl font-black text-white outline-none"
+                        >
+                            {sortedPrizes.map((prize) => (
+                                <option key={prize.id} value={prize.id}>
+                                    {prize.prize_order}. {prize.prize_name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
+                {sortedPrizes.length === 0 && (
+                    <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 text-center backdrop-blur">
+                        <p className="text-sm font-black uppercase tracking-[0.25em] text-white/50">
+                            Current Prize
+                        </p>
+
+                        <p className="mt-2 text-3xl font-black text-white">Lucky Draw</p>
+                    </div>
+                )}
 
                 <div className="relative flex h-[420px] w-[420px] items-center justify-center sm:h-[560px] sm:w-[560px]">
                     <div className="absolute -top-2 z-20 h-0 w-0 border-l-[24px] border-r-[24px] border-t-[46px] border-l-transparent border-r-transparent border-t-white drop-shadow-2xl" />
@@ -219,7 +267,9 @@ export default function LuckyDrawAudienceDisplay({
                 <button
                     type="button"
                     onClick={spinWheel}
-                    disabled={spinning || !selectedPrize || eligibleGuests.length === 0}
+                    disabled={
+                        spinning || guests.length === 0 || eligibleGuests.length === 0
+                    }
                     className="mt-10 inline-flex h-16 min-w-[280px] items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-10 text-xl font-black text-white shadow-2xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     <RotateCw size={24} className={spinning ? "animate-spin" : ""} />
@@ -249,13 +299,13 @@ export default function LuckyDrawAudienceDisplay({
                         </h2>
 
                         <p className="mt-6 inline-flex rounded-full bg-white px-6 py-3 text-lg font-black text-[#4F46E5]">
-                            {selectedPrize?.prize_name || "Prize"}
+                            {effectivePrizeName}
                         </p>
                     </>
                 ) : (
                     <>
                         <h2 className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">
-                            {selectedPrize?.prize_name || "Select a Prize"}
+                            {effectivePrizeName}
                         </h2>
 
                         <p className="mt-6 text-xl font-bold text-white/60">
