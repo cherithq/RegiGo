@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
     ArrowLeft,
+    ExternalLink,
     Gift,
     Sparkles,
     Trophy,
@@ -55,11 +56,7 @@ export default async function LuckyDrawPage({
         .order("checked_in_at", { ascending: false });
 
     const checkedInRegistrationIds = Array.from(
-        new Set(
-            (checkIns || [])
-                .map((item) => item.registration_id)
-                .filter(Boolean)
-        )
+        new Set((checkIns || []).map((item) => item.registration_id).filter(Boolean))
     );
 
     let checkedInGuests: CheckedInGuest[] = [];
@@ -93,12 +90,14 @@ export default async function LuckyDrawPage({
         .eq("event_id", eventId)
         .order("created_at", { ascending: false });
 
+    const { data: prizes } = await supabaseServer
+        .from("lucky_draw_prizes")
+        .select("*")
+        .eq("event_id", eventId)
+        .order("prize_order", { ascending: true });
+
     const totalCheckedIn = checkedInGuests.length;
     const totalWinners = winners?.length || 0;
-    const availableGuests = checkedInGuests.filter(
-        (guest) =>
-            !(winners || []).some((winner) => winner.registration_id === guest.id)
-    ).length;
 
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
@@ -127,9 +126,8 @@ export default async function LuckyDrawPage({
                             </h1>
 
                             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Guests are added to the wheel automatically once they are checked
-                                in. Spin the wheel to select a winner fairly from verified
-                                attendees only.
+                                Create prizes, choose which checked-in guests are eligible for
+                                each prize, then spin the wheel for the selected prize.
                             </p>
 
                             <p className="mt-3 text-sm font-bold text-slate-500">
@@ -137,26 +135,38 @@ export default async function LuckyDrawPage({
                             </p>
                         </div>
 
-                        <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-6">
-                            <div className="flex items-center gap-3">
-                                <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
-                                    <Sparkles size={24} />
+                        <div className="flex flex-col gap-4">
+                            <Link
+                                href={`/display/events/${eventId}/lucky-draw`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
+                            >
+                                <ExternalLink size={18} />
+                                Open Audience Display
+                            </Link>
+
+                            <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
+                                        <Sparkles size={24} />
+                                    </div>
+
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-500">
+                                            Prize Eligibility
+                                        </p>
+                                        <p className="text-3xl font-black text-slate-950">
+                                            Select by prize
+                                        </p>
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <p className="text-sm font-bold text-slate-500">
-                                        Draw Status
-                                    </p>
-                                    <p className="text-3xl font-black text-slate-950">
-                                        {availableGuests} eligible
-                                    </p>
-                                </div>
+                                <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
+                                    Audience display hides backend setup, guest emails, group
+                                    allocation, and eligibility controls.
+                                </p>
                             </div>
-
-                            <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
-                                Previous winners are excluded automatically unless repeat winners
-                                are enabled.
-                            </p>
                         </div>
                     </div>
                 </section>
@@ -165,15 +175,15 @@ export default async function LuckyDrawPage({
                     <StatCard
                         title="Checked-In Guests"
                         value={totalCheckedIn}
-                        text="Guests currently inside the draw pool"
+                        text="Guests currently available for draw setup"
                         icon={CheckCircle2}
                     />
 
                     <StatCard
-                        title="Eligible Guests"
-                        value={availableGuests}
-                        text="Checked-in guests who have not won yet"
-                        icon={Users}
+                        title="Prizes Created"
+                        value={prizes?.length || 0}
+                        text="Each prize can have its own eligible group"
+                        icon={Gift}
                     />
 
                     <StatCard
@@ -190,6 +200,7 @@ export default async function LuckyDrawPage({
                         eventName={event.event_name || "Event"}
                         guests={checkedInGuests}
                         initialWinners={winners || []}
+                        initialPrizes={prizes || []}
                     />
                 </section>
             </div>

@@ -2,11 +2,15 @@
 
 import { useMemo, useState } from "react";
 import {
+    Check,
     CheckCircle2,
     Gift,
     History,
+    Plus,
     RotateCw,
+    Search,
     Sparkles,
+    Trash2,
     Trophy,
     Users,
 } from "lucide-react";
@@ -25,11 +29,22 @@ type Winner = {
     id: string;
     event_id: string;
     registration_id: string;
+    prize_id?: string | null;
     winner_name: string | null;
     winner_email: string | null;
     prize_name: string | null;
     draw_round: number | null;
     created_at: string | null;
+};
+
+type Prize = {
+    id: string;
+    event_id: string;
+    prize_name: string;
+    prize_order: number;
+    eligible_registration_ids: string[];
+    created_at: string | null;
+    updated_at?: string | null;
 };
 
 const wheelColors = [
@@ -48,32 +63,83 @@ export default function LuckyDrawWheel({
     eventName,
     guests,
     initialWinners,
+    initialPrizes,
 }: {
     eventId: string;
     eventName: string;
     guests: CheckedInGuest[];
     initialWinners: Winner[];
+    initialPrizes: Prize[];
 }) {
     const [winners, setWinners] = useState<Winner[]>(initialWinners);
+    const [prizes, setPrizes] = useState<Prize[]>(
+        [...initialPrizes].sort(
+            (a, b) => Number(a.prize_order || 0) - Number(b.prize_order || 0)
+        )
+    );
+
+    const [selectedPrizeId, setSelectedPrizeId] = useState<string>(
+        initialPrizes[0]?.id || ""
+    );
+
+    const [newPrizeName, setNewPrizeName] = useState("");
+    const [guestSearch, setGuestSearch] = useState("");
     const [rotation, setRotation] = useState(0);
     const [spinning, setSpinning] = useState(false);
     const [selectedWinner, setSelectedWinner] = useState<CheckedInGuest | null>(
         null
     );
-    const [prizeName, setPrizeName] = useState("");
-    const [allowRepeatWinners, setAllowRepeatWinners] = useState(false);
     const [message, setMessage] = useState("");
+
+    const selectedPrize = useMemo(() => {
+        return prizes.find((prize) => prize.id === selectedPrizeId) || null;
+    }, [prizes, selectedPrizeId]);
 
     const winnerRegistrationIds = useMemo(
         () => new Set(winners.map((winner) => winner.registration_id)),
         [winners]
     );
 
-    const eligibleGuests = useMemo(() => {
-        if (allowRepeatWinners) return guests;
+    const selectedPrizeEligibleIds = useMemo(() => {
+        if (!selectedPrize?.eligible_registration_ids) return [];
 
-        return guests.filter((guest) => !winnerRegistrationIds.has(guest.id));
-    }, [guests, winnerRegistrationIds, allowRepeatWinners]);
+        return selectedPrize.eligible_registration_ids;
+    }, [selectedPrize]);
+
+    const prizePoolGuests = useMemo(() => {
+        if (!selectedPrize) return [];
+
+        if (selectedPrizeEligibleIds.length === 0) {
+            return guests;
+        }
+
+        return guests.filter((guest) => selectedPrizeEligibleIds.includes(guest.id));
+    }, [guests, selectedPrize, selectedPrizeEligibleIds]);
+
+    const eligibleGuests = useMemo(() => {
+        return prizePoolGuests.filter(
+            (guest) => !winnerRegistrationIds.has(guest.id)
+        );
+    }, [prizePoolGuests, winnerRegistrationIds]);
+
+    const filteredGuests = useMemo(() => {
+        const keyword = guestSearch.trim().toLowerCase();
+
+        if (!keyword) return guests;
+
+        return guests.filter((guest) => {
+            return [
+                guest.full_name,
+                guest.email,
+                guest.phone,
+                guest.department,
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase()
+                .includes(keyword);
+        });
+    }, [guests, guestSearch]);
 
     const latestWinners = useMemo(() => {
         return [...winners].sort((a, b) => {
@@ -84,18 +150,153 @@ export default function LuckyDrawWheel({
         });
     }, [winners]);
 
+    async function addPrize() {
+        const cleanPrizeName = newPrizeName.trim();
+
+        if (!cleanPrizeName) {
+            setMessage("Enter a prize name first.");
+            return;
+        }
+
+        const nextOrder =
+            prizes.length > 0
+                ? Math.max(...prizes.map((prize) => Number(prize.prize_order || 0))) + 1
+                : 1;
+
+        const { data, error } = await supabase
+            .from("lucky_draw_prizes")
+            .insert({
+                event_id: eventId,
+                prize_name: cleanPrizeName,
+                prize_order: nextOrder,
+                eligible_registration_ids: [],
+            })
+            .select("*")
+            .single();
+
+        if (error) {
+            setMessage(error.message);
+            return;
+        }
+
+        const createdPrize = data as Prize;
+
+        setPrizes((current) => [...current, createdPrize]);
+        setSelectedPrizeId(createdPrize.id);
+        setNewPrizeName("");
+        setMessage("Prize created. You can now select eligible guests for it.");
+    }
+
+    async function deletePrize(prizeId: string) {
+        const confirmed = window.confirm(
+            "Delete this prize? Winner history will remain, but this prize setup will be removed."
+        );
+
+        if (!confirmed) return;
+
+        const { error } = await supabase
+            .from("lucky_draw_prizes")
+            .delete()
+            .eq("id", prizeId);
+
+        if (error) {
+            setMessage(error.message);
+            return;
+        }
+
+        setPrizes((current) => current.filter((prize) => prize.id !== prizeId));
+
+        if (selectedPrizeId === prizeId) {
+            const nextPrize = prizes.find((prize) => prize.id !== prizeId);
+            setSelectedPrizeId(nextPrize?.id || "");
+        }
+
+        setMessage("Prize deleted.");
+    }
+
+    async function updatePrizeEligibleIds(prizeId: string, ids: string[]) {
+        const { error } = await supabase
+            .from("lucky_draw_prizes")
+            .update({
+                eligible_registration_ids: ids,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", prizeId);
+
+        if (error) {
+            setMessage(error.message);
+            return;
+        }
+
+        setPrizes((current) =>
+            current.map((prize) =>
+                prize.id === prizeId
+                    ? {
+                        ...prize,
+                        eligible_registration_ids: ids,
+                    }
+                    : prize
+            )
+        );
+    }
+
+    async function toggleGuestEligibility(registrationId: string) {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        const currentIds = selectedPrizeEligibleIds;
+
+        const nextIds = currentIds.includes(registrationId)
+            ? currentIds.filter((id) => id !== registrationId)
+            : [...currentIds, registrationId];
+
+        await updatePrizeEligibleIds(selectedPrize.id, nextIds);
+    }
+
+    async function selectAllGuestsForPrize() {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        await updatePrizeEligibleIds(
+            selectedPrize.id,
+            guests.map((guest) => guest.id)
+        );
+
+        setMessage(`All checked-in guests are selected for ${selectedPrize.prize_name}.`);
+    }
+
+    async function clearSelectedGuestsForPrize() {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        await updatePrizeEligibleIds(selectedPrize.id, []);
+
+        setMessage(
+            `Eligibility restriction cleared. ${selectedPrize.prize_name} is now open to all checked-in guests.`
+        );
+    }
+
     async function saveWinner(winner: CheckedInGuest) {
-        const cleanPrizeName =
-            prizeName.trim() || `Prize ${latestWinners.length + 1}`;
+        if (!selectedPrize) {
+            setMessage("Select a prize before spinning.");
+            return;
+        }
 
         const { data, error } = await supabase
             .from("lucky_draw_winners")
             .insert({
                 event_id: eventId,
                 registration_id: winner.id,
+                prize_id: selectedPrize.id,
                 winner_name: winner.full_name || "Unnamed Guest",
                 winner_email: winner.email || "",
-                prize_name: cleanPrizeName,
+                prize_name: selectedPrize.prize_name,
                 draw_round: latestWinners.length + 1,
             })
             .select("*")
@@ -108,7 +309,7 @@ export default function LuckyDrawWheel({
 
         setWinners((current) => [data as Winner, ...current]);
         setSelectedWinner(winner);
-        setMessage(`${winner.full_name || "Guest"} won ${cleanPrizeName}.`);
+        setMessage(`${winner.full_name || "Guest"} won ${selectedPrize.prize_name}.`);
     }
 
     async function spinWheel() {
@@ -117,8 +318,15 @@ export default function LuckyDrawWheel({
         setMessage("");
         setSelectedWinner(null);
 
+        if (!selectedPrize) {
+            setMessage("Create or select a prize first.");
+            return;
+        }
+
         if (eligibleGuests.length === 0) {
-            setMessage("No eligible checked-in guests available for the lucky draw.");
+            setMessage(
+                "No eligible checked-in guests available for this prize. Check the selected group or previous winners."
+            );
             return;
         }
 
@@ -176,18 +384,95 @@ export default function LuckyDrawWheel({
                         </div>
 
                         <h2 className="mt-4 text-2xl font-black text-slate-950">
-                            Spin for a Winner
+                            Spin for Selected Prize
                         </h2>
 
                         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                            Only checked-in guests are loaded into the wheel. The winner is
-                            saved immediately after the spin.
+                            The wheel only includes checked-in guests who are eligible for the
+                            selected prize.
                         </p>
                     </div>
 
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-600">
                         {eligibleGuests.length} eligible
                     </div>
+                </div>
+
+                <div className="mt-6 rounded-[2rem] border border-slate-200 bg-slate-50 p-5">
+                    <p className="mb-2 text-sm font-black text-slate-700">
+                        Selected Prize
+                    </p>
+
+                    <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                        <select
+                            value={selectedPrizeId}
+                            onChange={(event) => {
+                                setSelectedPrizeId(event.target.value);
+                                setSelectedWinner(null);
+                                setMessage("");
+                            }}
+                            className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
+                        >
+                            <option value="">Select prize</option>
+                            {prizes.map((prize) => (
+                                <option key={prize.id} value={prize.id}>
+                                    {prize.prize_order}. {prize.prize_name}
+                                </option>
+                            ))}
+                        </select>
+
+                        {selectedPrize && (
+                            <button
+                                type="button"
+                                onClick={() => deletePrize(selectedPrize.id)}
+                                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-red-50 px-5 text-sm font-black text-red-600 transition hover:bg-red-100"
+                            >
+                                <Trash2 size={16} />
+                                Delete
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                        <input
+                            value={newPrizeName}
+                            onChange={(event) => setNewPrizeName(event.target.value)}
+                            placeholder="Add prize e.g. Grand Prize, 1st Prize, Top 3 Prize"
+                            className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5]"
+                        />
+
+                        <button
+                            type="button"
+                            onClick={addPrize}
+                            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-black text-white transition hover:bg-[#4F46E5]"
+                        >
+                            <Plus size={16} />
+                            Add Prize
+                        </button>
+                    </div>
+
+                    {selectedPrize && (
+                        <div className="mt-4 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-600">
+                            {selectedPrizeEligibleIds.length > 0 ? (
+                                <p>
+                                    This prize is restricted to{" "}
+                                    <span className="font-black text-[#4F46E5]">
+                                        {selectedPrizeEligibleIds.length}
+                                    </span>{" "}
+                                    selected checked-in guest
+                                    {selectedPrizeEligibleIds.length === 1 ? "" : "s"}.
+                                </p>
+                            ) : (
+                                <p>
+                                    No restriction set. This prize is open to{" "}
+                                    <span className="font-black text-[#4F46E5]">
+                                        all checked-in guests
+                                    </span>
+                                    .
+                                </p>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-8 flex flex-col items-center">
@@ -209,34 +494,15 @@ export default function LuckyDrawWheel({
                         </div>
                     </div>
 
-                    <div className="mt-8 grid w-full gap-4 md:grid-cols-[1fr_auto]">
-                        <input
-                            value={prizeName}
-                            onChange={(event) => setPrizeName(event.target.value)}
-                            placeholder="Prize name e.g. $50 Voucher, Grand Prize"
-                            className="h-14 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
-                        />
-
-                        <button
-                            type="button"
-                            onClick={spinWheel}
-                            disabled={spinning || eligibleGuests.length === 0}
-                            className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-8 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            <RotateCw size={18} className={spinning ? "animate-spin" : ""} />
-                            {spinning ? "Spinning..." : "Spin Wheel"}
-                        </button>
-                    </div>
-
-                    <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-2xl bg-slate-50 px-5 py-4 text-sm font-bold text-slate-600">
-                        <input
-                            type="checkbox"
-                            checked={allowRepeatWinners}
-                            onChange={(event) => setAllowRepeatWinners(event.target.checked)}
-                            className="h-5 w-5 accent-[#4F46E5]"
-                        />
-                        Allow previous winners to be drawn again
-                    </label>
+                    <button
+                        type="button"
+                        onClick={spinWheel}
+                        disabled={spinning || !selectedPrize || eligibleGuests.length === 0}
+                        className="mt-8 inline-flex h-14 w-full max-w-md items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-8 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <RotateCw size={18} className={spinning ? "animate-spin" : ""} />
+                        {spinning ? "Spinning..." : "Spin Selected Prize"}
+                    </button>
 
                     {message && (
                         <div className="mt-5 w-full rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-5 text-sm font-bold text-[#4F46E5]">
@@ -244,7 +510,7 @@ export default function LuckyDrawWheel({
                         </div>
                     )}
 
-                    {selectedWinner && (
+                    {selectedWinner && selectedPrize && (
                         <div className="mt-6 w-full rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6 text-center">
                             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-emerald-600 shadow-sm">
                                 <Trophy size={32} />
@@ -261,6 +527,10 @@ export default function LuckyDrawWheel({
                             <p className="mt-2 font-semibold text-emerald-700">
                                 {selectedWinner.email || "No email"}
                             </p>
+
+                            <p className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700">
+                                {selectedPrize.prize_name}
+                            </p>
                         </div>
                     )}
                 </div>
@@ -272,56 +542,110 @@ export default function LuckyDrawWheel({
                         <div>
                             <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                                 <Users size={16} />
-                                Draw Pool
+                                Prize Eligibility
                             </div>
 
                             <h2 className="mt-4 text-2xl font-black text-slate-950">
-                                Checked-In Guests
+                                Select Eligible Guests
                             </h2>
 
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                                These guests are automatically pulled from successful check-ins.
+                                Select who can win the currently selected prize. Only checked-in
+                                guests are shown.
                             </p>
                         </div>
 
                         <span className="rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                            {guests.length}
+                            {selectedPrizeEligibleIds.length || "All"}
                         </span>
                     </div>
 
-                    <div className="mt-6 max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                        {guests.length > 0 ? (
-                            guests.map((guest) => {
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        <button
+                            type="button"
+                            onClick={selectAllGuestsForPrize}
+                            disabled={!selectedPrize || guests.length === 0}
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <Check size={16} />
+                            Select All
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={clearSelectedGuestsForPrize}
+                            disabled={!selectedPrize}
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 text-sm font-black text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            Clear Restriction
+                        </button>
+                    </div>
+
+                    <div className="relative mt-5">
+                        <Search
+                            size={17}
+                            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+
+                        <input
+                            value={guestSearch}
+                            onChange={(event) => setGuestSearch(event.target.value)}
+                            placeholder="Search checked-in guests..."
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                        />
+                    </div>
+
+                    <div className="mt-6 max-h-[460px] space-y-3 overflow-y-auto pr-1">
+                        {!selectedPrize ? (
+                            <EmptyBox text="Create or select a prize before choosing eligible guests." />
+                        ) : filteredGuests.length > 0 ? (
+                            filteredGuests.map((guest) => {
+                                const selected =
+                                    selectedPrizeEligibleIds.length === 0
+                                        ? false
+                                        : selectedPrizeEligibleIds.includes(guest.id);
+
                                 const alreadyWon = winnerRegistrationIds.has(guest.id);
 
                                 return (
-                                    <div
+                                    <button
                                         key={guest.id}
-                                        className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4"
+                                        type="button"
+                                        onClick={() => toggleGuestEligibility(guest.id)}
+                                        className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition ${selected
+                                                ? "border-[#4F46E5] bg-[#F7F5FF]"
+                                                : "border-slate-100 bg-slate-50 hover:bg-[#F7F5FF]"
+                                            }`}
                                     >
                                         <div>
                                             <p className="font-black text-slate-950">
                                                 {guest.full_name || "Unnamed Guest"}
                                             </p>
+
                                             <p className="text-sm font-semibold text-slate-500">
                                                 {guest.email || "No email"}
                                             </p>
+
+                                            {alreadyWon && (
+                                                <p className="mt-1 text-xs font-black text-amber-600">
+                                                    Already won before
+                                                </p>
+                                            )}
                                         </div>
 
-                                        {alreadyWon ? (
-                                            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
-                                                Won
-                                            </span>
-                                        ) : (
-                                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                                                Eligible
-                                            </span>
-                                        )}
-                                    </div>
+                                        <div
+                                            className={`flex h-8 w-8 items-center justify-center rounded-full ${selected
+                                                    ? "bg-[#4F46E5] text-white"
+                                                    : "bg-white text-slate-300"
+                                                }`}
+                                        >
+                                            <Check size={16} />
+                                        </div>
+                                    </button>
                                 );
                             })
                         ) : (
-                            <EmptyBox text="No checked-in guests yet. Once guests are scanned in, they will appear here automatically." />
+                            <EmptyBox text="No checked-in guests found." />
                         )}
                     </div>
                 </div>
@@ -339,7 +663,7 @@ export default function LuckyDrawWheel({
                             </h2>
 
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                                Winners are saved so the draw can continue without repeating.
+                                Winners are saved so they are excluded from future draws.
                             </p>
                         </div>
 
@@ -412,7 +736,7 @@ function WheelSvg({
                 <div>
                     <Users className="mx-auto text-slate-400" size={42} />
                     <p className="mt-3 max-w-[220px] text-sm font-black text-slate-500">
-                        No checked-in guests yet
+                        No eligible guests
                     </p>
                 </div>
             </div>
