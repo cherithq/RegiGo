@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type ToggleField =
+    | "enable_ticket_types"
+    | "enable_tables"
+    | "enable_floor_plan"
+    | "enable_speakers"
+    | "enable_agenda"
+    | "enable_lucky_draw";
+
 export default function EventForm() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
@@ -22,16 +30,24 @@ export default function EventForm() {
         max_guests: "",
         enable_ticket_types: false,
         enable_tables: false,
+        enable_floor_plan: false,
+        enable_speakers: false,
+        enable_agenda: false,
+        enable_lucky_draw: false,
     });
 
     function handleChange(
         e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
     ) {
         const { name, value } = e.target;
-        setForm({ ...form, [name]: value });
+
+        setForm((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
     }
 
-    function handleToggle(name: "enable_ticket_types" | "enable_tables") {
+    function handleToggle(name: ToggleField) {
         setForm((prev) => ({
             ...prev,
             [name]: !prev[name],
@@ -95,8 +111,13 @@ export default function EventForm() {
                     description: form.description,
                     max_guests: Number(form.max_guests || 0),
                     status: "draft",
+
                     enable_ticket_types: form.enable_ticket_types,
                     enable_tables: form.enable_tables,
+                    enable_floor_plan: form.enable_floor_plan,
+                    enable_speakers: form.enable_speakers,
+                    enable_agenda: form.enable_agenda,
+                    enable_lucky_draw: form.enable_lucky_draw,
                 })
                 .select()
                 .single();
@@ -249,9 +270,49 @@ export default function EventForm() {
                 <div className="mt-4">
                     <ToggleSwitch
                         title="Enable Tables"
-                        description="Turn on if guests must select a table during registration."
+                        description="Turn on if this event uses seating or table assignment."
                         checked={form.enable_tables}
                         onChange={() => handleToggle("enable_tables")}
+                    />
+                </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="mb-4 text-lg font-bold text-slate-900">
+                    Event Module Options
+                </h3>
+
+                <ToggleSwitch
+                    title="Enable Floor Plan"
+                    description="Turn on if this event needs a floor plan module."
+                    checked={form.enable_floor_plan}
+                    onChange={() => handleToggle("enable_floor_plan")}
+                />
+
+                <div className="mt-4">
+                    <ToggleSwitch
+                        title="Enable Speakers"
+                        description="Turn on if this event has speakers, hosts, panelists, or presenters."
+                        checked={form.enable_speakers}
+                        onChange={() => handleToggle("enable_speakers")}
+                    />
+                </div>
+
+                <div className="mt-4">
+                    <ToggleSwitch
+                        title="Enable Agenda"
+                        description="Turn on if this event needs an agenda or programme schedule."
+                        checked={form.enable_agenda}
+                        onChange={() => handleToggle("enable_agenda")}
+                    />
+                </div>
+
+                <div className="mt-4">
+                    <ToggleSwitch
+                        title="Enable Lucky Draw"
+                        description="Turn on if this event will use the lucky draw wheel."
+                        checked={form.enable_lucky_draw}
+                        onChange={() => handleToggle("enable_lucky_draw")}
                     />
                 </div>
             </div>
