@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ArrowLeft, Settings2 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EventSettingsForm from "@/components/forms/EventSettingsForm";
@@ -19,7 +19,7 @@ export default async function EventSettingsPage({
     } = await supabaseServer.auth.getUser();
 
     if (!user) {
-        redirect("/auth/login");
+        redirect("/login");
     }
 
     const { data: profile } = await supabaseServer
@@ -29,23 +29,24 @@ export default async function EventSettingsPage({
         .maybeSingle();
 
     const role = profile?.role;
-    const canAccessSettings = role === "admin" || role === "organizer";
-    const canManageModules = role === "admin";
 
-    if (!canAccessSettings) {
-        notFound();
+    const isAdmin = role === "admin";
+    const isOrganizer = role === "organizer" || role === "organiser";
+
+    if (!isAdmin && !isOrganizer) {
+        redirect("/dashboard");
     }
 
     const { data: event } = await supabaseServer
         .from("events")
         .select("*")
         .eq("id", eventId)
-        .single();
+        .maybeSingle();
 
     if (!event) {
         return (
             <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-5xl rounded-[2rem] bg-white p-8 shadow-sm">
+                <div className="mx-auto max-w-6xl rounded-[2rem] bg-white p-8 shadow-sm">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
@@ -81,15 +82,13 @@ export default async function EventSettingsPage({
                             <p className="text-sm font-black uppercase tracking-[0.25em] text-[#4F46E5]">
                                 Event Settings
                             </p>
+
                             <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950">
-                                {canManageModules
-                                    ? "Module & Registration Settings"
-                                    : "Registration Page Status"}
+                                Settings
                             </h1>
+
                             <p className="mt-1 text-slate-600">
-                                {canManageModules
-                                    ? `Control organiser module visibility and registration status for ${eventName}.`
-                                    : `Open or close public registration for ${eventName}.`}
+                                Manage settings for {eventName}.
                             </p>
                         </div>
                     </div>
@@ -98,7 +97,7 @@ export default async function EventSettingsPage({
                         <EventSettingsForm
                             event={event}
                             settings={settings}
-                            canManageModules={canManageModules}
+                            canManageModules={isAdmin}
                         />
                     </div>
                 </section>
