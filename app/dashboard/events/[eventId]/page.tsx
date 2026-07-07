@@ -358,6 +358,13 @@ export default async function EventOverviewPage({
                             href={`/dashboard/events/${eventId}/settings`}
                             icon={Settings}
                         />
+
+                        <ModuleCard
+                            title="Lucky Draw Settings"
+                            description="Control lucky draw configurations and rules."
+                            href={`/dashboard/events/${eventId}/lucky-draw/settings`}
+                            icon={Settings}
+                        />
                     </WorkspaceSection>
                 )}
 

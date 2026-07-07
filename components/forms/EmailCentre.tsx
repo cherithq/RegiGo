@@ -17,10 +17,13 @@ Date: {{event_date}}
 Time: {{event_time}}
 Venue: {{venue}}
 
-Please show your QR pass during check-in.
+Your QR Code:
+{{qr_code}}
+
+Please show your QR code during check-in.
 
 Regards,
-{{company}}`,
+RegiGo`,
     },
     {
         template_name: "Event Reminder",
@@ -36,10 +39,10 @@ Venue: {{venue}}
 
 Your table: {{table}}
 
-Please bring your QR pass.
+Please bring your QR code.
 
 Regards,
-{{company}}`,
+RegiGo`,
     },
     {
         template_name: "Event Update",
@@ -55,7 +58,7 @@ Time: {{event_time}}
 Venue: {{venue}}
 
 Regards,
-{{company}}`,
+RegiGo`,
     },
     {
         template_name: "Thank You Email",
@@ -68,7 +71,7 @@ Thank you for attending {{event_name}}.
 We hope you enjoyed the event.
 
 Regards,
-{{company}}`,
+RegiGo`,
     },
 ];
 
@@ -79,24 +82,53 @@ export default function EmailCentre({
     event: any;
     templates: any[];
 }) {
-    const [items, setItems] = useState<any[]>(templates);
+    const [items, setItems] = useState<any[]>(templates || []);
     const [selected, setSelected] = useState<any>(
-        templates[0] || starterTemplates[0]
+        templates?.[0] || starterTemplates[0]
     );
     const [message, setMessage] = useState("");
+
+    function updateItems(template: any) {
+        setItems((current) => {
+            const existsById = current.some((item) => item.id === template.id);
+
+            if (existsById) {
+                return current.map((item) =>
+                    item.id === template.id ? template : item
+                );
+            }
+
+            const existsByType = current.some(
+                (item) => item.email_type === template.email_type
+            );
+
+            if (existsByType) {
+                return current.map((item) =>
+                    item.email_type === template.email_type ? template : item
+                );
+            }
+
+            return [template, ...current];
+        });
+    }
 
     async function addStarterTemplate(template: any) {
         setMessage("");
 
         const { data, error } = await supabase
             .from("email_templates")
-            .insert({
-                event_id: event.id,
-                template_name: template.template_name,
-                email_type: template.email_type,
-                subject: template.subject,
-                body: template.body,
-            })
+            .upsert(
+                {
+                    event_id: event.id,
+                    template_name: template.template_name,
+                    email_type: template.email_type,
+                    subject: template.subject,
+                    body: template.body,
+                },
+                {
+                    onConflict: "event_id,email_type",
+                }
+            )
             .select()
             .single();
 
@@ -105,12 +137,33 @@ export default function EmailCentre({
             return;
         }
 
-        setItems([data, ...items]);
+        updateItems(data);
         setSelected(data);
+        setMessage("Template saved.");
     }
 
     async function saveTemplate() {
         setMessage("");
+
+        if (!selected.template_name) {
+            setMessage("Template name is required.");
+            return;
+        }
+
+        if (!selected.email_type) {
+            setMessage("Email type is required.");
+            return;
+        }
+
+        if (!selected.subject) {
+            setMessage("Subject is required.");
+            return;
+        }
+
+        if (!selected.body) {
+            setMessage("Body is required.");
+            return;
+        }
 
         if (selected.id) {
             const { data, error } = await supabase
@@ -130,7 +183,7 @@ export default function EmailCentre({
                 return;
             }
 
-            setItems(items.map((item) => (item.id === data.id ? data : item)));
+            updateItems(data);
             setSelected(data);
             setMessage("Template updated.");
             return;
@@ -138,13 +191,18 @@ export default function EmailCentre({
 
         const { data, error } = await supabase
             .from("email_templates")
-            .insert({
-                event_id: event.id,
-                template_name: selected.template_name,
-                email_type: selected.email_type || "custom",
-                subject: selected.subject,
-                body: selected.body,
-            })
+            .upsert(
+                {
+                    event_id: event.id,
+                    template_name: selected.template_name,
+                    email_type: selected.email_type || "custom",
+                    subject: selected.subject,
+                    body: selected.body,
+                },
+                {
+                    onConflict: "event_id,email_type",
+                }
+            )
             .select()
             .single();
 
@@ -153,16 +211,19 @@ export default function EmailCentre({
             return;
         }
 
-        setItems([data, ...items]);
+        updateItems(data);
         setSelected(data);
-        setMessage("Template created.");
+        setMessage("Template saved.");
     }
 
     async function deleteTemplate(id: string) {
         const ok = confirm("Delete this email template?");
         if (!ok) return;
 
-        const { error } = await supabase.from("email_templates").delete().eq("id", id);
+        const { error } = await supabase
+            .from("email_templates")
+            .delete()
+            .eq("id", id);
 
         if (error) {
             setMessage(error.message);
@@ -172,16 +233,22 @@ export default function EmailCentre({
         const updated = items.filter((item) => item.id !== id);
         setItems(updated);
         setSelected(updated[0] || starterTemplates[0]);
+        setMessage("Template deleted.");
     }
 
     const preview = selected.body
         ?.replaceAll("{{name}}", "Phoebe Liu")
+        .replaceAll("{{full_name}}", "Phoebe Liu")
+        .replaceAll("{{email}}", "phoebe@example.com")
         .replaceAll("{{event_name}}", event.event_name || "Event Name")
         .replaceAll("{{event_date}}", event.event_date || "Event Date")
         .replaceAll("{{event_time}}", event.event_time || "Event Time")
         .replaceAll("{{venue}}", event.venue || "Event Venue")
         .replaceAll("{{table}}", "Table 1")
-        .replaceAll("{{company}}", "RegiGo Demo Company");
+        .replaceAll("{{company}}", "RegiGo")
+        .replaceAll("{{qr_link}}", "https://example.com/qr-code.png")
+        .replaceAll("{{qr_code}}", "[QR code image will appear here]")
+        .replaceAll("{{qr_image}}", "[QR code image will appear here]");
 
     return (
         <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -214,8 +281,12 @@ export default function EmailCentre({
                                     : "bg-white hover:bg-indigo-50"
                                 }`}
                         >
-                            <p className="font-black">{template.template_name}</p>
-                            <p className="mt-1 text-xs opacity-80">{template.email_type}</p>
+                            <p className="font-black">
+                                {template.template_name}
+                            </p>
+                            <p className="mt-1 text-xs opacity-80">
+                                {template.email_type}
+                            </p>
                         </button>
                     ))}
 
@@ -250,20 +321,30 @@ export default function EmailCentre({
                             label="Template Name"
                             value={selected.template_name || ""}
                             onChange={(value) =>
-                                setSelected({ ...selected, template_name: value })
+                                setSelected({
+                                    ...selected,
+                                    template_name: value,
+                                })
                             }
                         />
 
                         <div>
-                            <label className="mb-2 block font-semibold">Email Type</label>
+                            <label className="mb-2 block font-semibold">
+                                Email Type
+                            </label>
                             <select
                                 value={selected.email_type || "custom"}
                                 onChange={(e) =>
-                                    setSelected({ ...selected, email_type: e.target.value })
+                                    setSelected({
+                                        ...selected,
+                                        email_type: e.target.value,
+                                    })
                                 }
                                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3"
                             >
-                                <option value="confirmation">Confirmation</option>
+                                <option value="confirmation">
+                                    Confirmation
+                                </option>
                                 <option value="qr_pass">QR Pass</option>
                                 <option value="reminder">Reminder</option>
                                 <option value="update">Event Update</option>
@@ -277,18 +358,28 @@ export default function EmailCentre({
                         <Input
                             label="Subject"
                             value={selected.subject || ""}
-                            onChange={(value) => setSelected({ ...selected, subject: value })}
+                            onChange={(value) =>
+                                setSelected({
+                                    ...selected,
+                                    subject: value,
+                                })
+                            }
                         />
                     </div>
 
                     <div className="mt-5">
-                        <label className="mb-2 block font-semibold">Body</label>
+                        <label className="mb-2 block font-semibold">
+                            Body
+                        </label>
                         <textarea
                             value={selected.body || ""}
                             onChange={(e) =>
-                                setSelected({ ...selected, body: e.target.value })
+                                setSelected({
+                                    ...selected,
+                                    body: e.target.value,
+                                })
                             }
-                            rows={10}
+                            rows={12}
                             className="w-full rounded-xl border border-slate-300 px-4 py-3"
                         />
                     </div>
@@ -322,11 +413,17 @@ export default function EmailCentre({
                     <h2 className="text-2xl font-black">Preview</h2>
 
                     <div className="mt-5 rounded-2xl bg-[#F7F5FF] p-6">
-                        <p className="text-sm font-bold text-slate-500">Subject</p>
+                        <p className="text-sm font-bold text-slate-500">
+                            Subject
+                        </p>
                         <p className="mt-1 font-black">
                             {(selected.subject || "")
-                                .replaceAll("{{event_name}}", event.event_name || "Event Name")
-                                .replaceAll("{{name}}", "Phoebe Liu")}
+                                .replaceAll(
+                                    "{{event_name}}",
+                                    event.event_name || "Event Name"
+                                )
+                                .replaceAll("{{name}}", "Phoebe Liu")
+                                .replaceAll("{{full_name}}", "Phoebe Liu")}
                         </p>
 
                         <div className="mt-5 whitespace-pre-wrap rounded-2xl bg-white p-5 leading-7 text-slate-700">
@@ -336,17 +433,22 @@ export default function EmailCentre({
                 </div>
 
                 <div className="rounded-[2rem] bg-white p-6 shadow-xl">
-                    <h2 className="text-2xl font-black">Available Variables</h2>
+                    <h2 className="text-2xl font-black">
+                        Available Variables
+                    </h2>
 
                     <div className="mt-4 flex flex-wrap gap-2">
                         {[
                             "{{name}}",
+                            "{{full_name}}",
+                            "{{email}}",
                             "{{event_name}}",
                             "{{event_date}}",
                             "{{event_time}}",
                             "{{venue}}",
                             "{{table}}",
                             "{{company}}",
+                            "{{qr_code}}",
                             "{{qr_link}}",
                         ].map((item) => (
                             <span
@@ -357,6 +459,12 @@ export default function EmailCentre({
                             </span>
                         ))}
                     </div>
+
+                    <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
+                        Use <b>{"{{qr_code}}"}</b> in the email body where you
+                        want the QR image to appear. If the guest has a QR image
+                        URL saved, the email will show the QR code image.
+                    </p>
                 </div>
             </section>
         </div>

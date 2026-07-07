@@ -36,6 +36,14 @@ type Prize = {
     updated_at?: string | null;
 };
 
+type DisplaySettings = {
+    primary_color?: string | null;
+    secondary_color?: string | null;
+    background_color?: string | null;
+    background_image_url?: string | null;
+    background_image_opacity?: number | null;
+};
+
 const wheelColors = [
     "#4F46E5",
     "#EC4899",
@@ -53,13 +61,25 @@ export default function LuckyDrawAudienceDisplay({
     guests,
     initialWinners,
     initialPrizes,
+    displaySettings,
 }: {
     eventId: string;
     eventName: string;
     guests: CheckedInGuest[];
     initialWinners: Winner[];
     initialPrizes: Prize[];
+    displaySettings?: DisplaySettings | null;
 }) {
+    const settings = {
+        primary_color: displaySettings?.primary_color || "#4F46E5",
+        secondary_color: displaySettings?.secondary_color || "#EC4899",
+        background_color: displaySettings?.background_color || "#111827",
+        background_image_url: displaySettings?.background_image_url || "",
+        background_image_opacity: Number(
+            displaySettings?.background_image_opacity ?? 0.35
+        ),
+    };
+
     const sortedPrizes = useMemo(() => {
         return [...initialPrizes].sort(
             (a, b) => Number(a.prize_order || 0) - Number(b.prize_order || 0)
@@ -159,10 +179,11 @@ export default function LuckyDrawAudienceDisplay({
             return;
         }
 
-        const { data: latestWinnerRows, error: latestWinnerError } = await supabase
-            .from("lucky_draw_winners")
-            .select("*")
-            .eq("event_id", eventId);
+        const { data: latestWinnerRows, error: latestWinnerError } =
+            await supabase
+                .from("lucky_draw_winners")
+                .select("*")
+                .eq("event_id", eventId);
 
         if (latestWinnerError) {
             setMessage(latestWinnerError.message);
@@ -188,7 +209,9 @@ export default function LuckyDrawAudienceDisplay({
             return;
         }
 
-        const winnerIndex = Math.floor(Math.random() * freshEligibleGuests.length);
+        const winnerIndex = Math.floor(
+            Math.random() * freshEligibleGuests.length
+        );
         const winner = freshEligibleGuests[winnerIndex];
 
         const segmentAngle = 360 / freshEligibleGuests.length;
@@ -210,127 +233,166 @@ export default function LuckyDrawAudienceDisplay({
     }
 
     return (
-        <div className="grid w-full items-center gap-10 xl:grid-cols-[1fr_0.7fr]">
-            <section className="flex flex-col items-center">
-                {sortedPrizes.length > 0 && (
-                    <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
-                        <p className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-white/50">
-                            Current Prize
-                        </p>
+        <div
+            className="relative min-h-screen w-full overflow-hidden p-8 text-white"
+            style={{
+                background: settings.background_color,
+            }}
+        >
+            {settings.background_image_url && (
+                <img
+                    src={settings.background_image_url}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                    style={{
+                        opacity: settings.background_image_opacity,
+                    }}
+                />
+            )}
 
-                        <select
-                            value={selectedPrizeId}
-                            onChange={(event) => {
-                                setSelectedPrizeId(event.target.value);
-                                setSelectedWinner(null);
-                                setMessage("");
-                            }}
-                            className="h-16 w-full rounded-2xl border border-white/10 bg-slate-900 px-5 text-xl font-black text-white outline-none"
-                        >
-                            {sortedPrizes.map((prize) => (
-                                <option key={prize.id} value={prize.id}>
-                                    {prize.prize_order}. {prize.prize_name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+            <div className="absolute inset-0 bg-black/40" />
 
-                {sortedPrizes.length === 0 && (
-                    <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 text-center backdrop-blur">
-                        <p className="text-sm font-black uppercase tracking-[0.25em] text-white/50">
-                            Current Prize
-                        </p>
+            <div className="relative z-10 mx-auto flex min-h-screen max-w-[1600px] items-center pt-20">
+                <div className="grid w-full items-center gap-10 xl:grid-cols-[1fr_0.7fr]">
+                    <section className="flex flex-col items-center">
+                        {sortedPrizes.length > 0 && (
+                            <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
+                                <p className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-white/50">
+                                    Current Prize
+                                </p>
 
-                        <p className="mt-2 text-3xl font-black text-white">Lucky Draw</p>
-                    </div>
-                )}
+                                <select
+                                    value={selectedPrizeId}
+                                    onChange={(event) => {
+                                        setSelectedPrizeId(event.target.value);
+                                        setSelectedWinner(null);
+                                        setMessage("");
+                                    }}
+                                    className="h-16 w-full rounded-2xl border border-white/10 bg-slate-900 px-5 text-xl font-black text-white outline-none"
+                                >
+                                    {sortedPrizes.map((prize) => (
+                                        <option key={prize.id} value={prize.id}>
+                                            {prize.prize_order}. {prize.prize_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
-                <div className="relative flex h-[420px] w-[420px] items-center justify-center sm:h-[560px] sm:w-[560px]">
-                    <div className="absolute -top-2 z-20 h-0 w-0 border-l-[24px] border-r-[24px] border-t-[46px] border-l-transparent border-r-transparent border-t-white drop-shadow-2xl" />
+                        {sortedPrizes.length === 0 && (
+                            <div className="mb-8 w-full max-w-3xl rounded-[2rem] border border-white/10 bg-white/10 p-5 text-center backdrop-blur">
+                                <p className="text-sm font-black uppercase tracking-[0.25em] text-white/50">
+                                    Current Prize
+                                </p>
 
-                    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#4F46E5]/40 to-[#EC4899]/40 blur-3xl" />
+                                <p className="mt-2 text-3xl font-black text-white">
+                                    Lucky Draw
+                                </p>
+                            </div>
+                        )}
 
-                    <div className="relative flex h-full w-full items-center justify-center rounded-full border-[12px] border-white bg-white shadow-2xl">
-                        <WheelSvg
-                            guests={eligibleGuests}
-                            rotation={rotation}
-                            spinning={spinning}
-                        />
+                        <div className="relative flex h-[420px] w-[420px] items-center justify-center sm:h-[560px] sm:w-[560px]">
+                            <div className="absolute -top-2 z-20 h-0 w-0 border-l-[24px] border-r-[24px] border-t-[46px] border-l-transparent border-r-transparent border-t-white drop-shadow-2xl" />
 
-                        <div className="absolute flex h-28 w-28 items-center justify-center rounded-full border-8 border-white bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-xl sm:h-36 sm:w-36">
-                            <Gift size={42} />
+                            <div
+                                className="absolute inset-0 rounded-full blur-3xl"
+                                style={{
+                                    background: `linear-gradient(135deg, ${settings.primary_color}66, ${settings.secondary_color}66)`,
+                                }}
+                            />
+
+                            <div className="relative flex h-full w-full items-center justify-center rounded-full border-[12px] border-white bg-white shadow-2xl">
+                                <WheelSvg
+                                    guests={eligibleGuests}
+                                    rotation={rotation}
+                                    spinning={spinning}
+                                />
+
+                                <div
+                                    className="absolute flex h-28 w-28 items-center justify-center rounded-full border-8 border-white text-white shadow-xl sm:h-36 sm:w-36"
+                                    style={{
+                                        background: `linear-gradient(135deg, ${settings.primary_color}, ${settings.secondary_color})`,
+                                    }}
+                                >
+                                    <Gift size={42} />
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                <button
-                    type="button"
-                    onClick={spinWheel}
-                    disabled={
-                        spinning || guests.length === 0 || eligibleGuests.length === 0
-                    }
-                    className="mt-10 inline-flex h-16 min-w-[280px] items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-10 text-xl font-black text-white shadow-2xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    <RotateCw size={24} className={spinning ? "animate-spin" : ""} />
-                    {spinning ? "Spinning..." : "Spin Wheel"}
-                </button>
+                        <button
+                            type="button"
+                            onClick={spinWheel}
+                            disabled={
+                                spinning ||
+                                guests.length === 0 ||
+                                eligibleGuests.length === 0
+                            }
+                            className="mt-10 inline-flex h-16 min-w-[280px] items-center justify-center gap-3 rounded-2xl px-10 text-xl font-black text-white shadow-2xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{
+                                background: `linear-gradient(135deg, ${settings.primary_color}, ${settings.secondary_color})`,
+                            }}
+                        >
+                            <RotateCw
+                                size={24}
+                                className={spinning ? "animate-spin" : ""}
+                            />
+                            {spinning ? "Spinning..." : "Spin Wheel"}
+                        </button>
 
-                {message && (
-                    <p className="mt-5 rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white/80">
-                        {message}
-                    </p>
-                )}
-            </section>
+                        {message && (
+                            <p className="mt-5 rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white/80">
+                                {message}
+                            </p>
+                        )}
+                    </section>
 
-            <section className="rounded-[2.5rem] border border-white/10 bg-white/10 p-8 text-center shadow-2xl backdrop-blur">
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2rem] bg-white text-[#4F46E5] shadow-xl">
-                    {selectedWinner ? <Trophy size={42} /> : <Sparkles size={42} />}
-                </div>
+                    <section className="rounded-[2.5rem] border border-white/10 bg-white/10 p-8 text-center shadow-2xl backdrop-blur">
+                        <div
+                            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2rem] bg-white shadow-xl"
+                            style={{
+                                color: settings.primary_color,
+                            }}
+                        >
+                            {selectedWinner ? (
+                                <Trophy size={42} />
+                            ) : (
+                                <Sparkles size={42} />
+                            )}
+                        </div>
 
-                <p className="mt-8 text-sm font-black uppercase tracking-[0.35em] text-white/50">
-                    {selectedWinner ? "Winner" : "Ready to Draw"}
-                </p>
-
-                {selectedWinner ? (
-                    <>
-                        <h2 className="mt-4 text-5xl font-black tracking-tight text-white md:text-6xl">
-                            {selectedWinner.full_name || "Unnamed Guest"}
-                        </h2>
-
-                        <p className="mt-6 inline-flex rounded-full bg-white px-6 py-3 text-lg font-black text-[#4F46E5]">
-                            {effectivePrizeName}
+                        <p className="mt-8 text-sm font-black uppercase tracking-[0.35em] text-white/50">
+                            {selectedWinner ? "Winner" : "Ready to Draw"}
                         </p>
-                    </>
-                ) : (
-                    <>
-                        <h2 className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">
-                            {effectivePrizeName}
-                        </h2>
 
-                        <p className="mt-6 text-xl font-bold text-white/60">
-                            {eligibleGuests.length} eligible guest
-                            {eligibleGuests.length === 1 ? "" : "s"}
-                        </p>
-                    </>
-                )}
+                        {selectedWinner ? (
+                            <>
+                                <h2 className="mt-4 text-5xl font-black tracking-tight text-white md:text-6xl">
+                                    {selectedWinner.full_name || "Unnamed Guest"}
+                                </h2>
 
-                <div className="mt-10 grid gap-4 sm:grid-cols-2">
-                    <MiniStat label="Checked In" value={guests.length} />
-                    <MiniStat label="Eligible" value={eligibleGuests.length} />
+                                <p
+                                    className="mt-6 inline-flex rounded-full bg-white px-6 py-3 text-lg font-black"
+                                    style={{
+                                        color: settings.primary_color,
+                                    }}
+                                >
+                                    {effectivePrizeName}
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <h2 className="mt-4 text-4xl font-black tracking-tight text-white md:text-5xl">
+                                    {effectivePrizeName}
+                                </h2>
+
+                                <p className="mt-6 text-xl font-bold text-white/60">
+                                    Ready to spin the wheel
+                                </p>
+                            </>
+                        )}
+                    </section>
                 </div>
-            </section>
-        </div>
-    );
-}
-
-function MiniStat({ label, value }: { label: string; value: number }) {
-    return (
-        <div className="rounded-2xl bg-white/10 p-5">
-            <p className="text-sm font-black uppercase tracking-[0.2em] text-white/40">
-                {label}
-            </p>
-            <p className="mt-2 text-4xl font-black text-white">{value}</p>
+            </div>
         </div>
     );
 }
@@ -376,7 +438,12 @@ function WheelSvg({
         >
             {guests.length === 1 ? (
                 <>
-                    <circle cx={center} cy={center} r={radius} fill={wheelColors[0]} />
+                    <circle
+                        cx={center}
+                        cy={center}
+                        r={radius}
+                        fill={wheelColors[0]}
+                    />
                     <WheelLabel
                         x={center}
                         y={center - 135}
@@ -400,7 +467,13 @@ function WheelSvg({
                     return (
                         <g key={guest.id}>
                             <path
-                                d={describeSegment(center, center, radius, startAngle, endAngle)}
+                                d={describeSegment(
+                                    center,
+                                    center,
+                                    radius,
+                                    startAngle,
+                                    endAngle
+                                )}
                                 fill={wheelColors[index % wheelColors.length]}
                                 stroke="white"
                                 strokeWidth="3"

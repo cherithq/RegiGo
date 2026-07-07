@@ -26,12 +26,21 @@ type TicketResult = {
     event_id: string;
     registration_id: string;
     qr_token: string;
+    qr_code_url?: string | null;
     is_active?: boolean;
     registrations?: {
+        id?: string;
         full_name?: string;
         email?: string;
+        registration_status?: string;
     };
 };
+
+function isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value
+    );
+}
 
 function extractQrPayload(scannedValue: string): QrPayload {
     const rawValue = scannedValue.trim();
@@ -71,12 +80,6 @@ function extractQrPayload(scannedValue: string): QrPayload {
     };
 }
 
-function isUuid(value: string) {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        value
-    );
-}
-
 export default function CameraScanner({ eventId }: { eventId: string }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const controlsRef = useRef<IScannerControls | null>(null);
@@ -95,7 +98,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 .select("*, registrations(*)")
                 .eq("registration_id", payload.registrationId)
                 .eq("event_id", eventId)
-                .eq("is_active", true)
                 .maybeSingle();
 
             if (error) {
@@ -113,7 +115,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 .select("*, registrations(*)")
                 .eq("qr_token", payload.qrToken)
                 .eq("event_id", eventId)
-                .eq("is_active", true)
                 .maybeSingle();
 
             if (error) {
@@ -131,7 +132,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 .select("*, registrations(*)")
                 .eq("qr_token", payload.rawValue)
                 .eq("event_id", eventId)
-                .eq("is_active", true)
                 .maybeSingle();
 
             if (error) {
@@ -144,6 +144,30 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
         }
 
         return null;
+    }
+
+    async function syncCheckedInState(ticket: TicketResult) {
+        const { error: registrationUpdateError } = await supabase
+            .from("registrations")
+            .update({
+                registration_status: "checked_in",
+            })
+            .eq("id", ticket.registration_id);
+
+        if (registrationUpdateError) {
+            throw new Error(registrationUpdateError.message);
+        }
+
+        const { error: ticketUpdateError } = await supabase
+            .from("qr_tickets")
+            .update({
+                is_active: false,
+            })
+            .eq("id", ticket.id);
+
+        if (ticketUpdateError) {
+            throw new Error(ticketUpdateError.message);
+        }
     }
 
     async function handleScan(scannedValue: string) {
@@ -162,7 +186,7 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 setResult({
                     status: "invalid",
                     message:
-                        "Invalid QR code. This QR code does not match an active ticket for this event.",
+                        "Invalid QR code. This QR code does not match a ticket for this event.",
                     scannedValue: payload.rawValue,
                 });
                 return;
@@ -180,10 +204,18 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 throw new Error(existingError.message);
             }
 
-            if (existing) {
+            const alreadyCheckedIn =
+                Boolean(existing) ||
+                ticket.is_active === false ||
+                ticket.registrations?.registration_status === "checked_in" ||
+                ticket.registrations?.registration_status === "attended";
+
+            if (alreadyCheckedIn) {
+                await syncCheckedInState(ticket);
+
                 setResult({
                     status: "duplicate",
-                    message: "Guest already checked in.",
+                    message: "Guest already checked in. Check-in status has been synced.",
                     guestName: ticket.registrations?.full_name,
                     email: ticket.registrations?.email,
                     scannedValue: payload.rawValue,
@@ -203,6 +235,8 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             if (insertError) {
                 throw new Error(insertError.message);
             }
+
+            await syncCheckedInState(ticket);
 
             setResult({
                 status: "success",

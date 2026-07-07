@@ -13,7 +13,6 @@ export default async function EmailsPage({
     const {
         data: { user },
     } = await supabaseServer.auth.getUser();
-
     if (!user) {
         redirect("/login");
     }

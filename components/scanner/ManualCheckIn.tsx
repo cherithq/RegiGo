@@ -11,6 +11,11 @@ export default function ManualCheckIn({ eventId }: { eventId: string }) {
     async function searchGuest() {
         setMessage("");
 
+        if (!query.trim()) {
+            setMessage("Please enter a name or email.");
+            return;
+        }
+
         const { data, error } = await supabase
             .from("registrations")
             .select("*")
@@ -26,38 +31,83 @@ export default function ManualCheckIn({ eventId }: { eventId: string }) {
         setGuests(data || []);
     }
 
+    async function syncCheckedInState(guest: any) {
+        const { error: registrationUpdateError } = await supabase
+            .from("registrations")
+            .update({
+                registration_status: "checked_in",
+            })
+            .eq("id", guest.id);
+
+        if (registrationUpdateError) {
+            throw new Error(registrationUpdateError.message);
+        }
+
+        const { error: ticketUpdateError } = await supabase
+            .from("qr_tickets")
+            .update({
+                is_active: false,
+            })
+            .eq("registration_id", guest.id)
+            .eq("event_id", eventId);
+
+        if (ticketUpdateError) {
+            throw new Error(ticketUpdateError.message);
+        }
+    }
+
     async function checkInGuest(guest: any) {
         setMessage("");
 
-        const { data: existing } = await supabase
-            .from("check_ins")
-            .select("*")
-            .eq("registration_id", guest.id)
-            .eq("event_id", eventId)
-            .eq("scan_result", "checked_in")
-            .maybeSingle();
+        try {
+            const { data: existing, error: existingError } = await supabase
+                .from("check_ins")
+                .select("*")
+                .eq("registration_id", guest.id)
+                .eq("event_id", eventId)
+                .eq("scan_result", "checked_in")
+                .maybeSingle();
 
-        if (existing) {
-            setMessage(`${guest.full_name} is already checked in.`);
-            return;
+            if (existingError) {
+                throw new Error(existingError.message);
+            }
+
+            if (existing || guest.registration_status === "checked_in") {
+                await syncCheckedInState(guest);
+                setMessage(`${guest.full_name} is already checked in. Check-in status has been synced.`);
+                setGuests([]);
+                setQuery("");
+                return;
+            }
+
+            const { data: ticket } = await supabase
+                .from("qr_tickets")
+                .select("*")
+                .eq("registration_id", guest.id)
+                .eq("event_id", eventId)
+                .maybeSingle();
+
+            const { error: insertError } = await supabase.from("check_ins").insert({
+                registration_id: guest.id,
+                event_id: eventId,
+                qr_ticket_id: ticket?.id || null,
+                checked_in_by: "Admin",
+                device_name: "Manual Search",
+                scan_result: "checked_in",
+            });
+
+            if (insertError) {
+                throw new Error(insertError.message);
+            }
+
+            await syncCheckedInState(guest);
+
+            setMessage(`${guest.full_name} checked in successfully.`);
+            setGuests([]);
+            setQuery("");
+        } catch (error: any) {
+            setMessage(error?.message || "Failed to check in guest.");
         }
-
-        const { error } = await supabase.from("check_ins").insert({
-            registration_id: guest.id,
-            event_id: eventId,
-            checked_in_by: "Admin",
-            device_name: "Manual Search",
-            scan_result: "checked_in",
-        });
-
-        if (error) {
-            setMessage(error.message);
-            return;
-        }
-
-        setMessage(`${guest.full_name} checked in successfully.`);
-        setGuests([]);
-        setQuery("");
     }
 
     return (
@@ -98,6 +148,9 @@ export default function ManualCheckIn({ eventId }: { eventId: string }) {
                         <div>
                             <p className="font-black">{guest.full_name}</p>
                             <p className="text-sm text-slate-500">{guest.email}</p>
+                            <p className="mt-1 text-xs font-bold text-slate-400">
+                                Status: {guest.registration_status || "confirmed"}
+                            </p>
                         </div>
 
                         <button

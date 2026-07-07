@@ -293,6 +293,13 @@ export default function DashboardSidebar() {
                             exact: true,
                             roles: adminOnly,
                         },
+                        {
+                            href: `/dashboard/events/${eventId}/lucky-draw/settings`,
+                            label: "Lucky Draw Settings",
+                            icon: Settings,
+                            exact: true,
+                            roles: adminOnly,
+                        },
                     ],
                 },
             ]
