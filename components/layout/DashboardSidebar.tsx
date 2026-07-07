@@ -32,6 +32,11 @@ import {
     Gift,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import {
+    cleanOrganizerEnabledModules,
+    defaultOrganizerEnabledModules,
+    type EventModuleKey,
+} from "@/lib/event-modules";
 
 type UserRole = "admin" | "organizer" | "viewer" | "scanner";
 
@@ -48,6 +53,7 @@ type NavItem = {
     icon: LucideIcon;
     exact?: boolean;
     roles: UserRole[];
+    organizerModuleKey?: EventModuleKey;
 };
 
 type NavGroupType = {
@@ -67,6 +73,10 @@ export default function DashboardSidebar() {
 
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loadingProfile, setLoadingProfile] = useState(true);
+    const [enabledModules, setEnabledModules] = useState<
+        Record<EventModuleKey, boolean>
+    >(defaultOrganizerEnabledModules);
+    const [loadingModules, setLoadingModules] = useState(false);
 
     useEffect(() => {
         async function loadProfile() {
@@ -122,10 +132,188 @@ export default function DashboardSidebar() {
         return id;
     }, [pathname]);
 
+    useEffect(() => {
+        async function loadEventModules() {
+            if (!eventId) {
+                setEnabledModules(defaultOrganizerEnabledModules);
+                return;
+            }
+
+            setLoadingModules(true);
+
+            const { data, error } = await supabase
+                .from("event_settings")
+                .select("enabled_modules")
+                .eq("event_id", eventId)
+                .maybeSingle();
+
+            if (error) {
+                console.error("Failed to load event module settings:", error);
+                setEnabledModules(defaultOrganizerEnabledModules);
+            } else {
+                setEnabledModules(
+                    cleanOrganizerEnabledModules(data?.enabled_modules),
+                );
+            }
+
+            setLoadingModules(false);
+        }
+
+        loadEventModules();
+    }, [eventId]);
+
     async function logout() {
         await supabase.auth.signOut();
         window.location.href = "/auth/login";
     }
+
+    const eventNavGroups: NavGroupType[] = eventId
+        ? [
+            {
+                title: "Event Workspace",
+                items: [
+                    {
+                        href: `/dashboard/events/${eventId}`,
+                        label: "Event Overview",
+                        icon: ClipboardList,
+                        exact: true,
+                        roles: allRoles,
+                        organizerModuleKey: "overview",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/guests`,
+                        label: "Guest List",
+                        icon: Users,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "guests",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/tickets`,
+                        label: "Ticket Types",
+                        icon: Ticket,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "tickets",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/tables`,
+                        label: "Tables",
+                        icon: Table2,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "tables",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/floor-plan`,
+                        label: "Floor Plan",
+                        icon: Map,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "floor_plan",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/speakers`,
+                        label: "Speakers",
+                        icon: Mic2,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "speakers",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/agenda`,
+                        label: "Agenda",
+                        icon: ListTodo,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "agenda",
+                    },
+                ],
+            },
+            {
+                title: "Event Day",
+                items: [
+                    {
+                        href: `/dashboard/events/${eventId}/scanner`,
+                        label: "QR Scanner",
+                        icon: QrCode,
+                        exact: true,
+                        roles: scanners,
+                        organizerModuleKey: "scanner",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/lucky-draw`,
+                        label: "Lucky Draw",
+                        icon: Gift,
+                        exact: true,
+                        roles: scanners,
+                        organizerModuleKey: "lucky_draw",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/analytics`,
+                        label: "Analytics",
+                        icon: BarChart3,
+                        exact: true,
+                        roles: reportViewers,
+                        organizerModuleKey: "analytics",
+                    },
+                ],
+            },
+            {
+                title: "Administration",
+                items: [
+                    {
+                        href: `/dashboard/events/${eventId}/registration`,
+                        label: "Registration Builder",
+                        icon: ClipboardList,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "registration",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/website`,
+                        label: "Website Builder",
+                        icon: Globe2,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "website",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/branding`,
+                        label: "Branding",
+                        icon: Palette,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "branding",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/emails`,
+                        label: "Email Centre",
+                        icon: Mail,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "emails",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/settings`,
+                        label: "Event Settings",
+                        icon: Settings,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "settings",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/lucky-draw/settings`,
+                        label: "Lucky Draw Settings",
+                        icon: Settings,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "lucky_draw_settings",
+                    },
+                ],
+            }
+        ]
+        : [];
 
     const navGroups: NavGroupType[] = [
         {
@@ -173,137 +361,7 @@ export default function DashboardSidebar() {
                 },
             ],
         },
-        ...(eventId
-            ? [
-                {
-                    title: "Event Workspace",
-                    items: [
-                        {
-                            href: `/dashboard/events/${eventId}`,
-                            label: "Event Overview",
-                            icon: ClipboardList,
-                            exact: true,
-                            roles: allRoles,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/guests`,
-                            label: "Guest List",
-                            icon: Users,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/tickets`,
-                            label: "Ticket Types",
-                            icon: Ticket,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/tables`,
-                            label: "Tables",
-                            icon: Table2,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/floor-plan`,
-                            label: "Floor Plan",
-                            icon: Map,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/speakers`,
-                            label: "Speakers",
-                            icon: Mic2,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/agenda`,
-                            label: "Agenda",
-                            icon: ListTodo,
-                            exact: true,
-                            roles: eventManagers,
-                        },
-                    ],
-                },
-                {
-                    title: "Event Day",
-                    items: [
-                        {
-                            href: `/dashboard/events/${eventId}/scanner`,
-                            label: "QR Scanner",
-                            icon: QrCode,
-                            exact: true,
-                            roles: scanners,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/lucky-draw`,
-                            label: "Lucky Draw",
-                            icon: Gift,
-                            exact: true,
-                            roles: scanners,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/analytics`,
-                            label: "Analytics",
-                            icon: BarChart3,
-                            exact: true,
-                            roles: reportViewers,
-                        },
-                    ],
-                },
-                {
-                    title: "Administration",
-                    items: [
-                        {
-                            href: `/dashboard/events/${eventId}/registration`,
-                            label: "Registration Builder",
-                            icon: ClipboardList,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/website`,
-                            label: "Website Builder",
-                            icon: Globe2,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/branding`,
-                            label: "Branding",
-                            icon: Palette,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/emails`,
-                            label: "Email Templates",
-                            icon: Mail,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/settings`,
-                            label: "Event Settings",
-                            icon: Settings,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                        {
-                            href: `/dashboard/events/${eventId}/lucky-draw/settings`,
-                            label: "Lucky Draw Settings",
-                            icon: Settings,
-                            exact: true,
-                            roles: adminOnly,
-                        },
-                    ],
-                },
-            ]
-            : []),
+        ...eventNavGroups,
         {
             title: "Account",
             items: [
@@ -328,8 +386,18 @@ export default function DashboardSidebar() {
     function canShowItem(item: NavItem) {
         if (loadingProfile) return false;
         if (!profile) return false;
+        if (!item.roles.includes(profile.role)) return false;
 
-        return item.roles.includes(profile.role);
+        // Admin always sees everything.
+        if (profile.role === "admin") return true;
+
+        // Non-event links are not affected by module toggles.
+        if (!eventId || !item.organizerModuleKey) return true;
+
+        if (loadingModules) return false;
+
+        // Organizer only sees enabled modules.
+        return enabledModules[item.organizerModuleKey] !== false;
     }
 
     return (
@@ -343,7 +411,9 @@ export default function DashboardSidebar() {
 
             <aside
                 className={`fixed left-0 top-0 z-50 h-screen border-r border-slate-200 bg-white p-5 transition-all duration-300 ${collapsed ? "lg:w-24" : "lg:w-72"
-                    } ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+                    } ${mobileOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
                     } w-72`}
             >
                 <div className="flex items-center justify-between">
@@ -364,7 +434,11 @@ export default function DashboardSidebar() {
                         onClick={() => setCollapsed(!collapsed)}
                         className="hidden rounded-xl bg-[#F7F5FF] p-2 text-[#4F46E5] hover:bg-indigo-100 lg:block"
                     >
-                        {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                        {collapsed ? (
+                            <ChevronRight size={20} />
+                        ) : (
+                            <ChevronLeft size={20} />
+                        )}
                     </button>
 
                     <button

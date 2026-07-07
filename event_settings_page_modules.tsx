@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Settings2 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EventSettingsForm from "@/components/forms/EventSettingsForm";
+import { requirePermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,29 +12,9 @@ export default async function EventSettingsPage({
     params: Promise<{ eventId: string }>;
 }) {
     const supabaseServer = await createSupabaseServerClient();
+    await requirePermission("can_manage_settings");
+
     const { eventId } = await params;
-
-    const {
-        data: { user },
-    } = await supabaseServer.auth.getUser();
-
-    if (!user) {
-        redirect("/auth/login");
-    }
-
-    const { data: profile } = await supabaseServer
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-
-    const role = profile?.role;
-    const canAccessSettings = role === "admin" || role === "organizer";
-    const canManageModules = role === "admin";
-
-    if (!canAccessSettings) {
-        notFound();
-    }
 
     const { data: event } = await supabaseServer
         .from("events")
@@ -81,25 +61,20 @@ export default async function EventSettingsPage({
                             <p className="text-sm font-black uppercase tracking-[0.25em] text-[#4F46E5]">
                                 Event Settings
                             </p>
+
                             <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950">
-                                {canManageModules
-                                    ? "Module & Registration Settings"
-                                    : "Registration Page Status"}
+                                Organizer Module Visibility
                             </h1>
+
                             <p className="mt-1 text-slate-600">
-                                {canManageModules
-                                    ? `Control organiser module visibility and registration status for ${eventName}.`
-                                    : `Open or close public registration for ${eventName}.`}
+                                Choose which event modules organizers can see and access for {eventName}.
+                                Admin users will still see everything.
                             </p>
                         </div>
                     </div>
 
                     <div className="mt-8">
-                        <EventSettingsForm
-                            event={event}
-                            settings={settings}
-                            canManageModules={canManageModules}
-                        />
+                        <EventSettingsForm event={event} settings={settings} />
                     </div>
                 </section>
             </div>

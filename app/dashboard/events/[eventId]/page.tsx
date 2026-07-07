@@ -25,9 +25,83 @@ import {
     ListTodo,
     Gift,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-type Role = "admin" | "organizer" | "viewer" | "scanner" | string;
+export const dynamic = "force-dynamic";
+
+type Role = "admin" | "organizer" | "organiser" | "viewer" | "scanner" | string;
+
+type EventModuleKey =
+    | "overview"
+    | "guests"
+    | "tickets"
+    | "tables"
+    | "floor_plan"
+    | "speakers"
+    | "agenda"
+    | "scanner"
+    | "lucky_draw"
+    | "analytics"
+    | "registration"
+    | "website"
+    | "branding"
+    | "emails"
+    | "settings"
+    | "lucky_draw_settings";
+
+type ModuleCardItem = {
+    moduleKey: EventModuleKey;
+    title: string;
+    description: string;
+    href: string;
+    icon: LucideIcon;
+    highlight?: boolean;
+    allowed: boolean;
+};
+
+type EventInfoIcon = LucideIcon | ComponentType<{ size?: number; className?: string }>;
+
+const defaultEnabledModules: Record<EventModuleKey, boolean> = {
+    overview: true,
+    guests: true,
+    tickets: true,
+    tables: true,
+    floor_plan: true,
+    speakers: true,
+    agenda: true,
+    scanner: true,
+    lucky_draw: true,
+    analytics: true,
+    registration: true,
+    website: true,
+    branding: true,
+    emails: true,
+    settings: true,
+    lucky_draw_settings: true,
+};
+
+function cleanEnabledModules(input: unknown): Record<EventModuleKey, boolean> {
+    const output = { ...defaultEnabledModules };
+
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return output;
+    }
+
+    const record = input as Record<string, unknown>;
+
+    for (const key of Object.keys(defaultEnabledModules) as EventModuleKey[]) {
+        if (typeof record[key] === "boolean") {
+            output[key] = record[key];
+        }
+    }
+
+    output.overview = true;
+    output.settings = true;
+
+    return output;
+}
 
 export default async function EventOverviewPage({
     params,
@@ -49,12 +123,12 @@ export default async function EventOverviewPage({
         .from("profiles")
         .select("id, full_name, email, role")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
     const role: Role = profile?.role || "viewer";
 
     const isAdmin = role === "admin";
-    const isOrganizer = role === "organizer";
+    const isOrganizer = role === "organizer" || role === "organiser";
     const isViewer = role === "viewer";
     const isScanner = role === "scanner";
 
@@ -66,7 +140,7 @@ export default async function EventOverviewPage({
         .from("events")
         .select("*")
         .eq("id", eventId)
-        .single();
+        .maybeSingle();
 
     if (!event) {
         return (
@@ -76,6 +150,24 @@ export default async function EventOverviewPage({
                 </div>
             </main>
         );
+    }
+
+    const { data: settingsRow } = await supabaseServer
+        .from("event_settings")
+        .select("enabled_modules")
+        .eq("event_id", eventId)
+        .maybeSingle();
+
+    const enabledModules = cleanEnabledModules(settingsRow?.enabled_modules);
+
+    function canAccessModule(moduleKey: EventModuleKey, allowedByRole: boolean) {
+        if (!allowedByRole) return false;
+
+        // Admin always sees all dashboard cards.
+        if (isAdmin) return true;
+
+        // Organiser/scanner/viewer follows the module toggles.
+        return enabledModules[moduleKey] !== false;
     }
 
     const { count: totalGuests } = await supabaseServer
@@ -104,6 +196,161 @@ export default async function EventOverviewPage({
     const pending = Math.max(total - checkedIn, 0);
     const checkedInRate = total > 0 ? Math.round((checkedIn / total) * 100) : 0;
 
+    const managementCards = (
+        [
+            {
+                moduleKey: "guests",
+                title: "Guest List",
+                description: "View, search and manage registered guests.",
+                href: `/dashboard/events/${eventId}/guests`,
+                icon: Users,
+                allowed: canAccessModule("guests", canManageEvent),
+            },
+            {
+                moduleKey: "tickets",
+                title: "Ticket Types",
+                description: "Set up ticket categories, limits and pricing rules.",
+                href: `/dashboard/events/${eventId}/tickets`,
+                icon: Ticket,
+                allowed: canAccessModule("tickets", canManageEvent),
+            },
+            {
+                moduleKey: "tables",
+                title: "Tables",
+                description: "Create event tables and assign guests to seats.",
+                href: `/dashboard/events/${eventId}/tables`,
+                icon: Utensils,
+                allowed: canAccessModule("tables", canManageEvent),
+            },
+            {
+                moduleKey: "floor_plan",
+                title: "Floor Plan",
+                description: "Arrange table layout and seating flow visually.",
+                href: `/dashboard/events/${eventId}/floor-plan`,
+                icon: Map,
+                allowed: canAccessModule("floor_plan", canManageEvent),
+            },
+            {
+                moduleKey: "speakers",
+                title: "Speakers",
+                description: "Manage event speakers and speaker details.",
+                href: `/dashboard/events/${eventId}/speakers`,
+                icon: Mic2,
+                allowed: canAccessModule("speakers", canManageEvent),
+            },
+            {
+                moduleKey: "agenda",
+                title: "Agenda",
+                description: "Build the event programme and timeline.",
+                href: `/dashboard/events/${eventId}/agenda`,
+                icon: ListTodo,
+                allowed: canAccessModule("agenda", canManageEvent),
+            },
+        ] satisfies ModuleCardItem[]
+    ).filter((item) => item.allowed);
+
+    const eventDayCards = (
+        [
+            {
+                moduleKey: "scanner",
+                title: "QR Scanner",
+                description: "Scan guest QR codes and record check-ins.",
+                href: `/dashboard/events/${eventId}/scanner`,
+                icon: QrCode,
+                highlight: true,
+                allowed: canAccessModule("scanner", canScan),
+            },
+            {
+                moduleKey: "scanner",
+                title: "Manual Check-In",
+                description: "Search guests manually if QR scanning is unavailable.",
+                href: `/dashboard/events/${eventId}/scanner`,
+                icon: UserRoundCheck,
+                allowed: canAccessModule("scanner", canScan),
+            },
+            {
+                moduleKey: "lucky_draw",
+                title: "Lucky Draw",
+                description: "Spin a Wheel of Fortune using checked-in guests only.",
+                href: `/dashboard/events/${eventId}/lucky-draw`,
+                icon: Gift,
+                allowed: canAccessModule("lucky_draw", canScan),
+            },
+        ] satisfies ModuleCardItem[]
+    ).filter((item) => item.allowed);
+
+    const reportCards = (
+        [
+            {
+                moduleKey: "analytics",
+                title: "Analytics",
+                description: "View attendance, registration and table assignment insights.",
+                href: `/dashboard/events/${eventId}/analytics`,
+                icon: BarChart3,
+                allowed: canAccessModule("analytics", canViewReports),
+            },
+        ] satisfies ModuleCardItem[]
+    ).filter((item) => item.allowed);
+
+    const administrationCards = (
+        [
+            {
+                moduleKey: "registration",
+                title: "Registration Builder",
+                description: "Create and manage the event registration form fields.",
+                href: `/dashboard/events/${eventId}/registration`,
+                icon: ClipboardList,
+                allowed: canAccessModule("registration", canManageEvent),
+            },
+            {
+                moduleKey: "website",
+                title: "Website Builder",
+                description: "Customise the public event registration website.",
+                href: `/dashboard/events/${eventId}/website`,
+                icon: Globe2,
+                allowed: canAccessModule("website", canManageEvent),
+            },
+            {
+                moduleKey: "branding",
+                title: "Branding",
+                description: "Manage event colours, logo and visual identity.",
+                href: `/dashboard/events/${eventId}/branding`,
+                icon: Palette,
+                allowed: canAccessModule("branding", canManageEvent),
+            },
+            {
+                moduleKey: "emails",
+                title: "Email Centre",
+                description: "Create and manage event email templates.",
+                href: `/dashboard/events/${eventId}/emails`,
+                icon: Mail,
+                allowed: canAccessModule("emails", canManageEvent),
+            },
+            {
+                moduleKey: "settings",
+                title: "Event Settings",
+                description: "Control registration page status and event module visibility.",
+                href: `/dashboard/events/${eventId}/settings`,
+                icon: Settings,
+                allowed: canAccessModule("settings", canManageEvent),
+            },
+            {
+                moduleKey: "lucky_draw_settings",
+                title: "Lucky Draw Settings",
+                description: "Control lucky draw configurations and rules.",
+                href: `/dashboard/events/${eventId}/lucky-draw/settings`,
+                icon: Settings,
+                allowed: canAccessModule("lucky_draw_settings", canManageEvent),
+            },
+        ] satisfies ModuleCardItem[]
+    ).filter((item) => item.allowed);
+
+    const hasAnyModuleAccess =
+        managementCards.length > 0 ||
+        eventDayCards.length > 0 ||
+        reportCards.length > 0 ||
+        administrationCards.length > 0;
+
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
             <div className="mx-auto max-w-7xl">
@@ -127,12 +374,12 @@ export default async function EventOverviewPage({
                             </div>
 
                             <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
-                                {event.event_name}
+                                {event.event_name || event.title || event.name || "Event"}
                             </h1>
 
                             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Manage registrations, guests, check-in operations and event-day
-                                reporting from one control centre.
+                                Manage registrations, guests, check-in operations and
+                                event-day reporting from one control centre.
                             </p>
 
                             <div className="mt-6 flex flex-wrap gap-3">
@@ -152,7 +399,9 @@ export default async function EventOverviewPage({
                                     <EventInfo icon={ClockIcon} label={event.event_time} />
                                 )}
 
-                                {event.venue && <EventInfo icon={MapPin} label={event.venue} />}
+                                {event.venue && (
+                                    <EventInfo icon={MapPin} label={event.venue} />
+                                )}
                             </div>
                         </div>
 
@@ -166,6 +415,7 @@ export default async function EventOverviewPage({
                                     <p className="text-sm font-bold text-slate-500">
                                         Your Access
                                     </p>
+
                                     <p className="text-3xl font-black capitalize text-slate-950">
                                         {role}
                                     </p>
@@ -223,152 +473,59 @@ export default async function EventOverviewPage({
                     />
                 </section>
 
-                {canManageEvent && (
+                {managementCards.length > 0 && (
                     <WorkspaceSection
                         eyebrow="Operations"
                         title="Event Management"
                         description="Tools for managing guests, tickets, seating and event content."
                     >
-                        <ModuleCard
-                            title="Guest List"
-                            description="View, search and manage registered guests."
-                            href={`/dashboard/events/${eventId}/guests`}
-                            icon={Users}
-                        />
-
-                        <ModuleCard
-                            title="Ticket Types"
-                            description="Set up ticket categories, limits and pricing rules."
-                            href={`/dashboard/events/${eventId}/tickets`}
-                            icon={Ticket}
-                        />
-
-                        <ModuleCard
-                            title="Tables"
-                            description="Create event tables and assign guests to seats."
-                            href={`/dashboard/events/${eventId}/tables`}
-                            icon={Utensils}
-                        />
-
-                        <ModuleCard
-                            title="Floor Plan"
-                            description="Arrange table layout and seating flow visually."
-                            href={`/dashboard/events/${eventId}/floor-plan`}
-                            icon={Map}
-                        />
-
-                        <ModuleCard
-                            title="Speakers"
-                            description="Manage event speakers and speaker details."
-                            href={`/dashboard/events/${eventId}/speakers`}
-                            icon={Mic2}
-                        />
-
-                        <ModuleCard
-                            title="Agenda"
-                            description="Build the event programme and timeline."
-                            href={`/dashboard/events/${eventId}/agenda`}
-                            icon={ListTodo}
-                        />
+                        {managementCards.map(({ moduleKey, allowed, ...item }) => (
+                            <ModuleCard key={`${moduleKey}-${item.title}`} {...item} />
+                        ))}
                     </WorkspaceSection>
                 )}
 
-                {canScan && (
+                {eventDayCards.length > 0 && (
                     <WorkspaceSection
                         eyebrow="Event Day"
                         title="Check-In Tools"
                         description="Scan QR passes and process guest arrivals during the event."
                     >
-                        <ModuleCard
-                            title="QR Scanner"
-                            description="Scan guest QR codes and record check-ins."
-                            href={`/dashboard/events/${eventId}/scanner`}
-                            icon={QrCode}
-                            highlight
-                        />
-
-                        <ModuleCard
-                            title="Manual Check-In"
-                            description="Search guests manually if QR scanning is unavailable."
-                            href={`/dashboard/events/${eventId}/scanner`}
-                            icon={UserRoundCheck}
-                        />
-
-                        <ModuleCard
-                            title="Lucky Draw"
-                            description="Spin a Wheel of Fortune using checked-in guests only."
-                            href={`/dashboard/events/${eventId}/lucky-draw`}
-                            icon={Gift}
-                        />
+                        {eventDayCards.map(({ moduleKey, allowed, ...item }) => (
+                            <ModuleCard key={`${moduleKey}-${item.title}`} {...item} />
+                        ))}
                     </WorkspaceSection>
                 )}
 
-                {canViewReports && (
+                {reportCards.length > 0 && (
                     <WorkspaceSection
                         eyebrow="Insights"
                         title="Reports & Analytics"
                         description="Monitor registration performance, attendance and guest data."
                     >
-                        <ModuleCard
-                            title="Analytics"
-                            description="View attendance, registration and table assignment insights."
-                            href={`/dashboard/events/${eventId}/analytics`}
-                            icon={BarChart3}
-                        />
+                        {reportCards.map(({ moduleKey, allowed, ...item }) => (
+                            <ModuleCard key={`${moduleKey}-${item.title}`} {...item} />
+                        ))}
                     </WorkspaceSection>
                 )}
 
-                {isAdmin && (
+                {administrationCards.length > 0 && (
                     <WorkspaceSection
-                        eyebrow="Admin Only"
+                        eyebrow={isAdmin ? "Administration" : "Event Setup"}
                         title="Administration"
-                        description="Only admin accounts can access registration setup, event settings, website tools, branding and email templates."
+                        description={
+                            isAdmin
+                                ? "Admin accounts can access all event setup and configuration tools."
+                                : "Access event setup tools enabled for this event by the admin."
+                        }
                     >
-                        <ModuleCard
-                            title="Registration Builder"
-                            description="Create and manage the event registration form fields."
-                            href={`/dashboard/events/${eventId}/registration`}
-                            icon={ClipboardList}
-                        />
-
-                        <ModuleCard
-                            title="Website Builder"
-                            description="Customise the public event registration website."
-                            href={`/dashboard/events/${eventId}/website`}
-                            icon={Globe2}
-                        />
-
-                        <ModuleCard
-                            title="Branding"
-                            description="Manage event colours, logo and visual identity."
-                            href={`/dashboard/events/${eventId}/branding`}
-                            icon={Palette}
-                        />
-
-                        <ModuleCard
-                            title="Email Centre"
-                            description="Create and manage event email templates."
-                            href={`/dashboard/events/${eventId}/emails`}
-                            icon={Mail}
-                        />
-
-                        <ModuleCard
-                            title="Event Settings"
-                            description="Control event visibility, registration rules and system settings."
-                            href={`/dashboard/events/${eventId}/settings`}
-                            icon={Settings}
-                        />
-
-                        <ModuleCard
-                            title="Lucky Draw Settings"
-                            description="Control lucky draw configurations and rules."
-                            href={`/dashboard/events/${eventId}/lucky-draw/settings`}
-                            icon={Settings}
-                        />
+                        {administrationCards.map(({ moduleKey, allowed, ...item }) => (
+                            <ModuleCard key={`${moduleKey}-${item.title}`} {...item} />
+                        ))}
                     </WorkspaceSection>
                 )}
 
-                {!canManageEvent && !canScan && !canViewReports && (
+                {!hasAnyModuleAccess && (
                     <section className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-8 text-center shadow-sm">
                         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#F7F5FF] text-[#4F46E5]">
                             <ShieldCheck size={28} />
@@ -379,8 +536,9 @@ export default async function EventOverviewPage({
                         </h2>
 
                         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                            Your current role does not have access to management tools for
-                            this event. Please contact an admin if you need additional access.
+                            Your current role does not have access to management tools
+                            for this event. Please contact an admin if you need
+                            additional access.
                         </p>
                     </section>
                 )}
@@ -398,7 +556,7 @@ function WorkspaceSection({
     eyebrow: string;
     title: string;
     description: string;
-    children: React.ReactNode;
+    children: ReactNode;
 }) {
     return (
         <section className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
@@ -408,14 +566,18 @@ function WorkspaceSection({
                     {eyebrow}
                 </div>
 
-                <h2 className="mt-4 text-2xl font-black text-slate-950">{title}</h2>
+                <h2 className="mt-4 text-2xl font-black text-slate-950">
+                    {title}
+                </h2>
 
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
                     {description}
                 </p>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{children}</div>
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {children}
+            </div>
         </section>
     );
 }
@@ -430,21 +592,21 @@ function ModuleCard({
     title: string;
     description: string;
     href: string;
-    icon: any;
+    icon: LucideIcon;
     highlight?: boolean;
 }) {
     return (
         <Link
             href={href}
             className={`group rounded-[2rem] border p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${highlight
-                ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
-                : "border-slate-200 bg-white text-slate-950"
+                    ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
+                    : "border-slate-200 bg-white text-slate-950"
                 }`}
         >
             <div
                 className={`w-fit rounded-2xl p-3 transition ${highlight
-                    ? "bg-white/20 text-white"
-                    : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
+                        ? "bg-white/20 text-white"
+                        : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
                     }`}
             >
                 <Icon size={24} />
@@ -476,7 +638,7 @@ function StatCard({
     title: string;
     value: number;
     text: string;
-    icon: any;
+    icon: LucideIcon;
 }) {
     return (
         <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
@@ -499,7 +661,7 @@ function EventInfo({
     icon: Icon,
     label,
 }: {
-    icon: any;
+    icon: EventInfoIcon;
     label: string;
 }) {
     return (

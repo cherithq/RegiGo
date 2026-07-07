@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { getRegistrationOpenState } from "@/lib/registration-open";
 
 async function triggerEmailWorker(req: Request) {
     try {
@@ -87,6 +88,18 @@ export async function POST(req: Request) {
             return NextResponse.json(
                 { error: "Ticket type is required." },
                 { status: 400 }
+            );
+        }
+        const registrationState = await getRegistrationOpenState(eventId);
+
+        if (!registrationState.isOpen) {
+            return NextResponse.json(
+                {
+                    error:
+                        registrationState.closedMessage ||
+                        "Registration for this event is currently closed.",
+                },
+                { status: 403 }
             );
         }
 

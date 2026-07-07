@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from "../../../../lib/supabase-server";
 import DynamicRegistrationForm from "../../../../components/forms/DynamicRegistrationForm";
 
+export const dynamic = "force-dynamic";
+
 export default async function RegisterPage({
     params,
 }: {
@@ -13,31 +15,50 @@ export default async function RegisterPage({
         .from("events")
         .select("*, event_branding(*)")
         .eq("event_slug", slug)
-        .single();
+        .maybeSingle();
+
+    if (!event) {
+        return <main className="p-8">Event not found.</main>;
+    }
+
+    const { data: settings } = await supabaseServer
+        .from("event_settings")
+        .select("registration_is_open, registration_closed_message")
+        .eq("event_id", event.id)
+        .maybeSingle();
+
+    const registrationIsOpen =
+        event.status === "published" &&
+        event.registration_open !== false &&
+        settings?.registration_is_open !== false;
+
+    const closedMessage =
+        settings?.registration_closed_message ||
+        "This event is not currently accepting registrations.";
+
+    if (!registrationIsOpen) {
+        return (
+            <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] px-6 text-slate-950">
+                <div className="max-w-md rounded-[2rem] bg-white p-10 text-center shadow-2xl">
+                    <div className="text-5xl">🔒</div>
+
+                    <h1 className="mt-6 text-3xl font-black">
+                        Registration Closed
+                    </h1>
+
+                    <p className="mt-3 text-slate-600">
+                        {closedMessage}
+                    </p>
+                </div>
+            </main>
+        );
+    }
 
     const { data: tickets } = await supabaseServer
         .from("ticket_types")
         .select("*")
         .eq("event_id", event.id)
         .order("display_order", { ascending: true });
-
-    if (!event) {
-        return <main className="p-8">Event not found.</main>;
-    }
-
-    if (event.status !== "published" || !event.registration_open) {
-        return (
-            <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] px-6 text-slate-950">
-                <div className="max-w-md rounded-[2rem] bg-white p-10 text-center shadow-2xl">
-                    <div className="text-5xl">🔒</div>
-                    <h1 className="mt-6 text-3xl font-black">Registration Closed</h1>
-                    <p className="mt-3 text-slate-600">
-                        This event is not currently accepting registrations.
-                    </p>
-                </div>
-            </main>
-        );
-    }
 
     const branding = Array.isArray(event.event_branding)
         ? event.event_branding[0]
@@ -126,7 +147,8 @@ export default async function RegisterPage({
                         </h2>
 
                         <p className="mt-2 text-slate-500">
-                            Fields marked with <span className="text-red-500">*</span> are required.
+                            Fields marked with{" "}
+                            <span className="text-red-500">*</span> are required.
                         </p>
 
                         <div className="mt-8">

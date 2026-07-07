@@ -2,596 +2,455 @@
 
 import { useMemo, useState } from "react";
 import {
-    AlertTriangle,
+    BarChart3,
     CalendarDays,
     CheckCircle2,
-    Clock,
+    ClipboardList,
     Globe2,
+    Loader2,
+    LockKeyhole,
     Mail,
-    MapPin,
-    Save,
-    Settings,
-    ShieldAlert,
-    Trash2,
+    QrCode,
+    Settings2,
+    Table2,
+    UsersRound,
+    Mic2,
+    Gift,
+    Map,
+    ListTodo,
+    Palette,
+    Ticket,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import {
+    defaultOrganizerEnabledModules,
+    type EventModuleKey,
+} from "@/lib/event-modules";
+
+type EventRecord = {
+    id: string;
+    event_name?: string;
+    title?: string;
+    name?: string;
+    [key: string]: any;
+};
+
+type EventSettings = {
+    id?: string;
+    event_id?: string;
+    enabled_modules?: Record<string, boolean> | null;
+    registration_is_open?: boolean | null;
+    registration_closed_message?: string | null;
+    [key: string]: any;
+};
+
+type ModuleConfig = {
+    key: EventModuleKey;
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    locked?: boolean;
+};
+
+const modules: ModuleConfig[] = [
+    {
+        key: "overview",
+        title: "Event Overview",
+        description: "Main event dashboard and event summary.",
+        icon: <CalendarDays size={20} />,
+        locked: true,
+    },
+    {
+        key: "guests",
+        title: "Guest List",
+        description: "Allow organisers to view, add, edit, and manage guests.",
+        icon: <UsersRound size={20} />,
+    },
+    {
+        key: "tickets",
+        title: "Ticket Types",
+        description: "Allow organisers to manage ticket types.",
+        icon: <Ticket size={20} />,
+    },
+    {
+        key: "tables",
+        title: "Tables",
+        description: "Allow organisers to manage event tables.",
+        icon: <Table2 size={20} />,
+    },
+    {
+        key: "floor_plan",
+        title: "Floor Plan",
+        description: "Allow organisers to manage the event floor plan.",
+        icon: <Map size={20} />,
+    },
+    {
+        key: "speakers",
+        title: "Speakers",
+        description: "Allow organisers to manage speakers.",
+        icon: <Mic2 size={20} />,
+    },
+    {
+        key: "agenda",
+        title: "Agenda",
+        description: "Allow organisers to manage the event agenda.",
+        icon: <ListTodo size={20} />,
+    },
+    {
+        key: "scanner",
+        title: "QR Scanner",
+        description: "Allow organisers to scan QR passes and check in guests.",
+        icon: <QrCode size={20} />,
+    },
+    {
+        key: "lucky_draw",
+        title: "Lucky Draw",
+        description: "Allow organisers to run lucky draw features.",
+        icon: <Gift size={20} />,
+    },
+    {
+        key: "analytics",
+        title: "Analytics",
+        description: "Allow organisers to view event analytics.",
+        icon: <BarChart3 size={20} />,
+    },
+    {
+        key: "registration",
+        title: "Registration Builder",
+        description: "Allow organisers to build and edit the registration form.",
+        icon: <ClipboardList size={20} />,
+    },
+    {
+        key: "website",
+        title: "Website Builder",
+        description: "Allow organisers to edit the public event website.",
+        icon: <Globe2 size={20} />,
+    },
+    {
+        key: "branding",
+        title: "Branding",
+        description: "Allow organisers to edit event branding.",
+        icon: <Palette size={20} />,
+    },
+    {
+        key: "emails",
+        title: "Email Centre",
+        description: "Allow organisers to manage email templates and event emails.",
+        icon: <Mail size={20} />,
+    },
+    {
+        key: "settings",
+        title: "Event Settings / Registration Status",
+        description: "Allow organisers to open or close the registration page.",
+        icon: <Settings2 size={20} />,
+        locked: true,
+    },
+    {
+        key: "lucky_draw_settings",
+        title: "Lucky Draw Settings",
+        description: "Allow organisers to configure lucky draw settings.",
+        icon: <Settings2 size={20} />,
+    },
+];
+
+const defaultClosedMessage = "Registration for this event is currently closed.";
 
 export default function EventSettingsForm({
     event,
     settings,
+    canManageModules,
 }: {
-    event: any;
-    settings: any;
+    event: EventRecord;
+    settings: EventSettings | null;
+    canManageModules: boolean;
 }) {
-    const [message, setMessage] = useState("");
-    const [messageType, setMessageType] = useState<"success" | "error" | "">("");
-    const [loading, setLoading] = useState(false);
-    const [deleting, setDeleting] = useState(false);
+    const initialModules = useMemo(() => {
+        return {
+            ...defaultOrganizerEnabledModules,
+            ...(settings?.enabled_modules ?? {}),
+            overview: true,
+            settings: true,
+        };
+    }, [settings]);
 
-    const [eventForm, setEventForm] = useState({
-        event_name: event.event_name || "",
-        event_date: event.event_date || "",
-        event_time: event.event_time || "",
-        venue: event.venue || "",
-        description: event.description || "",
-        status: event.status || "draft",
-        registration_open: event.registration_open ?? true,
-        max_guests: event.max_guests || 0,
-    });
+    const [enabledModules, setEnabledModules] =
+        useState<Record<EventModuleKey, boolean>>(initialModules);
 
-    const [form, setForm] = useState({
-        registration_enabled: settings?.registration_enabled ?? true,
-        auto_approve: settings?.auto_approve ?? true,
-        enable_waitlist: settings?.enable_waitlist ?? false,
-        max_guests: settings?.max_guests ?? event.max_guests ?? 0,
+    const [registrationIsOpen, setRegistrationIsOpen] = useState(
+        settings?.registration_is_open !== false,
+    );
 
-        qr_checkin: settings?.qr_checkin ?? true,
-        allow_multiple_scan: settings?.allow_multiple_scan ?? false,
-        manual_checkin: settings?.manual_checkin ?? true,
+    const [registrationClosedMessage, setRegistrationClosedMessage] = useState(
+        settings?.registration_closed_message || defaultClosedMessage,
+    );
 
-        send_confirmation: settings?.send_confirmation ?? true,
-        send_reminder: settings?.send_reminder ?? true,
-        send_thank_you: settings?.send_thank_you ?? true,
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState("");
 
-        public_registration: settings?.public_registration ?? true,
-    });
+    async function saveSettings(nextValues?: {
+        enabled_modules?: Record<EventModuleKey, boolean>;
+        registration_is_open?: boolean;
+        registration_closed_message?: string;
+    }) {
+        setSaving(true);
+        setSaved(false);
+        setError("");
 
-    const eventDetailsChanged = useMemo(() => {
-        return (
-            String(eventForm.event_name || "") !== String(event.event_name || "") ||
-            String(eventForm.event_date || "") !== String(event.event_date || "") ||
-            String(eventForm.event_time || "") !== String(event.event_time || "") ||
-            String(eventForm.venue || "") !== String(event.venue || "") ||
-            String(eventForm.description || "") !== String(event.description || "")
-        );
-    }, [eventForm, event]);
+        const payload = {
+            enabled_modules: nextValues?.enabled_modules ?? enabledModules,
+            registration_is_open:
+                nextValues?.registration_is_open ?? registrationIsOpen,
+            registration_closed_message:
+                nextValues?.registration_closed_message ??
+                registrationClosedMessage,
+        };
 
-    function updateEvent(key: string, value: any) {
-        setEventForm((current) => ({
-            ...current,
-            [key]: value,
-        }));
-    }
-
-    function update(key: string, value: any) {
-        setForm((current) => ({
-            ...current,
-            [key]: value,
-        }));
-    }
-
-    async function triggerEmailWorker() {
         try {
-            const response = await fetch("/api/email-worker/trigger", {
-                method: "POST",
-            });
+            const response = await fetch(
+                `/api/events/${event.id}/settings/modules`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                },
+            );
 
-            const text = await response.text();
-
-            let result: any = {};
-
-            try {
-                result = text ? JSON.parse(text) : {};
-            } catch {
-                result = { raw: text };
-            }
+            const result = await response.json();
 
             if (!response.ok) {
-                console.error("Email worker trigger failed:", result);
-                return false;
+                throw new Error(result.error || "Failed to save settings.");
             }
 
-            return true;
-        } catch (error) {
-            console.error("Email worker trigger failed:", error);
-            return false;
-        }
-    }
-
-    async function saveSettings(e: React.FormEvent) {
-        e.preventDefault();
-
-        setLoading(true);
-        setMessage("");
-        setMessageType("");
-
-        const cleanEventName = eventForm.event_name.trim();
-        const cleanVenue = eventForm.venue.trim();
-        const cleanDescription = eventForm.description.trim();
-
-        if (!cleanEventName) {
-            setMessage("Event name is required.");
-            setMessageType("error");
-            setLoading(false);
-            return;
-        }
-
-        const { error: eventError } = await supabase
-            .from("events")
-            .update({
-                event_name: cleanEventName,
-                event_date: eventForm.event_date || null,
-                event_time: eventForm.event_time || null,
-                venue: cleanVenue || null,
-                description: cleanDescription || null,
-                status: eventForm.status,
-                registration_open: eventForm.registration_open,
-                max_guests: Number(eventForm.max_guests || 0),
-            })
-            .eq("id", event.id);
-
-        if (eventError) {
-            setMessage(eventError.message);
-            setMessageType("error");
-            setLoading(false);
-            return;
-        }
-
-        const { error: settingsError } = await supabase.from("event_settings").upsert(
-            {
-                event_id: event.id,
-                ...form,
-                max_guests: Number(form.max_guests || 0),
-                updated_at: new Date().toISOString(),
-            },
-            {
-                onConflict: "event_id",
+            if (result.settings?.enabled_modules) {
+                setEnabledModules({
+                    ...defaultOrganizerEnabledModules,
+                    ...result.settings.enabled_modules,
+                    overview: true,
+                    settings: true,
+                });
             }
-        );
 
-        if (settingsError) {
-            setMessage(settingsError.message);
-            setMessageType("error");
-            setLoading(false);
-            return;
-        }
+            if (typeof result.settings?.registration_is_open === "boolean") {
+                setRegistrationIsOpen(result.settings.registration_is_open);
+            }
 
-        let emailTriggered = false;
+            if (typeof result.settings?.registration_closed_message === "string") {
+                setRegistrationClosedMessage(
+                    result.settings.registration_closed_message,
+                );
+            }
 
-        if (eventDetailsChanged) {
-            emailTriggered = await triggerEmailWorker();
-        }
-
-        if (eventDetailsChanged && emailTriggered) {
-            setMessage("Event settings saved and event update emails sent.");
-            setMessageType("success");
-        } else if (eventDetailsChanged && !emailTriggered) {
-            setMessage(
-                "Event settings saved, but event update emails were not sent automatically. Check the email worker trigger."
+            setSaved(true);
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to save event settings.",
             );
-            setMessageType("error");
-        } else {
-            setMessage("Event settings saved successfully.");
-            setMessageType("success");
+        } finally {
+            setSaving(false);
         }
-
-        setLoading(false);
     }
 
-    async function deleteEvent() {
-        const confirmText = prompt("Type DELETE to permanently delete this event.");
+    function toggleRegistrationOpen() {
+        const nextOpen = !registrationIsOpen;
+        setRegistrationIsOpen(nextOpen);
+        saveSettings({ registration_is_open: nextOpen });
+    }
 
-        if (confirmText !== "DELETE") return;
+    function toggleModule(key: EventModuleKey) {
+        if (!canManageModules) return;
 
-        setDeleting(true);
-        setMessage("");
-        setMessageType("");
+        const module = modules.find((item) => item.key === key);
+        if (module?.locked) return;
 
-        const { error } = await supabase.from("events").delete().eq("id", event.id);
+        const nextModules = {
+            ...enabledModules,
+            [key]: !enabledModules[key],
+            overview: true,
+            settings: true,
+        };
 
-        if (error) {
-            setMessage(error.message);
-            setMessageType("error");
-            setDeleting(false);
-            return;
-        }
-
-        window.location.href = "/dashboard/events";
+        setEnabledModules(nextModules);
+        saveSettings({ enabled_modules: nextModules });
     }
 
     return (
-        <form onSubmit={saveSettings} className="space-y-8">
-            <Section
-                title="General Event Details"
-                description="Update the main event information shown to guests."
-                icon={CalendarDays}
-            >
-                <Input
-                    label="Event Name"
-                    value={eventForm.event_name}
-                    onChange={(value) => updateEvent("event_name", value)}
-                />
-
-                <div className="grid gap-5 md:grid-cols-2">
-                    <Input
-                        label="Event Date"
-                        type="date"
-                        value={eventForm.event_date}
-                        onChange={(value) => updateEvent("event_date", value)}
-                        icon={CalendarDays}
-                    />
-
-                    <Input
-                        label="Event Time"
-                        value={eventForm.event_time}
-                        onChange={(value) => updateEvent("event_time", value)}
-                        icon={Clock}
-                    />
-                </div>
-
-                <Input
-                    label="Venue"
-                    value={eventForm.venue}
-                    onChange={(value) => updateEvent("venue", value)}
-                    icon={MapPin}
-                />
-
-                <TextArea
-                    label="Event Description"
-                    value={eventForm.description}
-                    onChange={(value) => updateEvent("description", value)}
-                    placeholder="Add event description or important notes for guests."
-                />
-
-                <div className="grid gap-5 md:grid-cols-2">
-                    <Select
-                        label="Status"
-                        value={eventForm.status}
-                        onChange={(value) => updateEvent("status", value)}
-                        options={[
-                            { label: "Draft", value: "draft" },
-                            { label: "Published", value: "published" },
-                            { label: "Closed", value: "closed" },
-                            { label: "Archived", value: "archived" },
-                        ]}
-                    />
-
-                    <Input
-                        label="Maximum Guests"
-                        type="number"
-                        value={String(eventForm.max_guests)}
-                        onChange={(value) => updateEvent("max_guests", value)}
-                    />
-                </div>
-
-                {eventDetailsChanged && (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
-                        <div className="flex gap-3">
-                            <Mail size={18} className="mt-0.5 shrink-0" />
-                            <p>
-                                Event details have changed. After saving, registered guests will
-                                receive an event update email if the database trigger is active.
-                            </p>
-                        </div>
-                    </div>
-                )}
-            </Section>
-
-            <Section
-                title="Registration Settings"
-                description="Control whether guests can register and how registrations are handled."
-                icon={Settings}
-            >
-                <Toggle
-                    label="Registration Open"
-                    description="Allow guests to access and submit the registration form."
-                    value={eventForm.registration_open}
-                    onChange={(value) => updateEvent("registration_open", value)}
-                />
-
-                <Toggle
-                    label="Enable Registration"
-                    description="Enable the registration system for this event."
-                    value={form.registration_enabled}
-                    onChange={(value) => update("registration_enabled", value)}
-                />
-
-                <Toggle
-                    label="Auto Approve Guests"
-                    description="Automatically confirm guests after they submit the form."
-                    value={form.auto_approve}
-                    onChange={(value) => update("auto_approve", value)}
-                />
-
-                <Toggle
-                    label="Enable Waitlist"
-                    description="Allow waitlisting when the event reaches capacity."
-                    value={form.enable_waitlist}
-                    onChange={(value) => update("enable_waitlist", value)}
-                />
-
-                <Input
-                    label="Registration Limit"
-                    type="number"
-                    value={String(form.max_guests)}
-                    onChange={(value) => update("max_guests", value)}
-                />
-            </Section>
-
-            <Section
-                title="QR Check-In Settings"
-                description="Manage check-in rules for event-day operations."
-                icon={CheckCircle2}
-            >
-                <Toggle
-                    label="Enable QR Check-In"
-                    description="Allow staff to scan QR passes for this event."
-                    value={form.qr_checkin}
-                    onChange={(value) => update("qr_checkin", value)}
-                />
-
-                <Toggle
-                    label="Allow Multiple Scan"
-                    description="Allow the same QR code to be scanned more than once."
-                    value={form.allow_multiple_scan}
-                    onChange={(value) => update("allow_multiple_scan", value)}
-                />
-
-                <Toggle
-                    label="Allow Manual Check-In"
-                    description="Allow staff to search and check in guests manually."
-                    value={form.manual_checkin}
-                    onChange={(value) => update("manual_checkin", value)}
-                />
-            </Section>
-
-            <Section
-                title="Email Settings"
-                description="Control which automated event emails should be enabled."
-                icon={Mail}
-            >
-                <Toggle
-                    label="Send Confirmation Email"
-                    description="Send guests a confirmation email after registration."
-                    value={form.send_confirmation}
-                    onChange={(value) => update("send_confirmation", value)}
-                />
-
-                <Toggle
-                    label="Send Reminder Email"
-                    description="Allow reminder emails to be sent before the event."
-                    value={form.send_reminder}
-                    onChange={(value) => update("send_reminder", value)}
-                />
-
-                <Toggle
-                    label="Send Thank You Email"
-                    description="Allow thank-you emails to be sent after the event."
-                    value={form.send_thank_you}
-                    onChange={(value) => update("send_thank_you", value)}
-                />
-            </Section>
-
-            <Section
-                title="Public Website Settings"
-                description="Manage whether the public registration website is visible."
-                icon={Globe2}
-            >
-                <Toggle
-                    label="Public Registration Page"
-                    description="Make the event registration page publicly accessible."
-                    value={form.public_registration}
-                    onChange={(value) => update("public_registration", value)}
-                />
-            </Section>
-
-            {message && (
-                <div
-                    className={`rounded-2xl p-5 text-sm font-bold ${messageType === "success"
-                            ? "border border-green-100 bg-green-50 text-green-700"
-                            : "border border-red-100 bg-red-50 text-red-700"
-                        }`}
-                >
-                    {message}
+        <div className="space-y-8">
+            {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-black text-red-700">
+                    {error}
                 </div>
             )}
 
-            <button
-                type="submit"
-                disabled={loading || deleting}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-                <Save size={18} />
-                {loading ? "Saving..." : "Save Event Settings"}
-            </button>
-
-            <div className="rounded-[2rem] border border-red-200 bg-red-50 p-6">
-                <div className="flex items-start gap-4">
-                    <div className="rounded-2xl bg-white p-3 text-red-600">
-                        <ShieldAlert size={24} />
-                    </div>
-
-                    <div className="flex-1">
-                        <h2 className="text-2xl font-black text-red-700">Danger Zone</h2>
-                        <p className="mt-2 text-sm leading-6 text-red-600">
-                            Deleting this event will remove its registrations, QR tickets,
-                            check-ins, tables, branding, reports, and settings.
-                        </p>
-
-                        <button
-                            type="button"
-                            onClick={deleteEvent}
-                            disabled={loading || deleting}
-                            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-3 font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            <Trash2 size={17} />
-                            {deleting ? "Deleting..." : "Delete Event"}
-                        </button>
-                    </div>
+            {saved && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">
+                    Settings saved successfully.
                 </div>
-            </div>
-        </form>
-    );
-}
+            )}
 
-function Section({
-    title,
-    description,
-    icon: Icon,
-    children,
-}: {
-    title: string;
-    description: string;
-    icon: any;
-    children: React.ReactNode;
-}) {
-    return (
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-            <div className="flex gap-4">
-                <div className="h-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                    <Icon size={22} />
-                </div>
-
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <div>
-                    <h2 className="text-2xl font-black text-slate-950">{title}</h2>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                        {description}
+                    <h2 className="text-2xl font-black text-slate-950">
+                        Registration Page Status
+                    </h2>
+                    <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
+                        Open or close the public registration page for this event.
+                        Admins and organisers can still access the dashboard.
                     </p>
                 </div>
-            </div>
 
-            <div className="mt-6 space-y-5">{children}</div>
-        </section>
-    );
-}
-
-function Input({
-    label,
-    value,
-    onChange,
-    type = "text",
-    icon: Icon,
-}: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    type?: string;
-    icon?: any;
-}) {
-    return (
-        <label className="block">
-            <p className="mb-2 text-sm font-black text-slate-700">{label}</p>
-
-            <div className="relative">
-                {Icon && (
-                    <Icon
-                        size={17}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                    />
-                )}
-
-                <input
-                    type={type}
-                    value={value || ""}
-                    onChange={(event) => onChange(event.target.value)}
-                    className={`h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white ${Icon ? "pl-11" : ""
+                <button
+                    type="button"
+                    onClick={toggleRegistrationOpen}
+                    disabled={saving}
+                    className={`mt-6 flex w-full items-center justify-between gap-5 rounded-[1.5rem] border p-5 text-left transition ${registrationIsOpen
+                            ? "border-emerald-200 bg-emerald-50"
+                            : "border-red-200 bg-red-50"
                         }`}
-                />
+                >
+                    <div className="flex items-center gap-4">
+                        <div
+                            className={`flex h-12 w-12 items-center justify-center rounded-2xl ${registrationIsOpen
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-red-100 text-red-700"
+                                }`}
+                        >
+                            <LockKeyhole size={22} />
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-black text-slate-950">
+                                {registrationIsOpen
+                                    ? "Registration Page Open"
+                                    : "Registration Page Closed"}
+                            </h3>
+                            <p className="mt-1 text-sm font-bold text-slate-500">
+                                {registrationIsOpen
+                                    ? "Guests can access and submit the public registration form."
+                                    : "Guests will see the closed registration message."}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        className={`relative h-8 w-14 shrink-0 rounded-full transition ${registrationIsOpen ? "bg-emerald-600" : "bg-slate-300"
+                            }`}
+                    >
+                        <div
+                            className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${registrationIsOpen ? "left-7" : "left-1"
+                                }`}
+                        />
+                    </div>
+                </button>
+
+                {!registrationIsOpen && (
+                    <div className="mt-5">
+                        <label className="block text-sm font-black text-slate-700">
+                            Closed Registration Message
+                        </label>
+                        <textarea
+                            value={registrationClosedMessage}
+                            onChange={(event) => {
+                                setRegistrationClosedMessage(event.target.value);
+                                setSaved(false);
+                            }}
+                            rows={3}
+                            className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => saveSettings()}
+                            disabled={saving}
+                            className="mt-3 inline-flex items-center justify-center gap-2 rounded-2xl bg-[#4F46E5] px-5 py-3 text-sm font-black text-white transition hover:bg-[#4338CA] disabled:opacity-60"
+                        >
+                            {saving && <Loader2 size={16} className="animate-spin" />}
+                            Save Closed Message
+                        </button>
+                    </div>
+                )}
+            </section>
+
+            {canManageModules && (
+                <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                    <div>
+                        <h2 className="text-2xl font-black text-slate-950">
+                            Organizer Module Visibility
+                        </h2>
+                        <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
+                            Choose which modules organisers can see and access for
+                            this event. Admins still see every module.
+                        </p>
+                    </div>
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-2">
+                        {modules.map((module) => {
+                            const enabled = enabledModules[module.key];
+
+                            return (
+                                <button
+                                    key={module.key}
+                                    type="button"
+                                    onClick={() => toggleModule(module.key)}
+                                    disabled={module.locked || saving}
+                                    className="group flex w-full items-center justify-between gap-4 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-[#4F46E5]/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                    <div className="flex min-w-0 items-start gap-4">
+                                        <div
+                                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${enabled
+                                                    ? "bg-[#EEF2FF] text-[#4F46E5]"
+                                                    : "bg-slate-100 text-slate-400"
+                                                }`}
+                                        >
+                                            {module.icon}
+                                        </div>
+
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-black text-slate-950">
+                                                    {module.title}
+                                                </h3>
+                                                {module.locked && (
+                                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                                        Required
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="mt-1 text-sm font-medium leading-5 text-slate-500">
+                                                {module.description}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        className={`relative h-7 w-12 shrink-0 rounded-full transition ${enabled ? "bg-[#4F46E5]" : "bg-slate-300"
+                                            }`}
+                                    >
+                                        <div
+                                            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${enabled ? "left-6" : "left-1"
+                                                }`}
+                                        />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
+            <div className="flex justify-end">
+                <button
+                    type="button"
+                    onClick={() => saveSettings()}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#4F46E5] px-6 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#4338CA] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {saving && <Loader2 size={16} className="animate-spin" />}
+                    Save All Settings
+                </button>
             </div>
-        </label>
-    );
-}
-
-function TextArea({
-    label,
-    value,
-    onChange,
-    placeholder,
-}: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-}) {
-    return (
-        <label className="block">
-            <p className="mb-2 text-sm font-black text-slate-700">{label}</p>
-
-            <textarea
-                value={value || ""}
-                onChange={(event) => onChange(event.target.value)}
-                placeholder={placeholder}
-                rows={4}
-                className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
-            />
-        </label>
-    );
-}
-
-function Select({
-    label,
-    value,
-    onChange,
-    options,
-}: {
-    label: string;
-    value: string;
-    onChange: (value: string) => void;
-    options: { label: string; value: string }[];
-}) {
-    return (
-        <label className="block">
-            <p className="mb-2 text-sm font-black text-slate-700">{label}</p>
-
-            <select
-                value={value}
-                onChange={(event) => onChange(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5] focus:bg-white"
-            >
-                {options.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-        </label>
-    );
-}
-
-function Toggle({
-    label,
-    description,
-    value,
-    onChange,
-}: {
-    label: string;
-    description: string;
-    value: boolean;
-    onChange: (value: boolean) => void;
-}) {
-    return (
-        <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 transition hover:bg-[#F7F5FF]">
-            <div>
-                <p className="font-black text-slate-950">{label}</p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-            </div>
-
-            <input
-                type="checkbox"
-                checked={Boolean(value)}
-                onChange={(event) => onChange(event.target.checked)}
-                className="h-5 w-5 shrink-0 accent-[#4F46E5]"
-            />
-        </label>
+        </div>
     );
 }

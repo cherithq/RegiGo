@@ -237,9 +237,9 @@ export default function EmailCentre({
     }
 
     const preview = selected.body
-        ?.replaceAll("{{name}}", "Phoebe Liu")
-        .replaceAll("{{full_name}}", "Phoebe Liu")
-        .replaceAll("{{email}}", "phoebe@example.com")
+        ?.replaceAll("{{name}}", "Guest Name")
+        .replaceAll("{{full_name}}", "Full Name")
+        .replaceAll("{{email}}", "email@example.com")
         .replaceAll("{{event_name}}", event.event_name || "Event Name")
         .replaceAll("{{event_date}}", event.event_date || "Event Date")
         .replaceAll("{{event_time}}", event.event_time || "Event Time")
@@ -277,8 +277,8 @@ export default function EmailCentre({
                             key={template.id}
                             onClick={() => setSelected(template)}
                             className={`w-full rounded-2xl p-4 text-left transition ${selected?.id === template.id
-                                    ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white"
-                                    : "bg-white hover:bg-indigo-50"
+                                ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white"
+                                : "bg-white hover:bg-indigo-50"
                                 }`}
                         >
                             <p className="font-black">
@@ -422,8 +422,8 @@ export default function EmailCentre({
                                     "{{event_name}}",
                                     event.event_name || "Event Name"
                                 )
-                                .replaceAll("{{name}}", "Phoebe Liu")
-                                .replaceAll("{{full_name}}", "Phoebe Liu")}
+                                .replaceAll("{{name}}", "Guest Name")
+                                .replaceAll("{{full_name}}", "Full Name")}
                         </p>
 
                         <div className="mt-5 whitespace-pre-wrap rounded-2xl bg-white p-5 leading-7 text-slate-700">
