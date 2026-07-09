@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
     Check,
     CheckCircle2,
+    Filter,
     Gift,
     History,
     Plus,
@@ -23,6 +24,7 @@ type CheckedInGuest = {
     phone: string | null;
     department: string | null;
     checked_in_at: string | null;
+    custom_answers?: Record<string, unknown> | null;
 };
 
 type Winner = {
@@ -47,6 +49,16 @@ type Prize = {
     updated_at?: string | null;
 };
 
+type RegistrationField = {
+    id: string;
+    field_label: string;
+    field_key: string;
+    field_type: string;
+    field_options?: any;
+    options?: any;
+    sort_order?: number;
+};
+
 const wheelColors = [
     "#4F46E5",
     "#EC4899",
@@ -58,20 +70,57 @@ const wheelColors = [
     "#6366F1",
 ];
 
+const HAS_VALUE_FILTER = "__HAS_VALUE__";
+
+const HIDDEN_FILTER_FIELD_TYPES = new Set([
+    "email",
+    "phone",
+    "file",
+    "date",
+    "time",
+]);
+
+const HIDDEN_FILTER_KEYS = new Set([
+    "id",
+    "eventid",
+    "registrationid",
+    "registrationstatus",
+    "qrtoken",
+    "qrcode",
+    "qrcodeurl",
+    "tickettypeid",
+    "tickettype",
+    "fullname",
+    "name",
+    "email",
+    "emailaddress",
+    "phone",
+    "phonenumber",
+    "mobile",
+    "mobilenumber",
+    "countrycode",
+    "createdat",
+    "updatedat",
+    "checkedinat",
+]);
+
 export default function LuckyDrawWheel({
     eventId,
     eventName,
-    guests,
-    initialWinners,
-    initialPrizes,
+    guests = [],
+    initialWinners = [],
+    initialPrizes = [],
+    registrationFields = [],
 }: {
     eventId: string;
     eventName: string;
-    guests: CheckedInGuest[];
-    initialWinners: Winner[];
-    initialPrizes: Prize[];
+    guests?: CheckedInGuest[];
+    initialWinners?: Winner[];
+    initialPrizes?: Prize[];
+    registrationFields?: RegistrationField[];
 }) {
     const [winners, setWinners] = useState<Winner[]>(initialWinners);
+
     const [prizes, setPrizes] = useState<Prize[]>(
         [...initialPrizes].sort(
             (a, b) => Number(a.prize_order || 0) - Number(b.prize_order || 0)
@@ -84,6 +133,8 @@ export default function LuckyDrawWheel({
 
     const [newPrizeName, setNewPrizeName] = useState("");
     const [guestSearch, setGuestSearch] = useState("");
+    const [fieldFilterKey, setFieldFilterKey] = useState("");
+    const [fieldFilterValue, setFieldFilterValue] = useState("");
     const [rotation, setRotation] = useState(0);
     const [spinning, setSpinning] = useState(false);
     const [selectedWinner, setSelectedWinner] = useState<CheckedInGuest | null>(
@@ -95,16 +146,119 @@ export default function LuckyDrawWheel({
         return prizes.find((prize) => prize.id === selectedPrizeId) || null;
     }, [prizes, selectedPrizeId]);
 
-    const winnerRegistrationIds = useMemo(
-        () => new Set(winners.map((winner) => winner.registration_id)),
-        [winners]
-    );
+    const winnerRegistrationIds = useMemo(() => {
+        return new Set(winners.map((winner) => winner.registration_id));
+    }, [winners]);
 
     const selectedPrizeEligibleIds = useMemo(() => {
         if (!selectedPrize?.eligible_registration_ids) return [];
-
         return selectedPrize.eligible_registration_ids;
     }, [selectedPrize]);
+
+    const availableFilterFields = useMemo(() => {
+        let sourceFields: RegistrationField[] = [];
+
+        if (registrationFields.length > 0) {
+            sourceFields = registrationFields;
+        } else {
+            const keys = new Set<string>();
+
+            guests.forEach((guest) => {
+                Object.keys(guest.custom_answers || {}).forEach((key) => {
+                    keys.add(key);
+                });
+            });
+
+            sourceFields = Array.from(keys).map((key) => ({
+                id: key,
+                field_label: formatAutoLabel(key),
+                field_key: key,
+                field_type: "text",
+            }));
+        }
+
+        const cleanedFields = sourceFields
+            .filter((field) => shouldShowLuckyDrawFilterField(field, guests))
+            .sort(
+                (a, b) =>
+                    Number(a.sort_order || 0) - Number(b.sort_order || 0)
+            );
+
+        return dedupeFilterFields(cleanedFields);
+    }, [registrationFields, guests]);
+
+    const selectedFilterField = useMemo(() => {
+        return (
+            availableFilterFields.find(
+                (field) => field.field_key === fieldFilterKey
+            ) || null
+        );
+    }, [availableFilterFields, fieldFilterKey]);
+
+    const fieldFilterOptions = useMemo(() => {
+        if (!fieldFilterKey) return [];
+
+        const values = new Set<string>();
+
+        const configuredChoices = getConfiguredChoices(selectedFilterField);
+
+        configuredChoices.forEach((choice) => {
+            if (choice) values.add(choice);
+        });
+
+        guests.forEach((guest) => {
+            const answer = getGuestAnswer(guest, fieldFilterKey);
+
+            normaliseAnswerValues(answer).forEach((value) => {
+                if (value) values.add(value);
+            });
+        });
+
+        return Array.from(values).sort((a, b) => a.localeCompare(b));
+    }, [guests, fieldFilterKey, selectedFilterField]);
+
+    const filteredGuests = useMemo(() => {
+        const keyword = guestSearch.trim().toLowerCase();
+
+        return guests.filter((guest) => {
+            const searchableText = [
+                guest.full_name,
+                guest.email,
+                guest.phone,
+                guest.department,
+                ...Object.values(guest.custom_answers || {}).flatMap((value) =>
+                    normaliseAnswerValues(value)
+                ),
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+
+            const matchesSearch = keyword
+                ? searchableText.includes(keyword)
+                : true;
+
+            if (!matchesSearch) return false;
+
+            if (!fieldFilterKey || !fieldFilterValue) {
+                return true;
+            }
+
+            const answerValues = normaliseAnswerValues(
+                getGuestAnswer(guest, fieldFilterKey)
+            );
+
+            if (fieldFilterValue === HAS_VALUE_FILTER) {
+                return answerValues.length > 0;
+            }
+
+            return answerValues.some(
+                (value) =>
+                    value.trim().toLowerCase() ===
+                    fieldFilterValue.trim().toLowerCase()
+            );
+        });
+    }, [guests, guestSearch, fieldFilterKey, fieldFilterValue]);
 
     const prizePoolGuests = useMemo(() => {
         if (!selectedPrize) return [];
@@ -113,7 +267,9 @@ export default function LuckyDrawWheel({
             return guests;
         }
 
-        return guests.filter((guest) => selectedPrizeEligibleIds.includes(guest.id));
+        return guests.filter((guest) =>
+            selectedPrizeEligibleIds.includes(guest.id)
+        );
     }, [guests, selectedPrize, selectedPrizeEligibleIds]);
 
     const eligibleGuests = useMemo(() => {
@@ -121,25 +277,6 @@ export default function LuckyDrawWheel({
             (guest) => !winnerRegistrationIds.has(guest.id)
         );
     }, [prizePoolGuests, winnerRegistrationIds]);
-
-    const filteredGuests = useMemo(() => {
-        const keyword = guestSearch.trim().toLowerCase();
-
-        if (!keyword) return guests;
-
-        return guests.filter((guest) => {
-            return [
-                guest.full_name,
-                guest.email,
-                guest.phone,
-                guest.department,
-            ]
-                .filter(Boolean)
-                .join(" ")
-                .toLowerCase()
-                .includes(keyword);
-        });
-    }, [guests, guestSearch]);
 
     const latestWinners = useMemo(() => {
         return [...winners].sort((a, b) => {
@@ -160,7 +297,9 @@ export default function LuckyDrawWheel({
 
         const nextOrder =
             prizes.length > 0
-                ? Math.max(...prizes.map((prize) => Number(prize.prize_order || 0))) + 1
+                ? Math.max(
+                      ...prizes.map((prize) => Number(prize.prize_order || 0))
+                  ) + 1
                 : 1;
 
         const { data, error } = await supabase
@@ -215,10 +354,12 @@ export default function LuckyDrawWheel({
     }
 
     async function updatePrizeEligibleIds(prizeId: string, ids: string[]) {
+        const uniqueIds = Array.from(new Set(ids));
+
         const { error } = await supabase
             .from("lucky_draw_prizes")
             .update({
-                eligible_registration_ids: ids,
+                eligible_registration_ids: uniqueIds,
                 updated_at: new Date().toISOString(),
             })
             .eq("id", prizeId);
@@ -232,9 +373,9 @@ export default function LuckyDrawWheel({
             current.map((prize) =>
                 prize.id === prizeId
                     ? {
-                        ...prize,
-                        eligible_registration_ids: ids,
-                    }
+                          ...prize,
+                          eligible_registration_ids: uniqueIds,
+                      }
                     : prize
             )
         );
@@ -266,7 +407,32 @@ export default function LuckyDrawWheel({
             guests.map((guest) => guest.id)
         );
 
-        setMessage(`All checked-in guests are selected for ${selectedPrize.prize_name}.`);
+        setMessage(
+            `All checked-in guests are selected for ${selectedPrize.prize_name}.`
+        );
+    }
+
+    async function selectFilteredGuestsForPrize() {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        if (filteredGuests.length === 0) {
+            setMessage("No guests match the current filter.");
+            return;
+        }
+
+        await updatePrizeEligibleIds(
+            selectedPrize.id,
+            filteredGuests.map((guest) => guest.id)
+        );
+
+        setMessage(
+            `${filteredGuests.length} filtered guest${
+                filteredGuests.length === 1 ? "" : "s"
+            } selected for ${selectedPrize.prize_name}.`
+        );
     }
 
     async function clearSelectedGuestsForPrize() {
@@ -309,7 +475,10 @@ export default function LuckyDrawWheel({
 
         setWinners((current) => [data as Winner, ...current]);
         setSelectedWinner(winner);
-        setMessage(`${winner.full_name || "Guest"} won ${selectedPrize.prize_name}.`);
+
+        setMessage(
+            `${winner.full_name || "Guest"} won ${selectedPrize.prize_name}.`
+        );
     }
 
     async function spinWheel() {
@@ -388,8 +557,11 @@ export default function LuckyDrawWheel({
                         </h2>
 
                         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                            The wheel only includes checked-in guests who are eligible for the
-                            selected prize.
+                            {eventName}
+                        </p>
+
+                        <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
+                            The wheel only includes checked-in guests who are eligible for the selected prize.
                         </p>
                     </div>
 
@@ -500,7 +672,10 @@ export default function LuckyDrawWheel({
                         disabled={spinning || !selectedPrize || eligibleGuests.length === 0}
                         className="mt-8 inline-flex h-14 w-full max-w-md items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-8 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        <RotateCw size={18} className={spinning ? "animate-spin" : ""} />
+                        <RotateCw
+                            size={18}
+                            className={spinning ? "animate-spin" : ""}
+                        />
                         {spinning ? "Spinning..." : "Spin Selected Prize"}
                     </button>
 
@@ -550,8 +725,7 @@ export default function LuckyDrawWheel({
                             </h2>
 
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                                Select who can win the currently selected prize. Only checked-in
-                                guests are shown.
+                                Filter guests by useful registration answers, then select all matching guests for the current prize.
                             </p>
                         </div>
 
@@ -560,7 +734,7 @@ export default function LuckyDrawWheel({
                         </span>
                     </div>
 
-                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
                         <button
                             type="button"
                             onClick={selectAllGuestsForPrize}
@@ -569,6 +743,16 @@ export default function LuckyDrawWheel({
                         >
                             <Check size={16} />
                             Select All
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={selectFilteredGuestsForPrize}
+                            disabled={!selectedPrize || filteredGuests.length === 0}
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-4 text-sm font-black text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <Filter size={16} />
+                            Select Filtered
                         </button>
 
                         <button
@@ -590,9 +774,80 @@ export default function LuckyDrawWheel({
                         <input
                             value={guestSearch}
                             onChange={(event) => setGuestSearch(event.target.value)}
-                            placeholder="Search checked-in guests..."
+                            placeholder="Search checked-in guests by name, email, phone or answer..."
                             className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
                         />
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-700">
+                            <Filter size={16} className="text-[#4F46E5]" />
+                            Filter by Registration Answer
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <select
+                                value={fieldFilterKey}
+                                onChange={(event) => {
+                                    setFieldFilterKey(event.target.value);
+                                    setFieldFilterValue("");
+                                }}
+                                className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
+                            >
+                                <option value="">No field filter</option>
+
+                                {availableFilterFields.map((field) => (
+                                    <option
+                                        key={field.id || field.field_key}
+                                        value={field.field_key}
+                                    >
+                                        {field.field_label}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <select
+                                value={fieldFilterValue}
+                                onChange={(event) =>
+                                    setFieldFilterValue(event.target.value)
+                                }
+                                disabled={!fieldFilterKey}
+                                className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option value="">Select value</option>
+                                <option value={HAS_VALUE_FILTER}>Has any value</option>
+
+                                {fieldFilterOptions.map((value) => (
+                                    <option key={value} value={value}>
+                                        {value}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {(fieldFilterKey || fieldFilterValue) && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-xs font-bold text-slate-500">
+                                    Showing{" "}
+                                    <span className="font-black text-[#4F46E5]">
+                                        {filteredGuests.length}
+                                    </span>{" "}
+                                    matching checked-in guest
+                                    {filteredGuests.length === 1 ? "" : "s"}.
+                                </p>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFieldFilterKey("");
+                                        setFieldFilterValue("");
+                                    }}
+                                    className="rounded-xl bg-white px-4 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100"
+                                >
+                                    Clear Filter
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-6 max-h-[460px] space-y-3 overflow-y-auto pr-1">
@@ -607,15 +862,22 @@ export default function LuckyDrawWheel({
 
                                 const alreadyWon = winnerRegistrationIds.has(guest.id);
 
+                                const selectedFieldAnswer = fieldFilterKey
+                                    ? displayAnswerValue(
+                                          getGuestAnswer(guest, fieldFilterKey)
+                                      )
+                                    : "";
+
                                 return (
                                     <button
                                         key={guest.id}
                                         type="button"
                                         onClick={() => toggleGuestEligibility(guest.id)}
-                                        className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition ${selected
+                                        className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition ${
+                                            selected
                                                 ? "border-[#4F46E5] bg-[#F7F5FF]"
                                                 : "border-slate-100 bg-slate-50 hover:bg-[#F7F5FF]"
-                                            }`}
+                                        }`}
                                     >
                                         <div>
                                             <p className="font-black text-slate-950">
@@ -626,6 +888,14 @@ export default function LuckyDrawWheel({
                                                 {guest.email || "No email"}
                                             </p>
 
+                                            {fieldFilterKey && (
+                                                <p className="mt-1 text-xs font-black text-[#4F46E5]">
+                                                    {selectedFilterField?.field_label ||
+                                                        fieldFilterKey}
+                                                    : {selectedFieldAnswer || "-"}
+                                                </p>
+                                            )}
+
                                             {alreadyWon && (
                                                 <p className="mt-1 text-xs font-black text-amber-600">
                                                     Already won before
@@ -634,10 +904,11 @@ export default function LuckyDrawWheel({
                                         </div>
 
                                         <div
-                                            className={`flex h-8 w-8 items-center justify-center rounded-full ${selected
+                                            className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                                                selected
                                                     ? "bg-[#4F46E5] text-white"
                                                     : "bg-white text-slate-300"
-                                                }`}
+                                            }`}
                                         >
                                             <Check size={16} />
                                         </div>
@@ -645,7 +916,7 @@ export default function LuckyDrawWheel({
                                 );
                             })
                         ) : (
-                            <EmptyBox text="No checked-in guests found." />
+                            <EmptyBox text="No checked-in guests found for this filter." />
                         )}
                     </div>
                 </div>
@@ -782,7 +1053,13 @@ function WheelSvg({
                     return (
                         <g key={guest.id}>
                             <path
-                                d={describeSegment(center, center, radius, startAngle, endAngle)}
+                                d={describeSegment(
+                                    center,
+                                    center,
+                                    radius,
+                                    startAngle,
+                                    endAngle
+                                )}
                                 fill={wheelColors[index % wheelColors.length]}
                                 stroke="white"
                                 strokeWidth="3"
@@ -874,4 +1151,281 @@ function EmptyBox({ text }: { text: string }) {
             </p>
         </div>
     );
+}
+
+function getGuestAnswer(guest: CheckedInGuest, fieldKey: string) {
+    const customAnswers = guest.custom_answers || {};
+    const candidateKeys = getEquivalentAnswerKeys(fieldKey);
+
+    for (const key of candidateKeys) {
+        if (customAnswers[key] !== undefined) {
+            return customAnswers[key];
+        }
+    }
+
+    const normalisedCandidates = candidateKeys.map((key) =>
+        normaliseFilterText(key)
+    );
+
+    for (const [answerKey, answerValue] of Object.entries(customAnswers)) {
+        const normalisedAnswerKey = normaliseFilterText(answerKey);
+
+        if (normalisedCandidates.includes(normalisedAnswerKey)) {
+            return answerValue;
+        }
+    }
+
+    const normalisedKey = normaliseFilterText(fieldKey);
+
+    if (
+        normalisedKey === "department" ||
+        normalisedKey === "departmentoutlet"
+    ) {
+        return guest.department;
+    }
+
+    return undefined;
+}
+
+function getEquivalentAnswerKeys(fieldKey: string) {
+    const normalisedKey = normaliseFilterText(fieldKey);
+
+    if (
+        normalisedKey === "department" ||
+        normalisedKey === "departmentoutlet"
+    ) {
+        return [
+            fieldKey,
+            "department",
+            "department_outlet",
+            "departmentOutlet",
+            "department / outlet",
+        ];
+    }
+
+    if (
+        normalisedKey === "dietaryrequest" ||
+        normalisedKey === "dietaryrequirements" ||
+        normalisedKey === "dietary"
+    ) {
+        return [
+            fieldKey,
+            "dietary",
+            "dietary_request",
+            "dietary_requirements",
+            "dietaryRequest",
+            "dietaryRequirements",
+        ];
+    }
+
+    if (
+        normalisedKey === "requiretransport" ||
+        normalisedKey === "requiretransportfromoutlet" ||
+        normalisedKey === "transport"
+    ) {
+        return [
+            fieldKey,
+            "require_transport",
+            "require_transport_from_outlet",
+            "requireTransport",
+            "requireTransportFromOutlet",
+            "transport",
+        ];
+    }
+
+    return [fieldKey];
+}
+
+function normaliseAnswerValues(value: unknown): string[] {
+    if (value === null || value === undefined) return [];
+
+    if (Array.isArray(value)) {
+        return value
+            .flatMap((item) => normaliseAnswerValues(item))
+            .filter(Boolean);
+    }
+
+    if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+
+        if ("label" in record) {
+            return normaliseAnswerValues(record.label);
+        }
+
+        if ("value" in record) {
+            return normaliseAnswerValues(record.value);
+        }
+
+        return [JSON.stringify(record)];
+    }
+
+    const text = String(value).trim();
+    return text ? [text] : [];
+}
+
+function displayAnswerValue(value: unknown) {
+    return normaliseAnswerValues(value).join(", ");
+}
+
+function getConfiguredChoices(field: RegistrationField | null) {
+    if (!field) return [];
+
+    const options = field.field_options || field.options || {};
+
+    const normalChoices = Array.isArray(options.choices)
+        ? options.choices.filter(Boolean)
+        : [];
+
+    const imageChoiceLabels = Array.isArray(options.image_choices)
+        ? options.image_choices
+              .map((choice: any) => choice?.label)
+              .filter(Boolean)
+        : [];
+
+    return Array.from(new Set([...normalChoices, ...imageChoiceLabels]));
+}
+
+function formatAutoLabel(key: string) {
+    return key
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
+function normaliseFilterText(value?: string | null) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+}
+
+function isUuidLike(value?: string | null) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        String(value || "").trim()
+    );
+}
+
+function shouldShowLuckyDrawFilterField(
+    field: RegistrationField,
+    guests: CheckedInGuest[]
+) {
+    const fieldKey = field.field_key || "";
+    const fieldLabel = field.field_label || "";
+
+    if (!fieldKey || !fieldLabel) return false;
+
+    if (isUuidLike(fieldKey) || isUuidLike(fieldLabel)) {
+        return false;
+    }
+
+    const normalisedKey = normaliseFilterText(fieldKey);
+    const normalisedLabel = normaliseFilterText(fieldLabel);
+
+    if (
+        HIDDEN_FILTER_KEYS.has(normalisedKey) ||
+        HIDDEN_FILTER_KEYS.has(normalisedLabel)
+    ) {
+        return false;
+    }
+
+    if (HIDDEN_FILTER_FIELD_TYPES.has(field.field_type)) {
+        return false;
+    }
+
+    const configuredChoices = getConfiguredChoices(field);
+
+    const guestAnswerValues = guests.flatMap((guest) =>
+        normaliseAnswerValues(getGuestAnswer(guest, fieldKey))
+    );
+
+    if (configuredChoices.length === 0 && guestAnswerValues.length === 0) {
+        return false;
+    }
+
+    return true;
+}
+
+function getFilterGroupKey(field: RegistrationField) {
+    const combined = normaliseFilterText(
+        `${field.field_label || ""} ${field.field_key || ""}`
+    );
+
+    if (combined.includes("department")) {
+        return "departmentoutlet";
+    }
+
+    if (combined.includes("dietary")) {
+        return "dietaryrequirements";
+    }
+
+    if (combined.includes("requiretransport") || combined.includes("transport")) {
+        return "requiretransportfromoutlet";
+    }
+
+    return (
+        normaliseFilterText(field.field_label) ||
+        normaliseFilterText(field.field_key)
+    );
+}
+
+function getFilterDisplayLabel(field: RegistrationField) {
+    const groupKey = getFilterGroupKey(field);
+
+    if (groupKey === "departmentoutlet") {
+        return "Department / Outlet";
+    }
+
+    if (groupKey === "dietaryrequirements") {
+        return "Dietary Requirements";
+    }
+
+    if (groupKey === "requiretransportfromoutlet") {
+        return "Require Transport from Outlet";
+    }
+
+    return field.field_label;
+}
+
+function getFilterFieldScore(field: RegistrationField) {
+    const text = normaliseFilterText(
+        `${field.field_label || ""} ${field.field_key || ""}`
+    );
+
+    let score = 0;
+
+    if (text.includes("outlet")) score += 20;
+    if (text.includes("requirements")) score += 20;
+    if (text.includes("request")) score += 10;
+    if (text.includes("fromoutlet")) score += 30;
+
+    return score;
+}
+
+function dedupeFilterFields(fields: RegistrationField[]) {
+    const grouped = new Map<string, RegistrationField>();
+
+    for (const field of fields) {
+        const groupKey = getFilterGroupKey(field);
+
+        if (!groupKey) continue;
+
+        const existing = grouped.get(groupKey);
+
+        if (!existing) {
+            grouped.set(groupKey, {
+                ...field,
+                field_label: getFilterDisplayLabel(field),
+            });
+            continue;
+        }
+
+        if (getFilterFieldScore(field) > getFilterFieldScore(existing)) {
+            grouped.set(groupKey, {
+                ...field,
+                field_label: getFilterDisplayLabel(field),
+            });
+        }
+    }
+
+    return Array.from(grouped.values());
 }

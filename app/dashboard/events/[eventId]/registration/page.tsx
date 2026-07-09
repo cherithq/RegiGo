@@ -3,13 +3,10 @@ import {
     ArrowLeft,
     ClipboardList,
     Eye,
-    FileText,
-    Globe2,
     ImagePlus,
-    LayoutList,
     ListChecks,
     MousePointerClick,
-    Phone,
+    PlusCircle,
     Settings2,
     Sparkles,
 } from "lucide-react";
@@ -75,8 +72,15 @@ export default async function RegistrationBuilderPage({
     }
 
     const eventName = event.event_name || event.title || event.name || "Event";
+    const eventSlug = event.event_slug || event.slug;
 
     const requiredFields = fields.filter((field) => field.is_required).length;
+
+    const choiceFields = fields.filter((field) =>
+        ["select", "radio", "checkbox", "image_radio", "image_checkbox"].includes(
+            field.field_type
+        )
+    ).length;
 
     const imageChoiceFields = fields.filter(
         (field) =>
@@ -86,252 +90,134 @@ export default async function RegistrationBuilderPage({
 
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
-            <div className="mx-auto max-w-7xl">
-                <div className="sticky top-0 z-30 -mx-5 border-b border-slate-200 bg-[#F7F5FF]/90 px-5 py-4 backdrop-blur md:-mx-8 md:px-8">
-                    <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-                        <Link
-                            href={`/dashboard/events/${event.id}`}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
-                        >
-                            <ArrowLeft size={16} />
-                            Back to Event
-                        </Link>
-
-                        <div className="flex flex-wrap gap-2">
-                            <a
-                                href="#overview"
-                                className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-600 shadow-sm transition hover:bg-[#4F46E5] hover:text-white"
-                            >
-                                Overview
-                            </a>
-
-                            <a
-                                href="#current-fields"
-                                className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-600 shadow-sm transition hover:bg-[#4F46E5] hover:text-white"
-                            >
-                                Fields
-                            </a>
-
-                            <a
-                                href="#form-builder"
-                                className="rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-4 py-3 text-sm font-black text-white shadow-sm transition hover:opacity-90"
-                            >
-                                Add / Edit Fields
-                            </a>
-                        </div>
-                    </div>
-                </div>
-
-                <section
-                    id="overview"
-                    className="relative mt-6 overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10"
-                >
-                    <div className="absolute right-0 top-0 h-72 w-72 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                    <div className="absolute bottom-0 right-40 h-72 w-72 rounded-full bg-[#4F46E5]/10 blur-3xl" />
-
-                    <div className="relative z-10 grid gap-8 lg:grid-cols-[1.35fr_0.85fr] lg:items-center">
+            <div className="mx-auto max-w-7xl space-y-6">
+                <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                            <Link
+                                href={`/dashboard/events/${event.id}`}
+                                className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] transition hover:text-[#EC4899]"
+                            >
+                                <ArrowLeft size={16} />
+                                Back to Event
+                            </Link>
+
+                            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                                 <ClipboardList size={16} />
-                                Registration Form Builder
+                                Registration Builder
                             </div>
 
-                            <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
-                                Build a clearer guest registration form
+                            <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                                Guest Registration Form
                             </h1>
 
-                            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Add, edit, organise and customise the fields guests need to complete.
-                                Use image choice fields for food selections, gift options, packages
-                                or activity choices.
-                            </p>
-
-                            <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                                <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
-                                    Current Event
-                                </p>
-                                <p className="mt-2 text-lg font-black text-slate-950">
+                            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+                                Build the form guests complete before attending{" "}
+                                <span className="font-black text-slate-950">
                                     {eventName}
-                                </p>
-                            </div>
-
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <a
-                                    href="#form-builder"
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 text-sm font-black text-white shadow-lg transition hover:opacity-90"
-                                >
-                                    <MousePointerClick size={18} />
-                                    Start Editing Form
-                                </a>
-
-                                <a
-                                    href="#current-fields"
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 px-6 py-4 text-sm font-black text-slate-700 transition hover:bg-slate-200"
-                                >
-                                    <Eye size={18} />
-                                    View Current Fields
-                                </a>
-                            </div>
+                                </span>
+                                . Add fields, mark important questions as required, and reorder
+                                them clearly.
+                            </p>
                         </div>
 
-                        <div className="grid gap-4">
-                            <StatCard
-                                icon={LayoutList}
-                                label="Total Fields"
-                                value={String(fields.length)}
-                                text="Fields currently added to this registration form."
-                            />
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                            {eventSlug && (
+                                <Link
+                                    href={`/event/${eventSlug}`}
+                                    target="_blank"
+                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-[#F7F5FF] hover:text-[#4F46E5]"
+                                >
+                                    <Eye size={17} />
+                                    View Public Form
+                                </Link>
+                            )}
 
-                            <StatCard
-                                icon={ListChecks}
-                                label="Required Fields"
-                                value={String(requiredFields)}
-                                text="Fields guests must complete before submitting."
-                            />
-
-                            <StatCard
-                                icon={ImagePlus}
-                                label="Image Choice Fields"
-                                value={String(imageChoiceFields)}
-                                text="Useful for food selection, gifts or visual options."
-                            />
+                            <a
+                                href="#builder"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90"
+                            >
+                                <MousePointerClick size={17} />
+                                Edit Form
+                            </a>
                         </div>
                     </div>
                 </section>
 
-                <section className="mt-8 grid gap-5 lg:grid-cols-4">
-                    <BuilderInfo
-                        icon={FileText}
-                        title="Step 1"
-                        heading="Add basic details"
-                        text="Use text, email, phone, company and job title fields for guest information."
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <SummaryCard
+                        title="Total Fields"
+                        value={fields.length}
+                        text="Questions in this form"
+                        icon={ClipboardList}
                     />
 
-                    <BuilderInfo
+                    <SummaryCard
+                        title="Required"
+                        value={requiredFields}
+                        text="Guests must complete these"
                         icon={ListChecks}
-                        title="Step 2"
-                        heading="Add choices"
-                        text="Use dropdown, radio or checkbox fields when guests need to select options."
                     />
 
-                    <BuilderInfo
-                        icon={ImagePlus}
-                        title="Step 3"
-                        heading="Add image choices"
-                        text="Upload images for food selections, gift options, activities or packages."
-                    />
-
-                    <BuilderInfo
+                    <SummaryCard
+                        title="Choice Fields"
+                        value={choiceFields}
+                        text="Dropdown, radio and checkbox fields"
                         icon={Settings2}
-                        title="Step 4"
-                        heading="Review and reorder"
-                        text="Move fields up or down so the guest form flows clearly."
+                    />
+
+                    <SummaryCard
+                        title="Image Choices"
+                        value={imageChoiceFields}
+                        text="Visual options like food or gifts"
+                        icon={ImagePlus}
+                    />
+                </section>
+
+                <section className="grid gap-5 lg:grid-cols-3">
+                    <GuideCard
+                        number="01"
+                        title="Add guest details"
+                        text="Start with core information such as full name, email, mobile number, department, and dietary needs."
+                    />
+
+                    <GuideCard
+                        number="02"
+                        title="Use clear choices"
+                        text="Use dropdowns, checkboxes, and image choices when guests need to pick from fixed options."
+                    />
+
+                    <GuideCard
+                        number="03"
+                        title="Review before sharing"
+                        text="Check the saved field list, reorder questions, then open the public form to test the guest experience."
                     />
                 </section>
 
                 <section
-                    id="current-fields"
-                    className="mt-8 rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8"
+                    id="builder"
+                    className="scroll-mt-8 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm lg:p-6"
                 >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                                 <Sparkles size={16} />
-                                Current Form Overview
+                                Builder Area
                             </div>
 
                             <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                                Fields already added
+                                Add, edit and reorder fields
                             </h2>
 
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                                Quickly check what guests will be asked before editing the form below.
+                                The left panel is for creating or editing a field. The right
+                                panel shows what is already saved.
                             </p>
                         </div>
 
-                        <a
-                            href="#form-builder"
-                            className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:bg-[#4F46E5]"
-                        >
-                            Add New Field
-                        </a>
-                    </div>
-
-                    {fields.length > 0 ? (
-                        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {fields.map((field, index) => (
-                                <FieldPreviewCard
-                                    key={field.id}
-                                    index={index}
-                                    field={field}
-                                />
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm">
-                                <ClipboardList size={30} />
-                            </div>
-
-                            <p className="mt-4 text-lg font-black text-slate-800">
-                                No fields added yet
-                            </p>
-
-                            <p className="mt-2 text-sm font-semibold text-slate-500">
-                                Start by adding basic guest details like name, email and phone number.
-                            </p>
-
-                            <a
-                                href="#form-builder"
-                                className="mt-5 inline-flex rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-3 text-sm font-black text-white"
-                            >
-                                Add First Field
-                            </a>
-                        </div>
-                    )}
-                </section>
-
-                <section className="mt-8 grid gap-5 lg:grid-cols-3">
-                    <SmallTip
-                        icon={Phone}
-                        title="Phone Country Codes"
-                        text="For phone fields, choose the country codes guests can select from."
-                    />
-
-                    <SmallTip
-                        icon={Globe2}
-                        title="Guest-Friendly Form"
-                        text="Use placeholders and help text so guests understand what to enter."
-                    />
-
-                    <SmallTip
-                        icon={ImagePlus}
-                        title="Image Options"
-                        text="Use image single choice for food menus and image multiple choice for packages."
-                    />
-                </section>
-
-                <section id="form-builder" className="mt-8 scroll-mt-28">
-                    <div className="mb-5 rounded-[2rem] border border-indigo-100 bg-white p-6 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <p className="text-sm font-black uppercase tracking-[0.22em] text-[#4F46E5]">
-                                    Edit Area
-                                </p>
-
-                                <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                                    Add or edit registration fields
-                                </h2>
-
-                                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                                    Use the left panel to add or edit a field. The right panel
-                                    shows saved fields and lets you reorder them.
-                                </p>
-                            </div>
-
-                            <div className="rounded-2xl bg-[#F7F5FF] px-5 py-3 text-sm font-black text-[#4F46E5]">
-                                {fields.length} field{fields.length === 1 ? "" : "s"} saved
-                            </div>
+                        <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-5 py-3 text-sm font-black text-slate-700">
+                            <PlusCircle size={17} className="text-[#4F46E5]" />
+                            {fields.length} field{fields.length === 1 ? "" : "s"} saved
                         </div>
                     </div>
 
@@ -341,12 +227,14 @@ export default async function RegistrationBuilderPage({
                             initialFields={fields || []}
                         />
                     ) : (
-                        <section className="rounded-[2rem] border border-red-100 bg-red-50 p-8 text-red-700">
-                            <p className="font-black">No registration form found.</p>
+                        <div className="rounded-[2rem] border border-red-100 bg-red-50 p-8 text-red-700">
+                            <p className="text-lg font-black">
+                                No registration form found.
+                            </p>
                             <p className="mt-2 text-sm font-semibold">
                                 Create or initialise a registration form before adding fields.
                             </p>
-                        </section>
+                        </div>
                     )}
                 </section>
             </div>
@@ -354,30 +242,28 @@ export default async function RegistrationBuilderPage({
     );
 }
 
-function StatCard({
-    icon: Icon,
-    label,
+function SummaryCard({
+    title,
     value,
     text,
+    icon: Icon,
 }: {
-    icon: any;
-    label: string;
-    value: string;
+    title: string;
+    value: number;
     text: string;
+    icon: any;
 }) {
     return (
-        <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-5">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-                        {label}
-                    </p>
-                    <p className="mt-2 text-4xl font-black text-slate-950">
+                    <p className="text-sm font-bold text-slate-500">{title}</p>
+                    <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
                         {value}
                     </p>
                 </div>
 
-                <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
+                <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
                     <Icon size={22} />
                 </div>
             </div>
@@ -387,120 +273,26 @@ function StatCard({
     );
 }
 
-function BuilderInfo({
-    icon: Icon,
+function GuideCard({
+    number,
     title,
-    heading,
     text,
 }: {
-    icon: any;
+    number: string;
     title: string;
-    heading: string;
     text: string;
 }) {
     return (
         <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5]">
-                <Icon size={22} />
-            </div>
-
-            <p className="mt-5 text-xs font-black uppercase tracking-[0.22em] text-[#EC4899]">
-                {title}
-            </p>
-
-            <p className="mt-2 text-lg font-black text-slate-950">{heading}</p>
-
-            <p className="mt-2 text-sm leading-6 text-slate-500">{text}</p>
-        </div>
-    );
-}
-
-function SmallTip({
-    icon: Icon,
-    title,
-    text,
-}: {
-    icon: any;
-    title: string;
-    text: string;
-}) {
-    return (
-        <div className="flex gap-4 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="h-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                <Icon size={20} />
-            </div>
-
-            <div>
-                <p className="font-black text-slate-950">{title}</p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">{text}</p>
-            </div>
-        </div>
-    );
-}
-
-function FieldPreviewCard({
-    field,
-    index,
-}: {
-    field: RegistrationField;
-    index: number;
-}) {
-    const options = field.field_options || field.options || {};
-    const choiceCount =
-        options.choices?.length || options.image_choices?.length || 0;
-
-    return (
-        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-                        Field {index + 1}
-                    </p>
-
-                    <h3 className="mt-2 text-lg font-black text-slate-950">
-                        {field.field_label}
-                    </h3>
-
-                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                        Key: {field.field_key}
-                    </p>
+            <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-sm font-black text-white">
+                    {number}
                 </div>
 
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#4F46E5]">
-                    {formatFieldType(field.field_type)}
-                </span>
+                <h3 className="text-lg font-black text-slate-950">{title}</h3>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-                {field.is_required && (
-                    <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-600">
-                        Required
-                    </span>
-                )}
-
-                {choiceCount > 0 && (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
-                        {choiceCount} option{choiceCount === 1 ? "" : "s"}
-                    </span>
-                )}
-
-                {options.help_text && (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
-                        Help text added
-                    </span>
-                )}
-            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
         </div>
     );
-}
-
-function formatFieldType(type: string) {
-    if (type === "image_radio") return "Image Choice";
-    if (type === "image_checkbox") return "Image Multi Choice";
-    if (type === "job_title") return "Job Title";
-
-    return type
-        .split("_")
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
 }

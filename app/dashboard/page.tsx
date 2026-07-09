@@ -325,18 +325,6 @@ function getQuickActions(role: UserRole) {
                 text: "Open the events assigned to your account.",
             },
             {
-                href: "/dashboard/company",
-                icon: Settings,
-                title: "Company Profile",
-                text: "Manage company information and event branding.",
-            },
-            {
-                href: "/dashboard/team",
-                icon: Users,
-                title: "Team Members",
-                text: "Manage event managers and check-in staff.",
-            },
-            {
                 href: "/dashboard/profile",
                 icon: CheckCircle2,
                 title: "My Profile",

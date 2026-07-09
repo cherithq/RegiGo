@@ -18,8 +18,6 @@ type RolePermission = {
     can_manage_guests: boolean;
     can_scan_qr: boolean;
     can_manage_reports: boolean;
-    can_manage_company: boolean;
-    can_manage_team: boolean;
     can_manage_settings: boolean;
     created_at?: string;
 };
@@ -58,8 +56,6 @@ export default async function RolesPage() {
             role.can_manage_guests &&
             role.can_scan_qr &&
             role.can_manage_reports &&
-            role.can_manage_company &&
-            role.can_manage_team &&
             role.can_manage_settings
     ).length;
 

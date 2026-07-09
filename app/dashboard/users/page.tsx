@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import {
     Users,
@@ -9,6 +10,10 @@ import {
     Lock,
     UserPlus,
     CalendarDays,
+    Pencil,
+    Trash2,
+    Save,
+    X,
 } from "lucide-react";
 
 type Role = "admin" | "organizer" | "viewer" | "scanner";
@@ -26,12 +31,21 @@ type Event = {
     event_date: string | null;
 };
 
+const roleOptions: { value: Role; label: string }[] = [
+    { value: "admin", label: "Admin - full access" },
+    { value: "organizer", label: "Organizer - manage assigned event" },
+    { value: "viewer", label: "Viewer - read-only event access" },
+    { value: "scanner", label: "Scanner - QR check-in only" },
+];
+
 export default function UsersPermissionsPage() {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [events, setEvents] = useState<Event[]>([]);
     const [users, setUsers] = useState<Profile[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
+    const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [message, setMessage] = useState("");
 
     const [fullName, setFullName] = useState("");
@@ -43,9 +57,40 @@ export default function UsersPermissionsPage() {
         "organizer"
     );
 
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [editFullName, setEditFullName] = useState("");
+    const [editEmail, setEditEmail] = useState("");
+    const [editRole, setEditRole] = useState<Role>("organizer");
+    const [editPassword, setEditPassword] = useState("");
+
     useEffect(() => {
         loadPageData();
     }, []);
+
+    async function getAccessToken() {
+        const {
+            data: { session },
+            error,
+        } = await supabase.auth.getSession();
+
+        if (error || !session?.access_token) {
+            throw new Error("Login session not found. Please log out and log in again.");
+        }
+
+        return session.access_token;
+    }
+
+    async function readJsonResponse(res: Response) {
+        const responseText = await res.text();
+
+        try {
+            return responseText ? JSON.parse(responseText) : {};
+        } catch {
+            return {
+                error: responseText || "API did not return JSON.",
+            };
+        }
+    }
 
     async function loadPageData() {
         setLoading(true);
@@ -86,7 +131,6 @@ export default function UsersPermissionsPage() {
             .order("created_at", { ascending: false });
 
         if (eventError) {
-            console.error("Failed to load events:", eventError);
             setMessage(`Failed to load events: ${eventError.message}`);
         }
 
@@ -96,7 +140,6 @@ export default function UsersPermissionsPage() {
             .order("created_at", { ascending: false });
 
         if (usersError) {
-            console.error("Failed to load users:", usersError);
             setMessage(`Failed to load users: ${usersError.message}`);
         }
 
@@ -105,7 +148,7 @@ export default function UsersPermissionsPage() {
         setLoading(false);
     }
 
-    async function createUser(e: React.FormEvent) {
+    async function createUser(e: FormEvent) {
         e.preventDefault();
         setMessage("");
 
@@ -130,21 +173,13 @@ export default function UsersPermissionsPage() {
         setCreating(true);
 
         try {
-            const {
-                data: { session },
-                error: sessionError,
-            } = await supabase.auth.getSession();
-
-            if (sessionError || !session?.access_token) {
-                setMessage("Login session not found. Please log out and log in again.");
-                return;
-            }
+            const accessToken = await getAccessToken();
 
             const res = await fetch("/api/admin/create-user", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${session.access_token}`,
+                    Authorization: `Bearer ${accessToken}`,
                 },
                 body: JSON.stringify({
                     fullName: cleanFullName,
@@ -156,17 +191,7 @@ export default function UsersPermissionsPage() {
                 }),
             });
 
-            const responseText = await res.text();
-
-            let result: { error?: string; message?: string; success?: boolean } = {};
-
-            try {
-                result = responseText ? JSON.parse(responseText) : {};
-            } catch {
-                result = {
-                    error: responseText || "API did not return JSON.",
-                };
-            }
+            const result = await readJsonResponse(res);
 
             if (!res.ok) {
                 setMessage(result.error || "Failed to create user.");
@@ -183,11 +208,127 @@ export default function UsersPermissionsPage() {
             setEventRole("organizer");
 
             await loadPageData();
-        } catch (error) {
-            console.error("Create user frontend error:", error);
-            setMessage("Something went wrong while creating the user.");
+        } catch (error: any) {
+            setMessage(error?.message || "Something went wrong while creating the user.");
         } finally {
             setCreating(false);
+        }
+    }
+
+    function startEditUser(user: Profile) {
+        setEditingUserId(user.id);
+        setEditFullName(user.full_name || "");
+        setEditEmail(user.email || "");
+        setEditRole(user.role || "organizer");
+        setEditPassword("");
+        setMessage("");
+    }
+
+    function cancelEditUser() {
+        setEditingUserId(null);
+        setEditFullName("");
+        setEditEmail("");
+        setEditRole("organizer");
+        setEditPassword("");
+    }
+
+    async function updateUser(userId: string) {
+        setMessage("");
+
+        const cleanFullName = editFullName.trim();
+        const cleanEmail = editEmail.trim().toLowerCase();
+        const cleanPassword = editPassword.trim();
+
+        if (!cleanFullName || !cleanEmail || !editRole) {
+            setMessage("Please fill in full name, email and role.");
+            return;
+        }
+
+        if (cleanPassword && cleanPassword.length < 6) {
+            setMessage("New password must be at least 6 characters.");
+            return;
+        }
+
+        setUpdatingUserId(userId);
+
+        try {
+            const accessToken = await getAccessToken();
+
+            const res = await fetch("/api/admin/update-user", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    userId,
+                    fullName: cleanFullName,
+                    email: cleanEmail,
+                    role: editRole,
+                    password: cleanPassword || undefined,
+                }),
+            });
+
+            const result = await readJsonResponse(res);
+
+            if (!res.ok) {
+                setMessage(result.error || "Failed to update user.");
+                return;
+            }
+
+            setMessage(result.message || "User updated successfully.");
+            cancelEditUser();
+            await loadPageData();
+        } catch (error: any) {
+            setMessage(error?.message || "Something went wrong while updating the user.");
+        } finally {
+            setUpdatingUserId(null);
+        }
+    }
+
+    async function deleteUser(user: Profile) {
+        setMessage("");
+
+        if (profile?.id === user.id) {
+            setMessage("You cannot delete your own admin account while logged in.");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Delete ${user.full_name || user.email || "this user"}? This removes the account from Supabase Auth and profiles.`
+        );
+
+        if (!confirmed) return;
+
+        setDeletingUserId(user.id);
+
+        try {
+            const accessToken = await getAccessToken();
+
+            const res = await fetch("/api/admin/delete-user", {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    userId: user.id,
+                }),
+            });
+
+            const result = await readJsonResponse(res);
+
+            if (!res.ok) {
+                setMessage(result.error || "Failed to delete user.");
+                return;
+            }
+
+            setMessage(result.message || "User deleted successfully.");
+            await loadPageData();
+        } catch (error: any) {
+            setMessage(error?.message || "Something went wrong while deleting the user.");
+        } finally {
+            setDeletingUserId(null);
         }
     }
 
@@ -224,7 +365,7 @@ export default function UsersPermissionsPage() {
                             Users & Permissions
                         </h1>
                         <p className="mt-1 text-slate-500">
-                            Create accounts and assign users to specific events.
+                            Create, edit, delete accounts and assign users to specific events.
                         </p>
                     </div>
                 </div>
@@ -315,12 +456,11 @@ export default function UsersPermissionsPage() {
                                 onChange={(e) => setRole(e.target.value as Role)}
                                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
                             >
-                                <option value="admin">Admin - full access</option>
-                                <option value="organizer">
-                                    Organizer - manage assigned event
-                                </option>
-                                <option value="viewer">Viewer - read-only event access</option>
-                                <option value="scanner">Scanner - QR check-in only</option>
+                                {roleOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
                             </select>
                         </div>
 
@@ -383,7 +523,7 @@ export default function UsersPermissionsPage() {
                                 Existing Users
                             </h2>
                             <p className="text-sm text-slate-500">
-                                Current registered accounts in the system.
+                                Edit roles, update details, reset passwords, or delete accounts.
                             </p>
                         </div>
                     </div>
@@ -392,23 +532,151 @@ export default function UsersPermissionsPage() {
                         {users.length === 0 ? (
                             <div className="p-6 text-sm text-slate-500">No users found.</div>
                         ) : (
-                            users.map((user) => (
-                                <div
-                                    key={user.id}
-                                    className="flex items-center justify-between border-b border-slate-100 px-5 py-4 last:border-b-0"
-                                >
-                                    <div>
-                                        <p className="font-black text-slate-900">
-                                            {user.full_name || "Unnamed User"}
-                                        </p>
-                                        <p className="text-sm text-slate-500">{user.email}</p>
-                                    </div>
+                            users.map((user) => {
+                                const isEditing = editingUserId === user.id;
+                                const isSelf = profile?.id === user.id;
 
-                                    <span className="rounded-full bg-[#F7F5FF] px-3 py-1 text-xs font-black capitalize text-[#4F46E5]">
-                                        {user.role}
-                                    </span>
-                                </div>
-                            ))
+                                return (
+                                    <div
+                                        key={user.id}
+                                        className="border-b border-slate-100 px-5 py-4 last:border-b-0"
+                                    >
+                                        {!isEditing ? (
+                                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                                <div>
+                                                    <p className="font-black text-slate-900">
+                                                        {user.full_name || "Unnamed User"}
+                                                    </p>
+                                                    <p className="text-sm text-slate-500">
+                                                        {user.email}
+                                                    </p>
+                                                    {isSelf && (
+                                                        <p className="mt-1 text-xs font-black text-amber-600">
+                                                            Current account
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="rounded-full bg-[#F7F5FF] px-3 py-1 text-xs font-black capitalize text-[#4F46E5]">
+                                                        {user.role}
+                                                    </span>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => startEditUser(user)}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-200"
+                                                    >
+                                                        <Pencil size={14} />
+                                                        Edit
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => deleteUser(user)}
+                                                        disabled={isSelf || deletingUserId === user.id}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                        {deletingUserId === user.id ? "Deleting..." : "Delete"}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4 rounded-2xl bg-slate-50 p-4">
+                                                <div className="grid gap-3 md:grid-cols-2">
+                                                    <div>
+                                                        <label className="mb-1 block text-xs font-black text-slate-600">
+                                                            Full Name
+                                                        </label>
+                                                        <input
+                                                            value={editFullName}
+                                                            onChange={(e) =>
+                                                                setEditFullName(e.target.value)
+                                                            }
+                                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-1 block text-xs font-black text-slate-600">
+                                                            Email
+                                                        </label>
+                                                        <input
+                                                            value={editEmail}
+                                                            onChange={(e) =>
+                                                                setEditEmail(e.target.value)
+                                                            }
+                                                            type="email"
+                                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-1 block text-xs font-black text-slate-600">
+                                                            Role
+                                                        </label>
+                                                        <select
+                                                            value={editRole}
+                                                            onChange={(e) =>
+                                                                setEditRole(e.target.value as Role)
+                                                            }
+                                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
+                                                        >
+                                                            {roleOptions.map((option) => (
+                                                                <option
+                                                                    key={option.value}
+                                                                    value={option.value}
+                                                                >
+                                                                    {option.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-1 block text-xs font-black text-slate-600">
+                                                            New Password Optional
+                                                        </label>
+                                                        <input
+                                                            value={editPassword}
+                                                            onChange={(e) =>
+                                                                setEditPassword(e.target.value)
+                                                            }
+                                                            type="password"
+                                                            placeholder="Leave blank to keep current password"
+                                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateUser(user.id)}
+                                                        disabled={updatingUserId === user.id}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-4 py-2 text-sm font-black text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        <Save size={15} />
+                                                        {updatingUserId === user.id
+                                                            ? "Saving..."
+                                                            : "Save Changes"}
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={cancelEditUser}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-100"
+                                                    >
+                                                        <X size={15} />
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
                         )}
                     </div>
 
@@ -416,8 +684,9 @@ export default function UsersPermissionsPage() {
                         <div className="flex gap-3">
                             <CalendarDays className="mt-1 text-slate-400" size={18} />
                             <p className="text-sm text-slate-500">
-                                Normal users must be assigned to an event. Admin users can
-                                access every event and all dashboard features.
+                                Admin users can access every event and dashboard feature.
+                                Non-admin users should still be assigned to specific events
+                                through your create-user flow.
                             </p>
                         </div>
                     </div>

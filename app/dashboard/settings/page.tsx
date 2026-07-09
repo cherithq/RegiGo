@@ -74,8 +74,7 @@ export default async function DashboardSettingsPage() {
                         </h1>
 
                         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                            Manage your RegiGo workspace settings, access control, company
-                            configuration, and administrative setup.
+                            Manage your RegiGo workspace settings, access control, and administrative setup.
                         </p>
 
                         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -154,12 +153,6 @@ export default async function DashboardSettingsPage() {
                 </div>
 
                 <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                    <SettingsCard
-                        href="/dashboard/company"
-                        title="Company Settings"
-                        text="Manage company profile, contact details, branding defaults, and email signature."
-                        icon={Building2}
-                    />
 
                     <SettingsCard
                         href="/dashboard/users"

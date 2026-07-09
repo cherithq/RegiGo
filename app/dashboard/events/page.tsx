@@ -17,7 +17,6 @@ type UserRole = "admin" | "organizer" | "viewer" | "scanner";
 
 type EventItem = {
     id: string;
-    company_id: string | null;
     event_name: string;
     event_slug: string;
     event_date: string | null;
@@ -39,10 +38,10 @@ export default async function EventsPage() {
 
     const { data: profile } = user
         ? await supabaseServer
-            .from("profiles")
-            .select("id, full_name, email, role")
-            .eq("id", user.id)
-            .single()
+              .from("profiles")
+              .select("id, full_name, email, role")
+              .eq("id", user.id)
+              .single()
         : { data: null };
 
     const role = (profile?.role || "organizer") as UserRole;
@@ -51,7 +50,7 @@ export default async function EventsPage() {
     const { data: events, error } = await supabaseServer
         .from("events")
         .select(
-            "id, company_id, event_name, event_slug, event_date, event_time, venue, description, status, max_guests, registration_open, created_at"
+            "id, event_name, event_slug, event_date, event_time, venue, description, status, max_guests, registration_open, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -87,9 +86,8 @@ export default async function EventsPage() {
                         </h1>
 
                         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                            View, manage, and monitor the events available to your account.
-                            Admin users can see every event, while other users only see events
-                            assigned to them.
+                            View, manage, and monitor your event registration pages,
+                            guest lists, QR check-in, emails, lucky draw, and event settings.
                         </p>
 
                         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -162,8 +160,8 @@ export default async function EventsPage() {
                             Event List
                         </h2>
                         <p className="mt-1 text-sm leading-6 text-slate-500">
-                            Open an event to manage guests, QR check-in, tables, speakers,
-                            emails, and settings.
+                            Open an event to manage registration, guests, QR check-in,
+                            tables, speakers, email templates, lucky draw, and settings.
                         </p>
                     </div>
 
@@ -219,14 +217,16 @@ function SummaryCard({
                 </div>
 
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
-                    Live
+                    Event
                 </span>
             </div>
 
             <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
+
             <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
                 {value}
             </p>
+
             <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
         </div>
     );
@@ -327,8 +327,8 @@ function StatusBadge({ status }: { status: string }) {
         status === "published"
             ? "bg-emerald-50 text-emerald-700"
             : status === "draft"
-                ? "bg-amber-50 text-amber-700"
-                : "bg-slate-100 text-slate-700";
+              ? "bg-amber-50 text-amber-700"
+              : "bg-slate-100 text-slate-700";
 
     return (
         <span

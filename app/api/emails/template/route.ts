@@ -2,13 +2,116 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type EmailType = "confirmation" | "reminder" | "update" | "thank_you";
 
-function clean(value: unknown) {
-    return String(value || "").trim();
+type Registration = {
+    id: string;
+    event_id: string;
+    full_name: string | null;
+    email: string | null;
+    phone?: string | null;
+    department?: string | null;
+    registration_status?: string | null;
+    ticket_type_id?: string | null;
+    custom_answers?: Record<string, unknown> | null;
+};
+
+type EventRecord = {
+    id: string;
+    event_name?: string | null;
+    title?: string | null;
+    name?: string | null;
+    slug?: string | null;
+    event_date?: string | null;
+    event_time?: string | null;
+    start_time?: string | null;
+    end_time?: string | null;
+    venue?: string | null;
+    location?: string | null;
+};
+
+type EmailTemplate = {
+    id?: string;
+    event_id?: string;
+    email_type?: string;
+    subject?: string | null;
+    body?: string | null;
+    body_html?: string | null;
+    content?: string | null;
+};
+
+type QrTicket = {
+    id: string;
+    registration_id: string;
+    event_id: string;
+    qr_token: string | null;
+    qr_code_url?: string | null;
+    is_active?: boolean | null;
+};
+
+function normaliseEmailType(type: string): EmailType {
+    if (type === "event_update") return "update";
+    if (type === "thankyou") return "thank_you";
+    if (type === "thank-you") return "thank_you";
+
+    if (
+        type === "confirmation" ||
+        type === "reminder" ||
+        type === "update" ||
+        type === "thank_you"
+    ) {
+        return type;
+    }
+
+    return "confirmation";
+}
+
+function getEventName(event: EventRecord) {
+    return event.event_name || event.title || event.name || "Event";
+}
+
+function getSiteUrl() {
+    return (
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "http://localhost:3000"
+    ).replace(/\/+$/, "");
+}
+
+function formatDate(value?: string | null) {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleDateString("en-SG", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
+function formatTime(value?: string | null) {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleTimeString("en-SG", {
+        hour: "2-digit",
+        minute: "2-digit",
+    });
 }
 
 function escapeHtml(value: string) {
@@ -20,347 +123,297 @@ function escapeHtml(value: string) {
         .replaceAll("'", "&#039;");
 }
 
-function mapEmailType(type: string): EmailType {
-    if (type === "event_update") return "update";
-    if (type === "update") return "update";
-    if (type === "thank_you") return "thank_you";
-    if (type === "reminder") return "reminder";
-    return "confirmation";
+function plainTextToHtml(value: string) {
+    return escapeHtml(value)
+        .replace(/\n{2,}/g, "</p><p>")
+        .replace(/\n/g, "<br />");
 }
 
-function getSiteUrl() {
-    return (
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        "http://localhost:3000"
-    ).replace(/\/$/, "");
-}
+function replaceVariables(
+    template: string,
+    variables: Record<string, string>
+) {
+    let output = template;
 
-function getGuestEmail(guest: any) {
-    return clean(
-        guest.email ||
-        guest.custom_answers?.email ||
-        guest.custom_answers?.Email ||
-        guest.custom_answers?.["Email Address"]
-    );
-}
-
-function getGuestName(guest: any) {
-    return clean(
-        guest.full_name ||
-        guest.custom_answers?.full_name ||
-        guest.custom_answers?.name ||
-        getGuestEmail(guest) ||
-        "Guest"
-    );
-}
-
-function getQrToken(guest: any) {
-    return clean(
-        guest.__qr_ticket?.qr_token ||
-        guest.qr_token ||
-        guest.qr_code ||
-        guest.qr_code_url
-    );
-}
-
-function getPassUrl(guest: any) {
-    return `${getSiteUrl()}/pass?registration=${guest.id}`;
-}
-
-function getQrValue(guest: any) {
-    const qrToken = getQrToken(guest);
-    return qrToken || getPassUrl(guest);
-}
-
-function shouldIncludeQr(emailType: EmailType, rawBody: string) {
-    const bodyHasQr =
-        rawBody.includes("{{qr_code}}") ||
-        rawBody.includes("{{qr_image}}");
-
-    if (emailType === "thank_you") {
-        return false;
+    for (const [key, value] of Object.entries(variables)) {
+        const regex = new RegExp(`{{\\s*${key}\\s*}}`, "gi");
+        output = output.replace(regex, value || "");
     }
 
+    return output;
+}
+
+function getDefaultSubject(emailType: EmailType, eventName: string) {
     if (emailType === "confirmation") {
-        return true;
+        return `Registration confirmed: ${eventName}`;
     }
 
-    return bodyHasQr;
+    if (emailType === "reminder") {
+        return `Reminder: ${eventName}`;
+    }
+
+    if (emailType === "update") {
+        return `Update: ${eventName}`;
+    }
+
+    return `Thank you for attending ${eventName}`;
 }
 
-function isCheckedIn(guest: any) {
-    const ticket = guest.__qr_ticket || {};
+function getDefaultBody(emailType: EmailType) {
+    if (emailType === "confirmation") {
+        return `Dear {{name}},
 
-    return Boolean(
-        guest.registration_status === "checked_in" ||
-        guest.registration_status === "attended" ||
-        ticket.is_active === false
-    );
+Thank you for registering for {{event_name}}.
+
+Event Details:
+Date: {{event_date}}
+Time: {{event_time}}
+Venue: {{venue}}
+
+{{qr_code}}
+
+Please show your QR code during check-in.
+
+Regards,
+RegiGo`;
+    }
+
+    if (emailType === "reminder") {
+        return `Dear {{name}},
+
+This is a reminder that {{event_name}} is coming soon.
+
+Event Details:
+Date: {{event_date}}
+Time: {{event_time}}
+Venue: {{venue}}
+
+Please bring your QR pass from your confirmation email.
+
+Regards,
+RegiGo`;
+    }
+
+    if (emailType === "update") {
+        return `Dear {{name}},
+
+There is an update for {{event_name}}.
+
+Event Details:
+Date: {{event_date}}
+Time: {{event_time}}
+Venue: {{venue}}
+
+Regards,
+RegiGo`;
+    }
+
+    return `Dear {{name}},
+
+Thank you for attending {{event_name}}.
+
+We hope you enjoyed the event.
+
+Regards,
+RegiGo`;
 }
 
-function getEventDetails(event: any) {
-    return {
-        eventName: clean(event.event_name || event.title || event.name || "Event"),
-        eventDate: clean(event.event_date || event.date || event.start_date || "-"),
-        eventTime: clean(event.event_time || event.time || event.start_time || "-"),
-        venue: clean(event.venue || event.location || "-"),
-    };
+function buildPassUrl(event: EventRecord, registrationId: string) {
+    const siteUrl = getSiteUrl();
+    const slug = event.slug || event.id;
+
+    return `${siteUrl}/event/${slug}/pass?registration=${registrationId}`;
 }
 
-function replaceVariables(text: string, event: any, guest: any) {
-    const { eventName, eventDate, eventTime, venue } = getEventDetails(event);
-
-    const table = clean(
-        guest.table_name ||
-        guest.table_number ||
-        guest.table_no ||
-        guest.custom_answers?.table ||
-        guest.custom_answers?.Table ||
-        "-"
-    );
-
-    const qrValue = getQrValue(guest);
-    const passUrl = getPassUrl(guest);
-
-    return text
-        .replaceAll("{{name}}", getGuestName(guest))
-        .replaceAll("{{full_name}}", getGuestName(guest))
-        .replaceAll("{{email}}", getGuestEmail(guest))
-        .replaceAll("{{event_name}}", eventName)
-        .replaceAll("{{event_date}}", eventDate)
-        .replaceAll("{{event_time}}", eventTime)
-        .replaceAll("{{venue}}", venue)
-        .replaceAll("{{table}}", table)
-        .replaceAll("{{company}}", "RegiGo")
-        .replaceAll("{{qr_code}}", qrValue)
-        .replaceAll("{{qr_image}}", qrValue)
-        .replaceAll("{{qr_link}}", passUrl)
-        .replaceAll("{{pass_url}}", passUrl);
-}
-
-function renderQrBlock(guest: any, qrCid: string) {
-    const passUrl = getPassUrl(guest);
-
+function buildQrHtml(qrCid: string, passUrl: string) {
     return `
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0; page-break-inside:avoid; break-inside:avoid;">
-            <tr>
-                <td align="center">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:300px; width:100%; background:#f8fafc; border:1px solid #e2e8f0; border-radius:18px; page-break-inside:avoid; break-inside:avoid;">
-                        <tr>
-                            <td align="center" style="padding:18px;">
-                                <div style="font-family:Arial, sans-serif; font-size:13px; font-weight:800; color:#64748b; margin-bottom:10px;">
-                                    Your QR Code
-                                </div>
-
-                                <img
-                                    src="cid:${qrCid}"
-                                    alt="QR Code"
-                                    width="180"
-                                    height="180"
-                                    style="display:block; width:180px; height:180px; max-width:180px; border:1px solid #e2e8f0; border-radius:14px; background:#ffffff; padding:8px;"
-                                />
-
-                                <div style="font-family:Arial, sans-serif; font-size:12px; line-height:18px; color:#64748b; margin-top:12px;">
-                                    Please show this QR code during check-in.
-                                </div>
-
-                                <a
-                                    href="${escapeHtml(passUrl)}"
-                                    style="display:inline-block; margin-top:12px; padding:10px 16px; border-radius:999px; background:#4F46E5; color:#ffffff; text-decoration:none; font-family:Arial, sans-serif; font-size:12px; font-weight:800;"
-                                >
-                                    Open QR Pass
-                                </a>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+        <div style="margin:24px 0;padding:20px;border-radius:20px;background:#F7F5FF;text-align:center;">
+            <p style="margin:0 0 12px;font-size:14px;font-weight:800;color:#4F46E5;">
+                Your QR Pass
+            </p>
+            <img src="cid:${qrCid}" alt="QR Code" style="width:180px;height:180px;border-radius:16px;background:white;padding:12px;" />
+            <p style="margin:14px 0 0;font-size:12px;color:#64748B;">
+                Show this QR code during check-in.
+            </p>
+            <p style="margin:10px 0 0;font-size:12px;">
+                <a href="${passUrl}" style="color:#4F46E5;font-weight:800;text-decoration:none;">
+                    Open QR Pass
+                </a>
+            </p>
+        </div>
     `;
 }
 
-function renderBodyHtml(
-    rawBody: string,
-    event: any,
-    guest: any,
-    qrCid: string,
-    emailType: EmailType
-) {
-    const includeQr = shouldIncludeQr(emailType, rawBody);
-    const hasQrVariable =
-        rawBody.includes("{{qr_code}}") || rawBody.includes("{{qr_image}}");
-
-    let html = rawBody
-        .split(/\r?\n/)
-        .map((line) => {
-            if (line.includes("{{qr_code}}") || line.includes("{{qr_image}}")) {
-                if (!includeQr) return "";
-                return renderQrBlock(guest, qrCid);
-            }
-
-            const renderedLine = replaceVariables(line, event, guest);
-
-            if (!renderedLine.trim()) {
-                return `<div style="height:10px; line-height:10px;">&nbsp;</div>`;
-            }
-
-            return `
-                <div style="font-family:Arial, sans-serif; font-size:14px; line-height:22px; color:#0f172a; margin:0 0 7px; word-break:break-word;">
-                    ${escapeHtml(renderedLine)}
-                </div>
-            `;
-        })
-        .join("");
-
-    if (emailType === "confirmation" && includeQr && !hasQrVariable) {
-        html += renderQrBlock(guest, qrCid);
-    }
-
-    return html;
-}
-
-function toHtml(
-    rawBody: string,
-    event: any,
-    guest: any,
-    qrCid: string,
-    emailType: EmailType
-) {
+function buildEmailHtml({
+    bodyHtml,
+    eventName,
+}: {
+    bodyHtml: string;
+    eventName: string;
+}) {
     return `
         <!doctype html>
         <html>
-            <body style="margin:0; padding:0; background:#f8fafc;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background:#f8fafc;">
-                    <tr>
-                        <td align="center" style="padding:12px;">
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:540px; background:#ffffff; border:1px solid #e2e8f0; border-radius:18px; page-break-inside:avoid; break-inside:avoid;">
-                                <tr>
-                                    <td style="padding:22px 22px; background:#4F46E5; border-radius:18px 18px 0 0;">
-                                        <div style="font-family:Arial, sans-serif; color:#ffffff; font-size:26px; font-weight:900; letter-spacing:-0.5px;">
-                                            RegiGo
-                                        </div>
-                                        <div style="font-family:Arial, sans-serif; color:rgba(255,255,255,0.9); font-size:13px; font-weight:700; margin-top:5px;">
-                                            Register. Manage. Go.
-                                        </div>
-                                    </td>
-                                </tr>
+            <body style="margin:0;padding:0;background:#F7F5FF;font-family:Arial,Helvetica,sans-serif;color:#0F172A;">
+                <div style="max-width:680px;margin:0 auto;padding:32px 18px;">
+                    <div style="background:white;border-radius:28px;overflow:hidden;box-shadow:0 18px 50px rgba(15,23,42,0.08);">
+                        <div style="padding:28px;background:linear-gradient(135deg,#4F46E5,#EC4899);color:white;">
+                            <p style="margin:0;font-size:13px;font-weight:900;letter-spacing:0.16em;text-transform:uppercase;">
+                                RegiGo
+                            </p>
+                            <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">
+                                ${escapeHtml(eventName)}
+                            </h1>
+                            <p style="margin:8px 0 0;font-size:14px;opacity:0.9;">
+                                Register. Manage. Go.
+                            </p>
+                        </div>
 
-                                <tr>
-                                    <td style="padding:22px; font-family:Arial, sans-serif;">
-                                        ${renderBodyHtml(rawBody, event, guest, qrCid, emailType)}
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
+                        <div style="padding:30px;font-size:15px;line-height:1.7;color:#334155;">
+                            <p>${bodyHtml}</p>
+                        </div>
+
+                        <div style="padding:22px 30px;background:#F8FAFC;font-size:12px;color:#64748B;">
+                            This email was sent by RegiGo.
+                        </div>
+                    </div>
+                </div>
             </body>
         </html>
     `;
 }
 
-async function sendEmail({
-    to,
-    subject,
-    textBody,
-    htmlBody,
-    qrBuffer,
-    qrCid,
-    includeQr,
+async function getOrCreateQrTicket({
+    supabaseServer,
+    eventId,
+    registrationId,
 }: {
-    to: string;
-    subject: string;
-    textBody: string;
-    htmlBody: string;
-    qrBuffer?: Buffer;
-    qrCid: string;
-    includeQr: boolean;
+    supabaseServer: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+    eventId: string;
+    registrationId: string;
 }) {
-    const smtpUser = process.env.EVENT_SMTP_USER;
-    const smtpPassword = process.env.EVENT_SMTP_APP_PASSWORD;
-    const fromName = process.env.EVENT_EMAIL_FROM_NAME || "RegiGo";
+    const { data: existingTicket, error: existingError } = await supabaseServer
+        .from("qr_tickets")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("registration_id", registrationId)
+        .maybeSingle();
 
-    if (!smtpUser || !smtpPassword) {
-        throw new Error(
-            "Missing EVENT_SMTP_USER or EVENT_SMTP_APP_PASSWORD in .env.local."
-        );
+    if (existingError) {
+        throw new Error(existingError.message);
     }
 
-    const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-            user: smtpUser,
-            pass: smtpPassword.replace(/\s/g, ""),
-        },
-    });
+    if (existingTicket) {
+        return existingTicket as QrTicket;
+    }
 
-    await transporter.verify();
+    const token =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${registrationId}-${Date.now()}`;
 
-    const attachments =
-        includeQr && qrBuffer
-            ? [
-                {
-                    filename: "regigo-qr-code.png",
-                    content: qrBuffer,
-                    cid: qrCid,
-                    contentType: "image/png",
-                },
-            ]
-            : [];
+    const { data: newTicket, error: insertError } = await supabaseServer
+        .from("qr_tickets")
+        .insert({
+            event_id: eventId,
+            registration_id: registrationId,
+            qr_token: token,
+            is_active: true,
+        })
+        .select("*")
+        .single();
 
-    return transporter.sendMail({
-        from: `"${fromName}" <${smtpUser}>`,
-        to,
-        subject,
-        text: textBody,
-        html: htmlBody,
-        attachments,
-    });
+    if (insertError) {
+        throw new Error(insertError.message);
+    }
+
+    return newTicket as QrTicket;
 }
 
-export async function POST(req: Request) {
-    try {
-        const supabase = await createSupabaseServerClient();
-        const body = await req.json();
+async function getRegistrations({
+    supabaseServer,
+    eventId,
+    registrationId,
+    registrationIds,
+    checkedInOnly,
+}: {
+    supabaseServer: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+    eventId: string;
+    registrationId?: string;
+    registrationIds?: string[];
+    checkedInOnly?: boolean;
+}) {
+    let query = supabaseServer
+        .from("registrations")
+        .select("*")
+        .eq("event_id", eventId);
 
-        const eventId = clean(body.eventId);
-        const registrationId = clean(body.registrationId);
-        const emailType = mapEmailType(clean(body.type));
-        const checkedInOnly = Boolean(body.checkedInOnly);
+    if (registrationId) {
+        query = query.eq("id", registrationId);
+    }
+
+    if (registrationIds && registrationIds.length > 0) {
+        query = query.in("id", registrationIds);
+    }
+
+    if (checkedInOnly) {
+        query = query.in("registration_status", ["checked_in", "attended"]);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return (data || []) as Registration[];
+}
+
+async function getTemplate({
+    supabaseServer,
+    eventId,
+    emailType,
+}: {
+    supabaseServer: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+    eventId: string;
+    emailType: EmailType;
+}) {
+    const { data, error } = await supabaseServer
+        .from("email_templates")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("email_type", emailType)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return data as EmailTemplate | null;
+}
+
+export async function POST(request: Request) {
+    try {
+        await requirePermission("can_manage_guests");
+
+        const body = await request.json();
+
+        const eventId = body.eventId || body.event_id;
+        const registrationId = body.registrationId || body.registration_id;
+        const registrationIds = body.registrationIds || body.registration_ids;
+        const checkedInOnly = Boolean(body.checkedInOnly || body.checked_in_only);
+        const emailType = normaliseEmailType(body.type || body.emailType || "confirmation");
 
         if (!eventId) {
             return NextResponse.json(
-                { error: "eventId is required." },
+                { error: "Missing eventId." },
                 { status: 400 }
             );
         }
 
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
+        const supabaseServer = await createSupabaseServerClient();
 
-        if (!user) {
-            return NextResponse.json(
-                { error: "You must be logged in." },
-                { status: 401 }
-            );
-        }
-
-        const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
-
-        if (profile?.role !== "admin") {
-            return NextResponse.json(
-                { error: "Only admins can send emails." },
-                { status: 403 }
-            );
-        }
-
-        const { data: event, error: eventError } = await supabase
+        const { data: event, error: eventError } = await supabaseServer
             .from("events")
             .select("*")
             .eq("id", eventId)
@@ -373,206 +426,218 @@ export async function POST(req: Request) {
             );
         }
 
-        const { data: template, error: templateError } = await supabase
-            .from("email_templates")
-            .select("*")
-            .eq("event_id", eventId)
-            .eq("email_type", emailType)
-            .maybeSingle();
+        const eventRecord = event as EventRecord;
+        const eventName = getEventName(eventRecord);
 
-        if (templateError) {
+        const registrations = await getRegistrations({
+            supabaseServer,
+            eventId,
+            registrationId,
+            registrationIds,
+            checkedInOnly,
+        });
+
+        const validRegistrations = registrations.filter(
+            (registration) => registration.email
+        );
+
+        if (validRegistrations.length === 0) {
             return NextResponse.json(
-                { error: templateError.message },
-                { status: 500 }
-            );
-        }
-
-        if (!template) {
-            return NextResponse.json(
-                {
-                    error: `No ${emailType} email template found. Please create it in Email Centre first.`,
-                },
-                { status: 404 }
-            );
-        }
-
-        let guests: any[] = [];
-
-        if (registrationId) {
-            const { data: guest, error: guestError } = await supabase
-                .from("registrations")
-                .select("*")
-                .eq("id", registrationId)
-                .eq("event_id", eventId)
-                .single();
-
-            if (guestError || !guest) {
-                return NextResponse.json(
-                    { error: guestError?.message || "Guest not found." },
-                    { status: 404 }
-                );
-            }
-
-            guests = [guest];
-        } else {
-            const { data: registrations, error: registrationsError } =
-                await supabase
-                    .from("registrations")
-                    .select("*")
-                    .eq("event_id", eventId);
-
-            if (registrationsError) {
-                return NextResponse.json(
-                    { error: registrationsError.message },
-                    { status: 500 }
-                );
-            }
-
-            guests = registrations || [];
-        }
-
-        const totalGuests = guests.length;
-        const registrationIds = guests.map((guest) => guest.id);
-
-        if (registrationIds.length > 0) {
-            const { data: qrTickets } = await supabase
-                .from("qr_tickets")
-                .select("*")
-                .in("registration_id", registrationIds);
-
-            const qrTicketMap = new Map();
-
-            for (const ticket of qrTickets || []) {
-                const existing = qrTicketMap.get(ticket.registration_id);
-
-                if (!existing) {
-                    qrTicketMap.set(ticket.registration_id, ticket);
-                    continue;
-                }
-
-                if (ticket.is_active === false && existing.is_active !== false) {
-                    qrTicketMap.set(ticket.registration_id, ticket);
-                }
-            }
-
-            guests = guests.map((guest) => ({
-                ...guest,
-                __qr_ticket: qrTicketMap.get(guest.id) || null,
-            }));
-        }
-
-        if (checkedInOnly) {
-            guests = guests.filter((guest) => isCheckedIn(guest));
-        }
-
-        const checkedInGuests = guests.length;
-
-        guests = guests.filter((guest) => getGuestEmail(guest));
-
-        if (guests.length === 0) {
-            if (checkedInOnly) {
-                return NextResponse.json(
-                    {
-                        error: `No checked-in guests with email addresses found. Total guests: ${totalGuests}. Checked-in guests found: ${checkedInGuests}.`,
-                    },
-                    { status: 400 }
-                );
-            }
-
-            return NextResponse.json(
-                {
-                    error: `No guests with email addresses found. Total guests: ${totalGuests}.`,
-                },
+                { error: "No guests with email found." },
                 { status: 400 }
             );
         }
 
-        let sent = 0;
-        let failed = 0;
+        const template = await getTemplate({
+            supabaseServer,
+            eventId,
+            emailType,
+        });
 
-        for (const guest of guests) {
-            const recipientEmail = getGuestEmail(guest);
-            const rawBody = template.body || "";
-            const includeQr = shouldIncludeQr(emailType, rawBody);
+        const subjectTemplate =
+            template?.subject || getDefaultSubject(emailType, eventName);
 
-            let qrBuffer: Buffer | undefined;
+        const rawBodyTemplate =
+            template?.body ||
+            template?.body_html ||
+            template?.content ||
+            getDefaultBody(emailType);
 
-            if (includeQr) {
-                const qrValue = getQrValue(guest);
+        const smtpUser =
+            process.env.EVENT_SMTP_USER ||
+            process.env.GMAIL_SMTP_USER ||
+            process.env.SMTP_USER;
 
-                qrBuffer = await QRCode.toBuffer(qrValue, {
-                    width: 220,
-                    margin: 2,
-                });
-            }
+        const smtpPass =
+            process.env.EVENT_SMTP_APP_PASSWORD ||
+            process.env.GMAIL_SMTP_APP_PASSWORD ||
+            process.env.SMTP_PASS;
 
-            const qrCid = `regigo-qr-${guest.id}@regigo`;
+        const smtpHost =
+            process.env.SMTP_HOST ||
+            process.env.EVENT_SMTP_HOST ||
+            "smtp.gmail.com";
 
-            const subject = replaceVariables(
-                template.subject || "",
-                event,
-                guest
+        const smtpPort = Number(
+            process.env.SMTP_PORT || process.env.EVENT_SMTP_PORT || 587
+        );
+
+        const smtpSecure =
+            process.env.SMTP_SECURE === "true" || smtpPort === 465;
+
+        const fromName =
+            process.env.EVENT_EMAIL_FROM_NAME ||
+            process.env.EMAIL_FROM_NAME ||
+            "RegiGo";
+
+        if (!smtpUser || !smtpPass) {
+            return NextResponse.json(
+                {
+                    error:
+                        "SMTP is not configured. Please set EVENT_SMTP_USER and EVENT_SMTP_APP_PASSWORD.",
+                },
+                { status: 500 }
             );
+        }
 
-            const textBody = replaceVariables(rawBody, event, guest);
+        const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            auth: {
+                user: smtpUser,
+                pass: smtpPass,
+            },
+        });
 
-            const htmlBody = toHtml(
-                rawBody,
-                event,
-                guest,
-                qrCid,
-                emailType
-            );
+        const results: {
+            registrationId: string;
+            email: string;
+            status: "sent" | "failed";
+            error?: string;
+        }[] = [];
 
+        for (const registration of validRegistrations) {
             try {
-                await sendEmail({
-                    to: recipientEmail,
-                    subject,
-                    textBody,
-                    htmlBody,
-                    qrBuffer,
-                    qrCid,
-                    includeQr,
+                const passUrl = buildPassUrl(eventRecord, registration.id);
+
+                let qrHtml = "";
+                let qrAttachment:
+                    | {
+                          filename: string;
+                          content: Buffer;
+                          cid: string;
+                      }
+                    | undefined;
+
+                if (emailType === "confirmation") {
+                    await getOrCreateQrTicket({
+                        supabaseServer,
+                        eventId,
+                        registrationId: registration.id,
+                    });
+
+                    const qrCid = `qr-${registration.id}@regigo`;
+                    const qrBuffer = await QRCode.toBuffer(passUrl, {
+                        type: "png",
+                        width: 320,
+                        margin: 1,
+                    });
+
+                    qrHtml = buildQrHtml(qrCid, passUrl);
+
+                    qrAttachment = {
+                        filename: `qr-pass-${registration.id}.png`,
+                        content: qrBuffer,
+                        cid: qrCid,
+                    };
+                }
+
+                const variables: Record<string, string> = {
+                    name: registration.full_name || "Guest",
+                    full_name: registration.full_name || "Guest",
+                    email: registration.email || "",
+                    event_name: eventName,
+                    event_date:
+                        formatDate(eventRecord.event_date) ||
+                        formatDate(eventRecord.start_time),
+                    event_time:
+                        eventRecord.event_time ||
+                        formatTime(eventRecord.start_time),
+                    venue: eventRecord.venue || eventRecord.location || "",
+                    location: eventRecord.location || eventRecord.venue || "",
+                    company: "RegiGo",
+                    qr_code: qrHtml,
+                    qr_image: qrHtml,
+                    qr_link: passUrl,
+                    pass_url: passUrl,
+                };
+
+                const subject = replaceVariables(subjectTemplate, variables);
+
+                let bodyContent = replaceVariables(rawBodyTemplate, variables);
+
+                if (
+                    emailType === "confirmation" &&
+                    !bodyContent.includes(qrHtml) &&
+                    !rawBodyTemplate.includes("{{qr_code}}") &&
+                    !rawBodyTemplate.includes("{{ qr_code }}")
+                ) {
+                    bodyContent += `\n\n${qrHtml}`;
+                }
+
+                const bodyHtml = bodyContent.includes("<")
+                    ? bodyContent
+                    : plainTextToHtml(bodyContent);
+
+                const html = buildEmailHtml({
+                    bodyHtml,
+                    eventName,
                 });
 
-                await supabase.from("email_logs").insert({
-                    event_id: eventId,
-                    registration_id: guest.id,
-                    email_type: emailType,
-                    recipient_email: recipientEmail,
+                await transporter.sendMail({
+                    from: `"${fromName}" <${smtpUser}>`,
+                    to: registration.email!,
                     subject,
+                    html,
+                    attachments: qrAttachment ? [qrAttachment] : [],
+                });
+
+                results.push({
+                    registrationId: registration.id,
+                    email: registration.email!,
                     status: "sent",
                 });
-
-                sent += 1;
             } catch (error: any) {
-                await supabase.from("email_logs").insert({
-                    event_id: eventId,
-                    registration_id: guest.id,
-                    email_type: emailType,
-                    recipient_email: recipientEmail,
-                    subject,
+                results.push({
+                    registrationId: registration.id,
+                    email: registration.email || "",
                     status: "failed",
-                    error_message: error?.message || "Failed to send email.",
+                    error: error?.message || "Failed to send email.",
                 });
-
-                failed += 1;
             }
         }
 
+        const sent = results.filter((result) => result.status === "sent").length;
+        const failed = results.filter((result) => result.status === "failed").length;
+
         return NextResponse.json({
-            success: true,
-            message: registrationId
-                ? "Email sent successfully."
-                : `Bulk email completed. Sent: ${sent}. Failed: ${failed}.`,
+            success: failed === 0,
+            message:
+                failed === 0
+                    ? `${sent} email${sent === 1 ? "" : "s"} sent.`
+                    : `${sent} sent, ${failed} failed.`,
             sent,
             failed,
+            results,
         });
     } catch (error: any) {
-        console.error("Template email error:", error);
-
         return NextResponse.json(
-            { error: error?.message || "Something went wrong." },
+            {
+                error:
+                    error?.message ||
+                    "Failed to send templated email. Please try again.",
+            },
             { status: 500 }
         );
     }

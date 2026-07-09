@@ -10,8 +10,6 @@ type RolePermission = {
     can_manage_guests: boolean;
     can_scan_qr: boolean;
     can_manage_reports: boolean;
-    can_manage_company: boolean;
-    can_manage_team: boolean;
     can_manage_settings: boolean;
 };
 
@@ -20,8 +18,6 @@ const permissionLabels = [
     { key: "can_manage_guests", label: "Guests" },
     { key: "can_scan_qr", label: "QR Scan" },
     { key: "can_manage_reports", label: "Reports" },
-    { key: "can_manage_company", label: "Company" },
-    { key: "can_manage_team", label: "Team" },
     { key: "can_manage_settings", label: "Settings" },
 ] as const;
 
@@ -69,8 +65,6 @@ export default function RolePermissionsManager({
             can_manage_guests: value,
             can_scan_qr: value,
             can_manage_reports: value,
-            can_manage_company: value,
-            can_manage_team: value,
             can_manage_settings: value,
         };
 

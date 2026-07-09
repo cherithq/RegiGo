@@ -5,7 +5,6 @@ import {
     Gift,
     Sparkles,
     Trophy,
-    Users,
     CheckCircle2,
 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
@@ -19,6 +18,17 @@ type CheckedInGuest = {
     phone: string | null;
     department: string | null;
     checked_in_at: string | null;
+    custom_answers?: Record<string, unknown> | null;
+};
+
+type RegistrationField = {
+    id: string;
+    field_label: string;
+    field_key: string;
+    field_type: string;
+    field_options?: any;
+    options?: any;
+    sort_order?: number;
 };
 
 export default async function LuckyDrawPage({
@@ -56,7 +66,11 @@ export default async function LuckyDrawPage({
         .order("checked_in_at", { ascending: false });
 
     const checkedInRegistrationIds = Array.from(
-        new Set((checkIns || []).map((item) => item.registration_id).filter(Boolean))
+        new Set(
+            (checkIns || [])
+                .map((item) => item.registration_id)
+                .filter(Boolean)
+        )
     );
 
     let checkedInGuests: CheckedInGuest[] = [];
@@ -64,7 +78,9 @@ export default async function LuckyDrawPage({
     if (checkedInRegistrationIds.length > 0) {
         const { data: registrations } = await supabaseServer
             .from("registrations")
-            .select("id, full_name, email, phone, department")
+            .select(
+                "id, full_name, email, phone, department, custom_answers"
+            )
             .eq("event_id", eventId)
             .in("id", checkedInRegistrationIds);
 
@@ -79,9 +95,31 @@ export default async function LuckyDrawPage({
                 email: guest.email,
                 phone: guest.phone,
                 department: guest.department,
-                checked_in_at: checkIn?.checked_in_at || checkIn?.created_at || null,
+                custom_answers: guest.custom_answers || {},
+                checked_in_at:
+                    checkIn?.checked_in_at || checkIn?.created_at || null,
             };
         });
+    }
+
+    const { data: registrationForm } = await supabaseServer
+        .from("registration_forms")
+        .select("id")
+        .eq("event_id", eventId)
+        .maybeSingle();
+
+    let registrationFields: RegistrationField[] = [];
+
+    if (registrationForm?.id) {
+        const { data: fieldRows } = await supabaseServer
+            .from("registration_fields")
+            .select(
+                "id, field_label, field_key, field_type, field_options, options, sort_order"
+            )
+            .eq("form_id", registrationForm.id)
+            .order("sort_order", { ascending: true });
+
+        registrationFields = (fieldRows || []) as RegistrationField[];
     }
 
     const { data: winners } = await supabaseServer
@@ -126,12 +164,13 @@ export default async function LuckyDrawPage({
                             </h1>
 
                             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Create prizes, choose which checked-in guests are eligible for
-                                each prize, then spin the wheel for the selected prize.
+                                Create prizes, choose which checked-in guests are
+                                eligible for each prize, then spin the wheel for
+                                the selected prize.
                             </p>
 
                             <p className="mt-3 text-sm font-bold text-slate-500">
-                                {event.event_name}
+                                {event.event_name || event.title || event.name}
                             </p>
                         </div>
 
@@ -157,14 +196,15 @@ export default async function LuckyDrawPage({
                                             Prize Eligibility
                                         </p>
                                         <p className="text-3xl font-black text-slate-950">
-                                            Select by prize
+                                            Select by form field
                                         </p>
                                     </div>
                                 </div>
 
                                 <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
-                                    Audience display hides backend setup, guest emails, group
-                                    allocation, and eligibility controls.
+                                    You can filter checked-in guests using answers
+                                    from the registration form, then select all
+                                    matching guests for a prize.
                                 </p>
                             </div>
                         </div>
@@ -197,10 +237,16 @@ export default async function LuckyDrawPage({
                 <section className="mt-8">
                     <LuckyDrawWheel
                         eventId={eventId}
-                        eventName={event.event_name || "Event"}
+                        eventName={
+                            event.event_name ||
+                            event.title ||
+                            event.name ||
+                            "Event"
+                        }
                         guests={checkedInGuests}
                         initialWinners={winners || []}
                         initialPrizes={prizes || []}
+                        registrationFields={registrationFields}
                     />
                 </section>
             </div>

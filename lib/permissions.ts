@@ -9,8 +9,6 @@ export type PermissionKey =
     | "can_manage_guests"
     | "can_scan_qr"
     | "can_manage_reports"
-    | "can_manage_company"
-    | "can_manage_team"
     | "can_manage_settings";
 
 export type Profile = {
@@ -27,8 +25,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
         can_manage_guests: true,
         can_scan_qr: true,
         can_manage_reports: true,
-        can_manage_company: true,
-        can_manage_team: true,
         can_manage_settings: true,
     },
     organizer: {
@@ -37,8 +33,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
         can_manage_guests: true,
         can_scan_qr: true,
         can_manage_reports: true,
-        can_manage_company: false,
-        can_manage_team: false,
         can_manage_settings: false,
     },
     viewer: {
@@ -47,8 +41,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
         can_manage_guests: false,
         can_scan_qr: false,
         can_manage_reports: true,
-        can_manage_company: false,
-        can_manage_team: false,
         can_manage_settings: false,
     },
     scanner: {
@@ -57,8 +49,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
         can_manage_guests: false,
         can_scan_qr: true,
         can_manage_reports: false,
-        can_manage_company: false,
-        can_manage_team: false,
         can_manage_settings: false,
     },
 };
