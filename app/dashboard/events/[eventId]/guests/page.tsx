@@ -70,15 +70,13 @@ export default async function GuestsPage({
 
         supabaseServer
             .from("registrations")
-            .select(
-                "id, event_id, full_name, email, phone, country_code, department, dietary_request, require_transport, custom_answers, registration_status, email_verified, created_at, ticket_type_id"
-            )
+            .select("*")
             .eq("event_id", eventId)
             .order("created_at", { ascending: false }),
 
         supabaseServer
             .from("registration_forms")
-            .select("id")
+            .select("*")
             .eq("event_id", eventId)
             .maybeSingle(),
     ]);
@@ -115,18 +113,14 @@ export default async function GuestsPage({
         registrationIds.length > 0
             ? supabaseServer
                   .from("qr_tickets")
-                  .select(
-                      "id, registration_id, event_id, qr_token, qr_code_url, is_active, issued_at"
-                  )
+                  .select("*")
                   .in("registration_id", registrationIds)
             : Promise.resolve({ data: [] as QrTicket[] }),
 
         form?.id
             ? supabaseServer
                   .from("registration_fields")
-                  .select(
-                      "id, form_id, field_label, field_key, field_type, field_options, options, sort_order"
-                  )
+                  .select("*")
                   .eq("form_id", form.id)
                   .order("sort_order", { ascending: true })
             : Promise.resolve({ data: [] as RegistrationField[] }),
