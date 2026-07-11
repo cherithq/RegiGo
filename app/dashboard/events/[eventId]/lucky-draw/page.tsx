@@ -42,11 +42,58 @@ export default async function LuckyDrawPage({
 
     const { eventId } = await params;
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
+    const [
+        eventResult,
+        checkInsResult,
+        registrationFormResult,
+        winnersResult,
+        prizesResult,
+    ] = await Promise.all([
+        supabaseServer
+            .from("events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("check_ins")
+            .select("*")
+            .eq("event_id", eventId)
+            .eq("scan_result", "checked_in")
+            .order("checked_in_at", { ascending: false }),
+
+        supabaseServer
+            .from("registration_forms")
+            .select("id")
+            .eq("event_id", eventId)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("lucky_draw_winners")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("created_at", { ascending: false }),
+
+        supabaseServer
+            .from("lucky_draw_prizes")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("prize_order", { ascending: true }),
+    ]);
+
+    const event = eventResult.data;
+
+    if (eventResult.error) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
+                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+                    <p className="font-black text-red-600">
+                        Failed to load event: {eventResult.error.message}
+                    </p>
+                </div>
+            </main>
+        );
+    }
 
     if (!event) {
         return (
@@ -58,84 +105,71 @@ export default async function LuckyDrawPage({
         );
     }
 
-    const { data: checkIns } = await supabaseServer
-        .from("check_ins")
-        .select("*")
-        .eq("event_id", eventId)
-        .eq("scan_result", "checked_in")
-        .order("checked_in_at", { ascending: false });
+    const checkIns = checkInsResult.data || [];
 
     const checkedInRegistrationIds = Array.from(
         new Set(
-            (checkIns || [])
-                .map((item) => item.registration_id)
+            checkIns
+                .map((item: any) => item.registration_id)
                 .filter(Boolean)
         )
     );
 
-    let checkedInGuests: CheckedInGuest[] = [];
+    const checkInMap = new Map<string, any>();
 
-    if (checkedInRegistrationIds.length > 0) {
-        const { data: registrations } = await supabaseServer
-            .from("registrations")
-            .select(
-                "id, full_name, email, phone, department, custom_answers"
-            )
-            .eq("event_id", eventId)
-            .in("id", checkedInRegistrationIds);
+    for (const checkIn of checkIns as any[]) {
+        if (!checkIn.registration_id) continue;
 
-        checkedInGuests = (registrations || []).map((guest) => {
-            const checkIn = (checkIns || []).find(
-                (item) => item.registration_id === guest.id
-            );
-
-            return {
-                id: guest.id,
-                full_name: guest.full_name,
-                email: guest.email,
-                phone: guest.phone,
-                department: guest.department,
-                custom_answers: guest.custom_answers || {},
-                checked_in_at:
-                    checkIn?.checked_in_at || checkIn?.created_at || null,
-            };
-        });
+        if (!checkInMap.has(checkIn.registration_id)) {
+            checkInMap.set(checkIn.registration_id, checkIn);
+        }
     }
 
-    const { data: registrationForm } = await supabaseServer
-        .from("registration_forms")
-        .select("id")
-        .eq("event_id", eventId)
-        .maybeSingle();
+    const registrationForm = registrationFormResult.data;
 
-    let registrationFields: RegistrationField[] = [];
+    const [registrationsResult, fieldRowsResult] = await Promise.all([
+        checkedInRegistrationIds.length > 0
+            ? supabaseServer
+                  .from("registrations")
+                  .select("id, full_name, email, phone, department, custom_answers")
+                  .eq("event_id", eventId)
+                  .in("id", checkedInRegistrationIds)
+            : Promise.resolve({ data: [], error: null }),
 
-    if (registrationForm?.id) {
-        const { data: fieldRows } = await supabaseServer
-            .from("registration_fields")
-            .select(
-                "id, field_label, field_key, field_type, field_options, options, sort_order"
-            )
-            .eq("form_id", registrationForm.id)
-            .order("sort_order", { ascending: true });
+        registrationForm?.id
+            ? supabaseServer
+                  .from("registration_fields")
+                  .select(
+                      "id, field_label, field_key, field_type, field_options, options, sort_order"
+                  )
+                  .eq("form_id", registrationForm.id)
+                  .order("sort_order", { ascending: true })
+            : Promise.resolve({ data: [], error: null }),
+    ]);
 
-        registrationFields = (fieldRows || []) as RegistrationField[];
-    }
+    const checkedInGuests: CheckedInGuest[] = (
+        registrationsResult.data || []
+    ).map((guest: any) => {
+        const checkIn = checkInMap.get(guest.id);
 
-    const { data: winners } = await supabaseServer
-        .from("lucky_draw_winners")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("created_at", { ascending: false });
+        return {
+            id: guest.id,
+            full_name: guest.full_name,
+            email: guest.email,
+            phone: guest.phone,
+            department: guest.department,
+            custom_answers: guest.custom_answers || {},
+            checked_in_at: checkIn?.checked_in_at || checkIn?.created_at || null,
+        };
+    });
 
-    const { data: prizes } = await supabaseServer
-        .from("lucky_draw_prizes")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("prize_order", { ascending: true });
+    const registrationFields = (fieldRowsResult.data || []) as RegistrationField[];
+    const winners = winnersResult.data || [];
+    const prizes = prizesResult.data || [];
 
     const totalCheckedIn = checkedInGuests.length;
-    const totalWinners = winners?.length || 0;
+    const totalWinners = winners.length;
+    const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
@@ -164,13 +198,12 @@ export default async function LuckyDrawPage({
                             </h1>
 
                             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Create prizes, choose which checked-in guests are
-                                eligible for each prize, then spin the wheel for
-                                the selected prize.
+                                Create prizes, choose which checked-in guests are eligible
+                                for each prize, then spin the wheel for the selected prize.
                             </p>
 
                             <p className="mt-3 text-sm font-bold text-slate-500">
-                                {event.event_name || event.title || event.name}
+                                {eventName}
                             </p>
                         </div>
 
@@ -202,9 +235,8 @@ export default async function LuckyDrawPage({
                                 </div>
 
                                 <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
-                                    You can filter checked-in guests using answers
-                                    from the registration form, then select all
-                                    matching guests for a prize.
+                                    Filter checked-in guests using answers from the registration
+                                    form, then select all matching guests for a prize.
                                 </p>
                             </div>
                         </div>
@@ -221,7 +253,7 @@ export default async function LuckyDrawPage({
 
                     <StatCard
                         title="Prizes Created"
-                        value={prizes?.length || 0}
+                        value={prizes.length}
                         text="Each prize can have its own eligible group"
                         icon={Gift}
                     />
@@ -237,15 +269,10 @@ export default async function LuckyDrawPage({
                 <section className="mt-8">
                     <LuckyDrawWheel
                         eventId={eventId}
-                        eventName={
-                            event.event_name ||
-                            event.title ||
-                            event.name ||
-                            "Event"
-                        }
+                        eventName={eventName}
                         guests={checkedInGuests}
-                        initialWinners={winners || []}
-                        initialPrizes={prizes || []}
+                        initialWinners={winners}
+                        initialPrizes={prizes}
                         registrationFields={registrationFields}
                     />
                 </section>

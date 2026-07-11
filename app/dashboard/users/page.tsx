@@ -96,56 +96,64 @@ export default function UsersPermissionsPage() {
         setLoading(true);
         setMessage("");
 
-        const {
-            data: { user },
-            error: userError,
-        } = await supabase.auth.getUser();
+        try {
+            const {
+                data: { user },
+                error: userError,
+            } = await supabase.auth.getUser();
 
-        if (userError || !user) {
-            window.location.href = "/auth/login";
-            return;
-        }
+            if (userError || !user) {
+                window.location.href = "/auth/login";
+                return;
+            }
 
-        const { data: currentProfile, error: profileError } = await supabase
-            .from("profiles")
-            .select("id, full_name, email, role")
-            .eq("id", user.id)
-            .single();
+            const { data: currentProfile, error: profileError } = await supabase
+                .from("profiles")
+                .select("id, full_name, email, role")
+                .eq("id", user.id)
+                .maybeSingle();
 
-        if (profileError || !currentProfile) {
-            setMessage("Unable to load your profile.");
+            if (profileError || !currentProfile) {
+                setMessage("Unable to load your profile.");
+                setLoading(false);
+                return;
+            }
+
+            const loadedProfile = currentProfile as Profile;
+            setProfile(loadedProfile);
+
+            if (loadedProfile.role !== "admin") {
+                setLoading(false);
+                return;
+            }
+
+            const [eventsResult, usersResult] = await Promise.all([
+                supabase
+                    .from("events")
+                    .select("id, event_name, event_date")
+                    .order("created_at", { ascending: false }),
+
+                supabase
+                    .from("profiles")
+                    .select("id, full_name, email, role")
+                    .order("created_at", { ascending: false }),
+            ]);
+
+            if (eventsResult.error) {
+                setMessage(`Failed to load events: ${eventsResult.error.message}`);
+            }
+
+            if (usersResult.error) {
+                setMessage(`Failed to load users: ${usersResult.error.message}`);
+            }
+
+            setEvents((eventsResult.data || []) as Event[]);
+            setUsers((usersResult.data || []) as Profile[]);
+        } catch (error: any) {
+            setMessage(error?.message || "Something went wrong while loading users.");
+        } finally {
             setLoading(false);
-            return;
         }
-
-        setProfile(currentProfile as Profile);
-
-        if (currentProfile.role !== "admin") {
-            setLoading(false);
-            return;
-        }
-
-        const { data: eventData, error: eventError } = await supabase
-            .from("events")
-            .select("id, event_name, event_date")
-            .order("created_at", { ascending: false });
-
-        if (eventError) {
-            setMessage(`Failed to load events: ${eventError.message}`);
-        }
-
-        const { data: userData, error: usersError } = await supabase
-            .from("profiles")
-            .select("id, full_name, email, role")
-            .order("created_at", { ascending: false });
-
-        if (usersError) {
-            setMessage(`Failed to load users: ${usersError.message}`);
-        }
-
-        setEvents((eventData || []) as Event[]);
-        setUsers((userData || []) as Profile[]);
-        setLoading(false);
     }
 
     async function createUser(e: FormEvent) {
@@ -334,8 +342,13 @@ export default function UsersPermissionsPage() {
 
     if (loading) {
         return (
-            <div className="p-8">
-                <p className="text-slate-500">Loading users and permissions...</p>
+            <div className="space-y-8 p-8">
+                <div className="h-24 animate-pulse rounded-3xl bg-white shadow-sm" />
+
+                <div className="grid gap-8 lg:grid-cols-[420px_1fr]">
+                    <div className="h-[560px] animate-pulse rounded-3xl bg-white shadow-sm" />
+                    <div className="h-[560px] animate-pulse rounded-3xl bg-white shadow-sm" />
+                </div>
             </div>
         );
     }
@@ -578,7 +591,9 @@ export default function UsersPermissionsPage() {
                                                         className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                                                     >
                                                         <Trash2 size={14} />
-                                                        {deletingUserId === user.id ? "Deleting..." : "Delete"}
+                                                        {deletingUserId === user.id
+                                                            ? "Deleting..."
+                                                            : "Delete"}
                                                     </button>
                                                 </div>
                                             </div>

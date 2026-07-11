@@ -61,7 +61,9 @@ type ModuleCardItem = {
     allowed: boolean;
 };
 
-type EventInfoIcon = LucideIcon | ComponentType<{ size?: number; className?: string }>;
+type EventInfoIcon =
+    | LucideIcon
+    | ComponentType<{ size?: number; className?: string }>;
 
 const defaultEnabledModules: Record<EventModuleKey, boolean> = {
     overview: true,
@@ -116,14 +118,82 @@ export default async function EventOverviewPage({
     } = await supabaseServer.auth.getUser();
 
     if (!user) {
-        redirect("/login");
+        redirect("/auth/login");
     }
 
-    const { data: profile } = await supabaseServer
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .eq("id", user.id)
-        .maybeSingle();
+    const [
+        profileResult,
+        eventResult,
+        settingsResult,
+        totalGuestsResult,
+        checkedInGuestsResult,
+        ticketTypesResult,
+        assignedTablesResult,
+    ] = await Promise.all([
+        supabaseServer
+            .from("profiles")
+            .select("id, full_name, email, role")
+            .eq("id", user.id)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("event_settings")
+            .select("enabled_modules")
+            .eq("event_id", eventId)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("registrations")
+            .select("id", { count: "exact", head: true })
+            .eq("event_id", eventId),
+
+        supabaseServer
+            .from("check_ins")
+            .select("id", { count: "exact", head: true })
+            .eq("event_id", eventId)
+            .eq("scan_result", "checked_in"),
+
+        supabaseServer
+            .from("ticket_types")
+            .select("id", { count: "exact", head: true })
+            .eq("event_id", eventId),
+
+        supabaseServer
+            .from("table_assignments")
+            .select("id", { count: "exact", head: true })
+            .eq("event_id", eventId),
+    ]);
+
+    const profile = profileResult.data;
+    const event = eventResult.data;
+
+    if (eventResult.error) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
+                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+                    <p className="font-black text-red-600">
+                        Failed to load event: {eventResult.error.message}
+                    </p>
+                </div>
+            </main>
+        );
+    }
+
+    if (!event) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
+                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+                    <p className="font-black text-red-600">Event not found.</p>
+                </div>
+            </main>
+        );
+    }
 
     const role: Role = profile?.role || "viewer";
 
@@ -136,65 +206,24 @@ export default async function EventOverviewPage({
     const canScan = isAdmin || isOrganizer || isScanner;
     const canViewReports = isAdmin || isOrganizer || isViewer;
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .maybeSingle();
-
-    if (!event) {
-        return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
-                    <p className="font-black text-red-600">Event not found.</p>
-                </div>
-            </main>
-        );
-    }
-
-    const { data: settingsRow } = await supabaseServer
-        .from("event_settings")
-        .select("enabled_modules")
-        .eq("event_id", eventId)
-        .maybeSingle();
-
-    const enabledModules = cleanEnabledModules(settingsRow?.enabled_modules);
+    const enabledModules = cleanEnabledModules(
+        settingsResult.data?.enabled_modules
+    );
 
     function canAccessModule(moduleKey: EventModuleKey, allowedByRole: boolean) {
         if (!allowedByRole) return false;
 
-        // Admin always sees all dashboard cards.
         if (isAdmin) return true;
 
-        // Organiser/scanner/viewer follows the module toggles.
         return enabledModules[moduleKey] !== false;
     }
 
-    const { count: totalGuests } = await supabaseServer
-        .from("registrations")
-        .select("id", { count: "exact", head: true })
-        .eq("event_id", eventId);
-
-    const { count: checkedInGuests } = await supabaseServer
-        .from("check_ins")
-        .select("id", { count: "exact", head: true })
-        .eq("event_id", eventId)
-        .eq("scan_result", "checked_in");
-
-    const { count: ticketTypes } = await supabaseServer
-        .from("ticket_types")
-        .select("id", { count: "exact", head: true })
-        .eq("event_id", eventId);
-
-    const { count: assignedTables } = await supabaseServer
-        .from("table_assignments")
-        .select("id", { count: "exact", head: true })
-        .eq("event_id", eventId);
-
-    const total = totalGuests || 0;
-    const checkedIn = checkedInGuests || 0;
+    const total = totalGuestsResult.count || 0;
+    const checkedIn = checkedInGuestsResult.count || 0;
     const pending = Math.max(total - checkedIn, 0);
     const checkedInRate = total > 0 ? Math.round((checkedIn / total) * 100) : 0;
+    const ticketTypes = ticketTypesResult.count || 0;
+    const assignedTables = assignedTablesResult.count || 0;
 
     const managementCards = (
         [
@@ -466,9 +495,10 @@ export default async function EventOverviewPage({
 
                     <StatCard
                         title="Table Assigned"
-                        value={assignedTables || 0}
-                        text={`${ticketTypes || 0} ticket type${(ticketTypes || 0) === 1 ? "" : "s"
-                            } created`}
+                        value={assignedTables}
+                        text={`${ticketTypes} ticket type${
+                            ticketTypes === 1 ? "" : "s"
+                        } created`}
                         icon={Utensils}
                     />
                 </section>
@@ -537,8 +567,8 @@ export default async function EventOverviewPage({
 
                         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
                             Your current role does not have access to management tools
-                            for this event. Please contact an admin if you need
-                            additional access.
+                            for this event. Please contact an admin if you need additional
+                            access.
                         </p>
                     </section>
                 )}
@@ -598,30 +628,34 @@ function ModuleCard({
     return (
         <Link
             href={href}
-            className={`group rounded-[2rem] border p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${highlight
+            className={`group rounded-[2rem] border p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
+                highlight
                     ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
                     : "border-slate-200 bg-white text-slate-950"
-                }`}
+            }`}
         >
             <div
-                className={`w-fit rounded-2xl p-3 transition ${highlight
+                className={`w-fit rounded-2xl p-3 transition ${
+                    highlight
                         ? "bg-white/20 text-white"
                         : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
-                    }`}
+                }`}
             >
                 <Icon size={24} />
             </div>
 
             <h3
-                className={`mt-6 text-lg font-black ${highlight ? "text-white" : "text-slate-950"
-                    }`}
+                className={`mt-6 text-lg font-black ${
+                    highlight ? "text-white" : "text-slate-950"
+                }`}
             >
                 {title}
             </h3>
 
             <p
-                className={`mt-2 text-sm leading-6 ${highlight ? "text-white/80" : "text-slate-500"
-                    }`}
+                className={`mt-2 text-sm leading-6 ${
+                    highlight ? "text-white/80" : "text-slate-500"
+                }`}
             >
                 {description}
             </p>

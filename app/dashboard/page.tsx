@@ -7,7 +7,6 @@ import {
     Clock3,
     FileText,
     Globe2,
-    LayoutDashboard,
     PlusCircle,
     Settings,
     ShieldCheck,
@@ -17,7 +16,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { createSupabaseServerClient } from "../../lib/supabase-server";
 
-type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+type UserRole = "admin" | "organizer" | "organiser" | "viewer" | "scanner";
 
 type EventItem = {
     id: string;
@@ -38,53 +37,70 @@ export default async function DashboardPage() {
         data: { user },
     } = await supabaseServer.auth.getUser();
 
-    const { data: profile } = user
-        ? await supabaseServer
-            .from("profiles")
-            .select("id, full_name, email, role")
-            .eq("id", user.id)
-            .single()
-        : { data: null };
+    const [
+        profileResult,
+        totalEventsResult,
+        publishedEventsResult,
+        draftEventsResult,
+        upcomingEventsResult,
+        recentEventsResult,
+        upcomingListResult,
+    ] = await Promise.all([
+        user
+            ? supabaseServer
+                  .from("profiles")
+                  .select("id, full_name, email, role")
+                  .eq("id", user.id)
+                  .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
 
+        supabaseServer
+            .from("events")
+            .select("id", { count: "exact", head: true }),
+
+        supabaseServer
+            .from("events")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "published"),
+
+        supabaseServer
+            .from("events")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "draft"),
+
+        supabaseServer
+            .from("events")
+            .select("id", { count: "exact", head: true })
+            .gte("event_date", today),
+
+        supabaseServer
+            .from("events")
+            .select("id, event_name, event_date, event_time, venue, status, created_at")
+            .order("created_at", { ascending: false })
+            .limit(5),
+
+        supabaseServer
+            .from("events")
+            .select("id, event_name, event_date, event_time, venue, status, created_at")
+            .gte("event_date", today)
+            .order("event_date", { ascending: true })
+            .limit(5),
+    ]);
+
+    const profile = profileResult.data;
     const role = (profile?.role || "organizer") as UserRole;
     const displayName = profile?.full_name || user?.email?.split("@")[0] || "there";
 
-    const { count: totalEvents } = await supabaseServer
-        .from("events")
-        .select("*", { count: "exact", head: true });
+    const totalEvents = totalEventsResult.count || 0;
+    const publishedEvents = publishedEventsResult.count || 0;
+    const draftEvents = draftEventsResult.count || 0;
+    const upcomingEvents = upcomingEventsResult.count || 0;
 
-    const { count: publishedEvents } = await supabaseServer
-        .from("events")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "published");
-
-    const { count: draftEvents } = await supabaseServer
-        .from("events")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "draft");
-
-    const { count: upcomingEvents } = await supabaseServer
-        .from("events")
-        .select("*", { count: "exact", head: true })
-        .gte("event_date", today);
-
-    const { data: recentEvents } = await supabaseServer
-        .from("events")
-        .select("id, event_name, event_date, event_time, venue, status, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-    const { data: upcomingList } = await supabaseServer
-        .from("events")
-        .select("id, event_name, event_date, event_time, venue, status, created_at")
-        .gte("event_date", today)
-        .order("event_date", { ascending: true })
-        .limit(5);
+    const recentEvents = (recentEventsResult.data || []) as EventItem[];
+    const upcomingList = (upcomingListResult.data || []) as EventItem[];
 
     const completionRate =
-        totalEvents && totalEvents > 0
-            ? Math.round(((publishedEvents || 0) / totalEvents) * 100)
-            : 0;
+        totalEvents > 0 ? Math.round((publishedEvents / totalEvents) * 100) : 0;
 
     const quickActions = getQuickActions(role);
 
@@ -116,7 +132,7 @@ export default async function DashboardPage() {
                             </span>
 
                             <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
-                                {upcomingEvents || 0} upcoming
+                                {upcomingEvents} upcoming
                             </span>
                         </div>
                     </div>
@@ -146,28 +162,28 @@ export default async function DashboardPage() {
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     title="Total Events"
-                    value={totalEvents || 0}
+                    value={totalEvents}
                     subtitle="Events available to your account"
                     icon={CalendarDays}
                 />
 
                 <StatCard
                     title="Published"
-                    value={publishedEvents || 0}
+                    value={publishedEvents}
                     subtitle="Live and accessible events"
                     icon={Globe2}
                 />
 
                 <StatCard
                     title="Drafts"
-                    value={draftEvents || 0}
+                    value={draftEvents}
                     subtitle="Events still being prepared"
                     icon={FileText}
                 />
 
                 <StatCard
                     title="Upcoming"
-                    value={upcomingEvents || 0}
+                    value={upcomingEvents}
                     subtitle="Scheduled from today onwards"
                     icon={Clock3}
                 />
@@ -183,9 +199,9 @@ export default async function DashboardPage() {
                     />
 
                     <div className="mt-6 space-y-3">
-                        {recentEvents && recentEvents.length > 0 ? (
+                        {recentEvents.length > 0 ? (
                             recentEvents.map((event) => (
-                                <EventRow key={event.id} event={event as EventItem} />
+                                <EventRow key={event.id} event={event} />
                             ))
                         ) : (
                             <EmptyState
@@ -233,8 +249,7 @@ export default async function DashboardPage() {
                             </div>
 
                             <p className="mt-4 text-sm text-slate-500">
-                                {publishedEvents || 0} out of {totalEvents || 0} events are
-                                published.
+                                {publishedEvents} out of {totalEvents} events are published.
                             </p>
                         </div>
                     </div>
@@ -243,14 +258,15 @@ export default async function DashboardPage() {
                         <h2 className="text-xl font-black text-slate-950">
                             Upcoming Events
                         </h2>
+
                         <p className="mt-1 text-sm leading-6 text-slate-500">
                             Events scheduled from today onwards.
                         </p>
 
                         <div className="mt-5 space-y-3">
-                            {upcomingList && upcomingList.length > 0 ? (
+                            {upcomingList.length > 0 ? (
                                 upcomingList.map((event) => (
-                                    <EventMini key={event.id} event={event as EventItem} />
+                                    <EventMini key={event.id} event={event} />
                                 ))
                             ) : (
                                 <EmptyState
@@ -273,7 +289,7 @@ export default async function DashboardPage() {
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     {quickActions.map((action) => (
                         <ChecklistCard
-                            key={action.href}
+                            key={action.href + action.title}
                             href={action.href}
                             icon={action.icon}
                             title={action.title}
@@ -316,7 +332,7 @@ function getQuickActions(role: UserRole) {
         ];
     }
 
-    if (role === "organizer") {
+    if (role === "organizer" || role === "organiser") {
         return [
             {
                 href: "/dashboard/events",
@@ -573,13 +589,14 @@ function StatusBadge({
         cleanStatus === "published"
             ? "bg-emerald-50 text-emerald-700"
             : cleanStatus === "draft"
-                ? "bg-amber-50 text-amber-700"
-                : "bg-slate-100 text-slate-700";
+              ? "bg-amber-50 text-amber-700"
+              : "bg-slate-100 text-slate-700";
 
     return (
         <span
-            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${styles} ${compact ? "hidden sm:inline-flex" : "inline-flex"
-                }`}
+            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${styles} ${
+                compact ? "hidden sm:inline-flex" : "inline-flex"
+            }`}
         >
             {cleanStatus}
         </span>

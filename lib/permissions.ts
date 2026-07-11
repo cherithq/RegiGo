@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-export type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+export type UserRole = "admin" | "organizer" | "organiser" | "viewer" | "scanner";
 
 export type PermissionKey =
     | "can_create_events"
@@ -28,6 +28,14 @@ const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionKey, boolean>> = {
         can_manage_settings: true,
     },
     organizer: {
+        can_create_events: false,
+        can_manage_events: true,
+        can_manage_guests: true,
+        can_scan_qr: true,
+        can_manage_reports: true,
+        can_manage_settings: false,
+    },
+    organiser: {
         can_create_events: false,
         can_manage_events: true,
         can_manage_guests: true,

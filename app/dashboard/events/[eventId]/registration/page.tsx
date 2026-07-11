@@ -10,7 +10,6 @@ import {
     Settings2,
     Sparkles,
 } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import RegistrationFieldsBuilder from "@/components/forms/RegistrationFieldsBuilder";
 import { requirePermission } from "@/lib/permissions";
 
@@ -31,17 +30,36 @@ export default async function RegistrationBuilderPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
-
-    await requirePermission("can_manage_settings");
-
+    const { supabaseServer } = await requirePermission("can_manage_settings");
     const { eventId } = await params;
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
+    const [eventResult, formResult] = await Promise.all([
+        supabaseServer
+            .from("events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("registration_forms")
+            .select("*")
+            .eq("event_id", eventId)
+            .maybeSingle(),
+    ]);
+
+    const event = eventResult.data;
+
+    if (eventResult.error) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
+                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+                    <p className="font-black text-red-600">
+                        Failed to load event: {eventResult.error.message}
+                    </p>
+                </div>
+            </main>
+        );
+    }
 
     if (!event) {
         return (
@@ -53,11 +71,7 @@ export default async function RegistrationBuilderPage({
         );
     }
 
-    const { data: form } = await supabaseServer
-        .from("registration_forms")
-        .select("*")
-        .eq("event_id", event.id)
-        .maybeSingle();
+    const form = formResult.data;
 
     let fields: RegistrationField[] = [];
 
@@ -90,23 +104,22 @@ export default async function RegistrationBuilderPage({
 
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
-            <div className="mx-auto max-w-7xl space-y-6">
-                <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-                    <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <Link
-                                href={`/dashboard/events/${event.id}`}
-                                className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] transition hover:text-[#EC4899]"
-                            >
-                                <ArrowLeft size={16} />
-                                Back to Event
-                            </Link>
+    <div className="mx-auto max-w-7xl space-y-6">
+        <Link
+            href={`/dashboard/events/${event.id}`}
+            className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
+        >
+            <ArrowLeft size={16} />
+            Back to Event
+        </Link>
 
-                            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <ClipboardList size={16} />
-                                Registration Builder
-                            </div>
-
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                        <ClipboardList size={16} />
+                        Registration Builder
+                    </div>
                             <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
                                 Guest Registration Form
                             </h1>
