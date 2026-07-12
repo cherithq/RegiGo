@@ -3,6 +3,9 @@ import { ArrowLeft, Users } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import TableAssignmentForm from "@/components/forms/TableAssignmentForm";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AssignTablesPage({
     params,
 }: {
@@ -39,11 +42,13 @@ export default async function AssignTablesPage({
 
     const event = eventResult.data;
 
-    if (!event) {
+    if (eventResult.error || !event) {
         return (
             <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
                 <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
-                    <p className="font-black text-red-600">Event not found.</p>
+                    <p className="font-black text-red-600">
+                        {eventResult.error?.message || "Event not found."}
+                    </p>
                 </div>
             </main>
         );

@@ -3,6 +3,29 @@ import { ArrowLeft, Table2, Users } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import TableForm from "@/components/forms/TableForm";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type EventTable = {
+    id: string;
+    event_id: string;
+    table_name: string;
+    table_capacity: number | null;
+};
+
+type TableAssignment = {
+    id: string;
+    event_id: string;
+    table_id: string | null;
+    registration_id: string | null;
+};
+
+type Guest = {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+};
+
 export default async function TablesPage({
     params,
 }: {
@@ -11,39 +34,55 @@ export default async function TablesPage({
     const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
-    const [eventResult, tablesResult, assignmentsResult] = await Promise.all([
-        supabaseServer
-            .from("events")
-            .select("*")
-            .eq("id", eventId)
-            .maybeSingle(),
+    const [eventResult, tablesResult, assignmentsResult, guestsResult] =
+        await Promise.all([
+            supabaseServer
+                .from("events")
+                .select("*")
+                .eq("id", eventId)
+                .maybeSingle(),
 
-        supabaseServer
-            .from("event_tables")
-            .select("*")
-            .eq("event_id", eventId)
-            .order("table_name", { ascending: true }),
+            supabaseServer
+                .from("event_tables")
+                .select("*")
+                .eq("event_id", eventId)
+                .order("table_name", { ascending: true }),
 
-        supabaseServer
-            .from("table_assignments")
-            .select("*, registrations(*)")
-            .eq("event_id", eventId),
-    ]);
+            supabaseServer
+                .from("table_assignments")
+                .select("id, event_id, table_id, registration_id")
+                .eq("event_id", eventId),
+
+            supabaseServer
+                .from("registrations")
+                .select("id, full_name, email")
+                .eq("event_id", eventId),
+        ]);
 
     const event = eventResult.data;
 
-    if (!event) {
+    if (eventResult.error || !event) {
         return (
             <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
                 <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
-                    <p className="font-black text-red-600">Event not found.</p>
+                    <p className="font-black text-red-600">
+                        {eventResult.error?.message || "Event not found."}
+                    </p>
                 </div>
             </main>
         );
     }
 
-    const tables = tablesResult.data || [];
-    const assignments = assignmentsResult.data || [];
+    const tables = (tablesResult.data || []) as EventTable[];
+    const assignments = (assignmentsResult.data || []) as TableAssignment[];
+    const guests = (guestsResult.data || []) as Guest[];
+
+    const guestMap = new Map<string, Guest>();
+
+    guests.forEach((guest) => {
+        guestMap.set(guest.id, guest);
+    });
+
     const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
@@ -95,12 +134,25 @@ export default async function TablesPage({
                     <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                         <div className="grid gap-4 md:grid-cols-2">
                             {tables.length > 0 ? (
-                                tables.map((table: any) => {
-                                    const seated =
-                                        assignments.filter((a: any) => a.table_id === table.id) || [];
+                                tables.map((table) => {
+                                    const seatedAssignments = assignments.filter(
+                                        (assignment) => assignment.table_id === table.id
+                                    );
+
+                                    const seatedGuests = seatedAssignments
+                                        .map((assignment) =>
+                                            assignment.registration_id
+                                                ? guestMap.get(assignment.registration_id)
+                                                : null
+                                        )
+                                        .filter(Boolean) as Guest[];
 
                                     const capacity = Number(table.table_capacity || 0);
-                                    const remaining = Math.max(capacity - seated.length, 0);
+                                    const remaining = Math.max(
+                                        capacity - seatedGuests.length,
+                                        0
+                                    );
+                                    const isFull = capacity > 0 && remaining === 0;
 
                                     return (
                                         <div
@@ -112,31 +164,38 @@ export default async function TablesPage({
                                                     <h2 className="truncate text-xl font-black md:text-2xl">
                                                         {table.table_name}
                                                     </h2>
+
                                                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                                                        {seated.length}/{capacity} assigned ·{" "}
-                                                        {remaining} seats left
+                                                        {seatedGuests.length}/{capacity} assigned ·{" "}
+                                                        {remaining} seat
+                                                        {remaining === 1 ? "" : "s"} left
                                                     </p>
                                                 </div>
 
                                                 <span
                                                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
-                                                        remaining === 0
+                                                        isFull
                                                             ? "bg-red-100 text-red-700"
                                                             : "bg-green-100 text-green-700"
                                                     }`}
                                                 >
-                                                    {remaining === 0 ? "FULL" : "OPEN"}
+                                                    {isFull ? "FULL" : "OPEN"}
                                                 </span>
                                             </div>
 
                                             <div className="mt-5 space-y-2">
-                                                {seated.length > 0 ? (
-                                                    seated.slice(0, 5).map((item: any) => (
+                                                {seatedGuests.length > 0 ? (
+                                                    seatedGuests.slice(0, 5).map((guest) => (
                                                         <div
-                                                            key={item.id}
-                                                            className="rounded-2xl bg-white p-3 text-sm font-semibold"
+                                                            key={guest.id}
+                                                            className="rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700"
                                                         >
-                                                            {item.registrations?.full_name || "Guest"}
+                                                            <p className="font-black">
+                                                                {guest.full_name || "Unnamed Guest"}
+                                                            </p>
+                                                            <p className="break-all text-xs text-slate-500">
+                                                                {guest.email || "No email"}
+                                                            </p>
                                                         </div>
                                                     ))
                                                 ) : (
@@ -145,9 +204,9 @@ export default async function TablesPage({
                                                     </p>
                                                 )}
 
-                                                {seated.length > 5 && (
+                                                {seatedGuests.length > 5 && (
                                                     <p className="text-sm font-bold text-slate-500">
-                                                        + {seated.length - 5} more guests
+                                                        + {seatedGuests.length - 5} more guests
                                                     </p>
                                                 )}
                                             </div>
@@ -157,9 +216,11 @@ export default async function TablesPage({
                             ) : (
                                 <div className="col-span-full rounded-2xl bg-[#F7F5FF] p-8 text-center">
                                     <div className="text-5xl">🪑</div>
+
                                     <h2 className="mt-4 text-2xl font-black">
                                         No tables yet
                                     </h2>
+
                                     <p className="mt-2 text-slate-500">
                                         Add tables before assigning guests.
                                     </p>
@@ -170,6 +231,7 @@ export default async function TablesPage({
 
                     <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                         <h2 className="text-2xl font-black">Add Table</h2>
+
                         <p className="mt-2 text-sm leading-6 text-slate-500">
                             Create tables for this event.
                         </p>

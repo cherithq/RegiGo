@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function TableAssignmentForm({
@@ -14,14 +15,21 @@ export default function TableAssignmentForm({
     guests: any[];
     assignments: any[];
 }) {
-    const [items, setItems] = useState(assignments);
+    const router = useRouter();
+
+    const [items, setItems] = useState(assignments || []);
     const [message, setMessage] = useState("");
     const [messageType, setMessageType] = useState<"success" | "error" | "">("");
     const [assigningGuestId, setAssigningGuestId] = useState<string | null>(null);
     const [removingGuestId, setRemovingGuestId] = useState<string | null>(null);
 
     const assignedGuestIds = useMemo(
-        () => new Set(items.map((item) => item.registration_id)),
+        () =>
+            new Set(
+                items
+                    .map((item) => item.registration_id)
+                    .filter(Boolean)
+            ),
         [items]
     );
 
@@ -68,14 +76,18 @@ export default function TableAssignmentForm({
     }
 
     async function assignGuest(registrationId: string, tableId: string) {
-        if (!tableId) return;
+        if (!registrationId || !tableId) return;
 
         setMessage("");
         setMessageType("");
         setAssigningGuestId(registrationId);
 
         const table = tables.find((item) => item.id === tableId);
-        const currentCount = items.filter((item) => item.table_id === tableId).length;
+        const currentCount = items.filter(
+            (item) =>
+                item.table_id === tableId &&
+                item.registration_id !== registrationId
+        ).length;
 
         if (table && currentCount >= Number(table.table_capacity || 0)) {
             setMessage(`${table.table_name} is already full.`);
@@ -84,23 +96,52 @@ export default function TableAssignmentForm({
             return;
         }
 
-        const { data, error } = await supabase
+        const { data: existingAssignment, error: existingError } = await supabase
             .from("table_assignments")
-            .upsert(
-                {
+            .select("*")
+            .eq("registration_id", registrationId)
+            .maybeSingle();
+
+        if (existingError) {
+            setMessage(existingError.message);
+            setMessageType("error");
+            setAssigningGuestId(null);
+            return;
+        }
+
+        let savedAssignment: any = null;
+        let saveError: any = null;
+
+        if (existingAssignment) {
+            const { data, error } = await supabase
+                .from("table_assignments")
+                .update({
+                    event_id: eventId,
+                    table_id: tableId,
+                })
+                .eq("registration_id", registrationId)
+                .select("*")
+                .single();
+
+            savedAssignment = data;
+            saveError = error;
+        } else {
+            const { data, error } = await supabase
+                .from("table_assignments")
+                .insert({
                     event_id: eventId,
                     table_id: tableId,
                     registration_id: registrationId,
-                },
-                {
-                    onConflict: "event_id,registration_id",
-                }
-            )
-            .select()
-            .single();
+                })
+                .select("*")
+                .single();
 
-        if (error) {
-            setMessage(error.message);
+            savedAssignment = data;
+            saveError = error;
+        }
+
+        if (saveError) {
+            setMessage(saveError.message);
             setMessageType("error");
             setAssigningGuestId(null);
             return;
@@ -108,8 +149,10 @@ export default function TableAssignmentForm({
 
         setItems((prev) => [
             ...prev.filter((item) => item.registration_id !== registrationId),
-            data,
+            savedAssignment,
         ]);
+
+        router.refresh();
 
         const emailSent = await triggerEmailWorker();
 
@@ -118,15 +161,17 @@ export default function TableAssignmentForm({
             setMessageType("success");
         } else {
             setMessage(
-                "Table assigned, but the email worker did not run. You can run it manually from /api/email-worker."
+                "Table assigned, but the email worker did not run. The table assignment was still saved."
             );
-            setMessageType("error");
+            setMessageType("success");
         }
 
         setAssigningGuestId(null);
     }
 
     async function removeAssignment(registrationId: string) {
+        if (!registrationId) return;
+
         setMessage("");
         setMessageType("");
         setRemovingGuestId(registrationId);
@@ -134,7 +179,6 @@ export default function TableAssignmentForm({
         const { error } = await supabase
             .from("table_assignments")
             .delete()
-            .eq("event_id", eventId)
             .eq("registration_id", registrationId);
 
         if (error) {
@@ -148,27 +192,33 @@ export default function TableAssignmentForm({
             prev.filter((item) => item.registration_id !== registrationId)
         );
 
+        router.refresh();
+
         setMessage("Table assignment removed.");
         setMessageType("success");
         setRemovingGuestId(null);
     }
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-5 md:space-y-8">
             {message && (
                 <div
-                    className={`rounded-xl p-4 font-semibold ${messageType === "success"
+                    className={`rounded-2xl p-4 text-sm font-semibold md:text-base ${
+                        messageType === "success"
                             ? "bg-green-50 text-green-700"
                             : "bg-red-50 text-red-600"
-                        }`}
+                    }`}
                 >
                     {message}
                 </div>
             )}
 
-            <section className="rounded-[2rem] bg-[#F7F5FF] p-6">
-                <h2 className="text-2xl font-black">Unassigned Guests</h2>
-                <p className="mt-1 text-sm text-slate-500">
+            <section className="rounded-[1.5rem] bg-[#F7F5FF] p-5 md:rounded-[2rem] md:p-6">
+                <h2 className="text-xl font-black md:text-2xl">
+                    Unassigned Guests
+                </h2>
+
+                <p className="mt-1 text-sm leading-6 text-slate-500">
                     Select a table for each guest. Once assigned, the guest will receive a
                     table assignment email automatically.
                 </p>
@@ -180,16 +230,23 @@ export default function TableAssignmentForm({
                                 key={guest.id}
                                 className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between"
                             >
-                                <div>
-                                    <p className="font-black">{guest.full_name}</p>
-                                    <p className="text-sm text-slate-500">{guest.email}</p>
+                                <div className="min-w-0">
+                                    <p className="truncate font-black text-slate-950">
+                                        {guest.full_name || "Unnamed Guest"}
+                                    </p>
+
+                                    <p className="break-all text-sm text-slate-500">
+                                        {guest.email || "No email"}
+                                    </p>
                                 </div>
 
                                 <select
-                                    defaultValue=""
+                                    value=""
                                     disabled={assigningGuestId === guest.id}
-                                    onChange={(event) => assignGuest(guest.id, event.target.value)}
-                                    className="rounded-xl border border-slate-300 bg-white px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                    onChange={(event) =>
+                                        assignGuest(guest.id, event.target.value)
+                                    }
+                                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50 md:w-[220px]"
                                 >
                                     <option value="" disabled>
                                         {assigningGuestId === guest.id
@@ -197,16 +254,34 @@ export default function TableAssignmentForm({
                                             : "Assign table"}
                                     </option>
 
-                                    {tables.map((table) => (
-                                        <option key={table.id} value={table.id}>
-                                            {table.table_name}
-                                        </option>
-                                    ))}
+                                    {tables.map((table) => {
+                                        const currentCount = items.filter(
+                                            (item) => item.table_id === table.id
+                                        ).length;
+
+                                        const capacity = Number(
+                                            table.table_capacity || 0
+                                        );
+
+                                        const isFull =
+                                            capacity > 0 && currentCount >= capacity;
+
+                                        return (
+                                            <option
+                                                key={table.id}
+                                                value={table.id}
+                                                disabled={isFull}
+                                            >
+                                                {table.table_name}
+                                                {isFull ? " - Full" : ""}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             </div>
                         ))
                     ) : (
-                        <p className="rounded-2xl bg-white p-5 font-semibold text-slate-500">
+                        <p className="rounded-2xl bg-white p-5 text-sm font-semibold text-slate-500">
                             All guests have been assigned.
                         </p>
                     )}
@@ -218,19 +293,33 @@ export default function TableAssignmentForm({
                     const seatedGuests = guestsForTable(table.id);
                     const capacity = Number(table.table_capacity || 0);
                     const remaining = Math.max(capacity - seatedGuests.length, 0);
+                    const isFull = capacity > 0 && remaining === 0;
 
                     return (
-                        <div key={table.id} className="rounded-[2rem] bg-white p-6 shadow-xl">
+                        <div
+                            key={table.id}
+                            className="rounded-[1.5rem] bg-white p-5 shadow-sm md:rounded-[2rem] md:p-6"
+                        >
                             <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <h3 className="text-2xl font-black">{table.table_name}</h3>
-                                    <p className="mt-1 text-sm text-slate-500">
-                                        {seatedGuests.length}/{capacity} seated · {remaining} left
+                                <div className="min-w-0">
+                                    <h3 className="truncate text-xl font-black md:text-2xl">
+                                        {table.table_name}
+                                    </h3>
+
+                                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                                        {seatedGuests.length}/{capacity} seated ·{" "}
+                                        {remaining} left
                                     </p>
                                 </div>
 
-                                <span className="rounded-full bg-[#F7F5FF] px-3 py-1 text-xs font-black text-[#4F46E5]">
-                                    {remaining === 0 ? "FULL" : "OPEN"}
+                                <span
+                                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
+                                        isFull
+                                            ? "bg-red-50 text-red-700"
+                                            : "bg-[#F7F5FF] text-[#4F46E5]"
+                                    }`}
+                                >
+                                    {isFull ? "FULL" : "OPEN"}
                                 </span>
                             </div>
 
@@ -239,20 +328,31 @@ export default function TableAssignmentForm({
                                     seatedGuests.map((guest) => (
                                         <div
                                             key={guest.id}
-                                            className="flex items-center justify-between rounded-2xl bg-[#F7F5FF] p-4"
+                                            className="flex flex-col gap-3 rounded-2xl bg-[#F7F5FF] p-4 sm:flex-row sm:items-center sm:justify-between"
                                         >
-                                            <div>
-                                                <p className="font-black">{guest.full_name}</p>
-                                                <p className="text-xs text-slate-500">{guest.email}</p>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-black text-slate-950">
+                                                    {guest.full_name || "Unnamed Guest"}
+                                                </p>
+
+                                                <p className="break-all text-xs text-slate-500">
+                                                    {guest.email || "No email"}
+                                                </p>
                                             </div>
 
                                             <button
                                                 type="button"
-                                                onClick={() => removeAssignment(guest.id)}
-                                                disabled={removingGuestId === guest.id}
+                                                onClick={() =>
+                                                    removeAssignment(guest.id)
+                                                }
+                                                disabled={
+                                                    removingGuestId === guest.id
+                                                }
                                                 className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
-                                                {removingGuestId === guest.id ? "Removing..." : "Remove"}
+                                                {removingGuestId === guest.id
+                                                    ? "Removing..."
+                                                    : "Remove"}
                                             </button>
                                         </div>
                                     ))
@@ -267,9 +367,13 @@ export default function TableAssignmentForm({
                 })}
 
                 {tables.length === 0 && (
-                    <div className="col-span-full rounded-[2rem] bg-[#F7F5FF] p-8 text-center">
+                    <div className="col-span-full rounded-[1.5rem] bg-[#F7F5FF] p-8 text-center md:rounded-[2rem]">
                         <div className="text-5xl">🪑</div>
-                        <h2 className="mt-4 text-2xl font-black">No tables yet</h2>
+
+                        <h2 className="mt-4 text-2xl font-black">
+                            No tables yet
+                        </h2>
+
                         <p className="mt-2 text-slate-500">
                             Create tables first before assigning guests.
                         </p>
