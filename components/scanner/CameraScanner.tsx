@@ -17,27 +17,23 @@ type ScanResult = {
 
 type QrPayload = {
     rawValue: string;
-    cleanedValue: string;
     qrToken: string | null;
     registrationId: string | null;
 };
 
-type RegistrationRecord = {
-    id: string;
-    full_name?: string | null;
-    email?: string | null;
-    registration_status?: string | null;
-    event_id?: string | null;
-};
-
 type TicketResult = {
-    id: string | null;
+    id: string;
     event_id: string;
     registration_id: string;
-    qr_token?: string | null;
+    qr_token: string;
     qr_code_url?: string | null;
-    is_active?: boolean | null;
-    registrations?: RegistrationRecord | null;
+    is_active?: boolean;
+    registrations?: {
+        id?: string;
+        full_name?: string;
+        email?: string;
+        registration_status?: string;
+    };
 };
 
 function isUuid(value: string) {
@@ -46,19 +42,14 @@ function isUuid(value: string) {
     );
 }
 
-function cleanScannedUrl(value: string) {
-    return value.trim().replace(/^(https?:\/\/[^/]+)\/+/, "$1/");
-}
-
 function extractQrPayload(scannedValue: string): QrPayload {
     const rawValue = scannedValue.trim();
-    const cleanedValue = cleanScannedUrl(rawValue);
 
     let qrToken: string | null = null;
     let registrationId: string | null = null;
 
     try {
-        const url = new URL(cleanedValue);
+        const url = new URL(rawValue);
 
         registrationId =
             url.searchParams.get("registration") ||
@@ -74,17 +65,16 @@ function extractQrPayload(scannedValue: string): QrPayload {
         // Not a URL. Treat it as a raw QR value below.
     }
 
-    if (!registrationId && isUuid(cleanedValue)) {
-        registrationId = cleanedValue;
+    if (!registrationId && isUuid(rawValue)) {
+        registrationId = rawValue;
     }
 
     if (!qrToken && !registrationId) {
-        qrToken = cleanedValue;
+        qrToken = rawValue;
     }
 
     return {
         rawValue,
-        cleanedValue,
         qrToken,
         registrationId,
     };
@@ -101,14 +91,13 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
         message: "Camera ready. Click start to scan.",
     });
 
-    async function findTicket(payload: QrPayload): Promise<TicketResult | null> {
+    async function findTicket(payload: QrPayload) {
         if (payload.registrationId) {
             const { data, error } = await supabase
                 .from("qr_tickets")
                 .select("*, registrations(*)")
                 .eq("registration_id", payload.registrationId)
                 .eq("event_id", eventId)
-                .limit(1)
                 .maybeSingle();
 
             if (error) {
@@ -117,28 +106,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
 
             if (data) {
                 return data as TicketResult;
-            }
-
-            const { data: registration, error: registrationError } = await supabase
-                .from("registrations")
-                .select("id, full_name, email, registration_status, event_id")
-                .eq("id", payload.registrationId)
-                .eq("event_id", eventId)
-                .maybeSingle();
-
-            if (registrationError) {
-                throw new Error(registrationError.message);
-            }
-
-            if (registration) {
-                return {
-                    id: null,
-                    event_id: eventId,
-                    registration_id: registration.id,
-                    qr_token: null,
-                    is_active: true,
-                    registrations: registration as RegistrationRecord,
-                };
             }
         }
 
@@ -148,7 +115,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 .select("*, registrations(*)")
                 .eq("qr_token", payload.qrToken)
                 .eq("event_id", eventId)
-                .limit(1)
                 .maybeSingle();
 
             if (error) {
@@ -160,13 +126,12 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             }
         }
 
-        if (payload.cleanedValue && payload.cleanedValue !== payload.qrToken) {
+        if (payload.rawValue && payload.rawValue !== payload.qrToken) {
             const { data, error } = await supabase
                 .from("qr_tickets")
                 .select("*, registrations(*)")
-                .eq("qr_token", payload.cleanedValue)
+                .eq("qr_token", payload.rawValue)
                 .eq("event_id", eventId)
-                .limit(1)
                 .maybeSingle();
 
             if (error) {
@@ -187,32 +152,21 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             .update({
                 registration_status: "checked_in",
             })
-            .eq("id", ticket.registration_id)
-            .eq("event_id", eventId);
+            .eq("id", ticket.registration_id);
 
         if (registrationUpdateError) {
             throw new Error(registrationUpdateError.message);
         }
 
-        if (ticket.id) {
-            const { error: ticketUpdateError } = await supabase
-                .from("qr_tickets")
-                .update({
-                    is_active: false,
-                })
-                .eq("id", ticket.id);
+        const { error: ticketUpdateError } = await supabase
+            .from("qr_tickets")
+            .update({
+                is_active: false,
+            })
+            .eq("id", ticket.id);
 
-            if (ticketUpdateError) {
-                throw new Error(ticketUpdateError.message);
-            }
-        } else {
-            await supabase
-                .from("qr_tickets")
-                .update({
-                    is_active: false,
-                })
-                .eq("registration_id", ticket.registration_id)
-                .eq("event_id", eventId);
+        if (ticketUpdateError) {
+            throw new Error(ticketUpdateError.message);
         }
     }
 
@@ -244,7 +198,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                 .eq("registration_id", ticket.registration_id)
                 .eq("event_id", eventId)
                 .eq("scan_result", "checked_in")
-                .limit(1)
                 .maybeSingle();
 
             if (existingError) {
@@ -262,10 +215,9 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
 
                 setResult({
                     status: "duplicate",
-                    message:
-                        "Guest already checked in. Check-in status has been synced.",
-                    guestName: ticket.registrations?.full_name || undefined,
-                    email: ticket.registrations?.email || undefined,
+                    message: "Guest already checked in. Check-in status has been synced.",
+                    guestName: ticket.registrations?.full_name,
+                    email: ticket.registrations?.email,
                     scannedValue: payload.rawValue,
                 });
                 return;
@@ -274,7 +226,7 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             const { error: insertError } = await supabase.from("check_ins").insert({
                 registration_id: ticket.registration_id,
                 event_id: eventId,
-                qr_ticket_id: ticket.id || null,
+                qr_ticket_id: ticket.id,
                 checked_in_by: "Admin",
                 device_name: "Web Camera Scanner",
                 scan_result: "checked_in",
@@ -289,8 +241,8 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             setResult({
                 status: "success",
                 message: "Checked in successfully.",
-                guestName: ticket.registrations?.full_name || undefined,
-                email: ticket.registrations?.email || undefined,
+                guestName: ticket.registrations?.full_name,
+                email: ticket.registrations?.email,
                 scannedValue: payload.rawValue,
             });
         } catch (error: any) {
@@ -312,7 +264,6 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
 
         try {
             const codeReader = new BrowserMultiFormatReader();
-
             const devices = await BrowserMultiFormatReader.listVideoInputDevices();
 
             if (!devices || devices.length === 0) {
@@ -368,11 +319,11 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
     }, []);
 
     return (
-        <div className="space-y-6">
-            <div className="overflow-hidden rounded-[2rem] bg-slate-950 p-4 shadow-xl">
+        <div className="space-y-4 md:space-y-6">
+            <div className="overflow-hidden rounded-[1.5rem] bg-slate-950 p-2.5 shadow-xl md:rounded-[2rem] md:p-4">
                 <video
                     ref={videoRef}
-                    className="min-h-[360px] w-full rounded-2xl bg-black object-cover"
+                    className="h-[52vh] min-h-[260px] max-h-[430px] w-full rounded-[1.25rem] bg-black object-cover md:h-[420px] md:rounded-2xl"
                     muted
                     playsInline
                 />
@@ -381,49 +332,39 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             {!scanning ? (
                 <button
                     onClick={startScanner}
-                    className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
+                    className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 text-sm font-black text-white shadow-lg transition hover:opacity-90 md:px-6 md:text-base"
                 >
                     Start Camera Scanner
                 </button>
             ) : (
                 <button
                     onClick={stopScanner}
-                    className="w-full rounded-2xl bg-slate-950 px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
+                    className="w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-lg transition hover:opacity-90 md:px-6 md:text-base"
                 >
                     Stop Scanner
                 </button>
             )}
 
-            <div
-                className={`rounded-[2rem] p-6 shadow ${
-                    result.status === "success"
-                        ? "bg-green-50 text-green-700"
-                        : result.status === "duplicate"
-                          ? "bg-yellow-50 text-yellow-700"
-                          : result.status === "invalid"
-                            ? "bg-red-50 text-red-700"
-                            : result.status === "camera"
-                              ? "bg-orange-50 text-orange-700"
-                              : result.status === "error"
-                                ? "bg-red-50 text-red-700"
-                                : "bg-white text-slate-700"
-                }`}
-            >
-                <p className="text-xl font-black">
-                    {result.status === "success" && "✅ Verified"}
-                    {result.status === "duplicate" && "⚠️ Already Checked In"}
-                    {result.status === "invalid" && "❌ Invalid QR"}
-                    {result.status === "camera" && "📷 Camera Issue"}
-                    {result.status === "error" && "⚠️ Scan Error"}
-                    {!result.status && "📷 Scanner Ready"}
+            <div className={`${getResultStyle(result.status)} rounded-[1.5rem] p-5 shadow md:rounded-[2rem] md:p-6`}>
+                <p className="text-lg font-black md:text-xl">
+                    {result.status === "success" && "Verified"}
+                    {result.status === "duplicate" && "Already Checked In"}
+                    {result.status === "invalid" && "Invalid QR"}
+                    {result.status === "camera" && "Camera Issue"}
+                    {result.status === "error" && "Scan Error"}
+                    {!result.status && "Scanner Ready"}
                 </p>
 
-                <p className="mt-2 font-semibold">{result.message}</p>
+                <p className="mt-2 text-sm font-semibold leading-6 md:text-base">
+                    {result.message}
+                </p>
 
                 {result.guestName && (
                     <div className="mt-4 rounded-2xl bg-white/70 p-4">
-                        <p className="text-lg font-black">{result.guestName}</p>
-                        <p className="text-sm">{result.email}</p>
+                        <p className="text-base font-black md:text-lg">
+                            {result.guestName}
+                        </p>
+                        <p className="break-all text-sm">{result.email}</p>
                     </div>
                 )}
 
@@ -432,7 +373,7 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
                         <p className="text-xs font-black uppercase tracking-wide opacity-70">
                             Scanned Value
                         </p>
-                        <p className="mt-1 break-all text-sm font-semibold">
+                        <p className="mt-1 break-all text-xs font-semibold md:text-sm">
                             {result.scannedValue}
                         </p>
                     </div>
@@ -440,4 +381,14 @@ export default function CameraScanner({ eventId }: { eventId: string }) {
             </div>
         </div>
     );
+}
+
+function getResultStyle(status: ScanResult["status"]) {
+    if (status === "success") return "bg-green-50 text-green-700";
+    if (status === "duplicate") return "bg-yellow-50 text-yellow-700";
+    if (status === "invalid") return "bg-red-50 text-red-700";
+    if (status === "camera") return "bg-orange-50 text-orange-700";
+    if (status === "error") return "bg-red-50 text-red-700";
+
+    return "bg-white text-slate-700";
 }

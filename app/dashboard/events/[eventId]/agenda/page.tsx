@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft, CalendarDays, ListTodo } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import AgendaManager from "@/components/forms/AgendaManager";
 
@@ -10,44 +11,98 @@ export default async function AgendaPage({
     const supabaseServer = await createSupabaseServerClient();
     const { eventId } = await params;
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
+    const [eventResult, agendaResult, speakersResult] = await Promise.all([
+        supabaseServer
+            .from("events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle(),
 
-    if (!event) return <div>Event not found.</div>;
+        supabaseServer
+            .from("event_agenda")
+            .select("*, speakers(*)")
+            .eq("event_id", eventId)
+            .order("display_order", { ascending: true }),
 
-    const { data: agenda } = await supabaseServer
-        .from("event_agenda")
-        .select("*, speakers(*)")
-        .eq("event_id", eventId)
-        .order("display_order", { ascending: true });
+        supabaseServer
+            .from("speakers")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("display_order", { ascending: true }),
+    ]);
 
-    const { data: speakers } = await supabaseServer
-        .from("speakers")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("display_order", { ascending: true });
+    const event = eventResult.data;
+
+    if (!event) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
+                    <p className="font-black text-red-600">Event not found.</p>
+                </div>
+            </main>
+        );
+    }
+
+    const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
-        <div className="mx-auto max-w-7xl">
-            <Link href={`/dashboard/events/${eventId}`} className="font-bold text-[#4F46E5]">
-                ← Back to Event
-            </Link>
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
+                <Link
+                    href={`/dashboard/events/${eventId}`}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
+                >
+                    <ArrowLeft size={16} />
+                    Back to Event
+                </Link>
 
-            <div className="mt-6 rounded-[2rem] bg-white p-8 shadow-xl">
-                <h1 className="text-4xl font-black">Agenda Builder</h1>
-                <p className="mt-2 text-slate-600">{event.event_name}</p>
+                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />
+                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-32 md:h-56 md:w-56" />
 
-                <div className="mt-8">
+                    <div className="relative z-10">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                            <ListTodo size={15} />
+                            Event Programme
+                        </div>
+
+                        <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
+                            Agenda Builder
+                        </h1>
+
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
+                            Create and arrange the event programme for{" "}
+                            <span className="font-black text-slate-950">
+                                {eventName}
+                            </span>
+                            .
+                        </p>
+
+                        {event.event_date && (
+                            <div className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700">
+                                <CalendarDays size={16} />
+                                {formatDate(event.event_date)}
+                            </div>
+                        )}
+                    </div>
+                </section>
+
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                     <AgendaManager
                         eventId={eventId}
-                        initialAgenda={agenda || []}
-                        speakers={speakers || []}
+                        initialAgenda={agendaResult.data || []}
+                        speakers={speakersResult.data || []}
                     />
-                </div>
+                </section>
             </div>
-        </div>
+        </main>
     );
+}
+
+function formatDate(date: string) {
+    return new Date(date).toLocaleDateString("en-SG", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+    });
 }

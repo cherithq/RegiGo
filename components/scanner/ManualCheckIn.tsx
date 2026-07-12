@@ -255,7 +255,7 @@ export default function ManualCheckIn({ eventId }: { eventId: string }) {
             <h2 className="text-2xl font-black">Manual Check-In</h2>
 
             <p className="mt-2 text-sm text-slate-500">
-                Search by guest name, email, QR pass link, registration ID, or QR token.
+                Search by guest name, email
             </p>
 
             <div className="mt-5 flex gap-3">

@@ -1,5 +1,5 @@
-import { createSupabaseServerClient } from "../../../../lib/supabase-server";
-import DynamicRegistrationForm from "../../../../components/forms/DynamicRegistrationForm";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
+import DynamicRegistrationForm from "@/components/forms/DynamicRegistrationForm";
 
 export const dynamic = "force-dynamic";
 
@@ -11,21 +11,53 @@ export default async function RegisterPage({
     const supabaseServer = await createSupabaseServerClient();
     const { slug } = await params;
 
-    const { data: event } = await supabaseServer
+    const { data: event, error: eventError } = await supabaseServer
         .from("events")
         .select("*, event_branding(*)")
         .eq("event_slug", slug)
         .maybeSingle();
 
-    if (!event) {
-        return <main className="p-8">Event not found.</main>;
+    if (eventError || !event) {
+        return (
+            <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="w-full max-w-md rounded-[1.5rem] bg-white p-6 text-center shadow-xl md:rounded-[2rem] md:p-8">
+                    <h1 className="text-2xl font-black text-red-600">
+                        Event not found
+                    </h1>
+
+                    {eventError?.message && (
+                        <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
+                            {eventError.message}
+                        </p>
+                    )}
+                </div>
+            </main>
+        );
     }
 
-    const { data: settings } = await supabaseServer
-        .from("event_settings")
-        .select("registration_is_open, registration_closed_message")
-        .eq("event_id", event.id)
-        .maybeSingle();
+    const [settingsResult, ticketsResult, formResult] = await Promise.all([
+        supabaseServer
+            .from("event_settings")
+            .select("registration_is_open, registration_closed_message")
+            .eq("event_id", event.id)
+            .maybeSingle(),
+
+        supabaseServer
+            .from("ticket_types")
+            .select("*")
+            .eq("event_id", event.id)
+            .order("display_order", { ascending: true }),
+
+        supabaseServer
+            .from("registration_forms")
+            .select("*")
+            .eq("event_id", event.id)
+            .maybeSingle(),
+    ]);
+
+    const settings = settingsResult.data;
+    const tickets = ticketsResult.data || [];
+    const form = formResult.data;
 
     const registrationIsOpen =
         event.status === "published" &&
@@ -36,30 +68,6 @@ export default async function RegisterPage({
         settings?.registration_closed_message ||
         "This event is not currently accepting registrations.";
 
-    if (!registrationIsOpen) {
-        return (
-            <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] px-6 text-slate-950">
-                <div className="max-w-md rounded-[2rem] bg-white p-10 text-center shadow-2xl">
-                    <div className="text-5xl">🔒</div>
-
-                    <h1 className="mt-6 text-3xl font-black">
-                        Registration Closed
-                    </h1>
-
-                    <p className="mt-3 text-slate-600">
-                        {closedMessage}
-                    </p>
-                </div>
-            </main>
-        );
-    }
-
-    const { data: tickets } = await supabaseServer
-        .from("ticket_types")
-        .select("*")
-        .eq("event_id", event.id)
-        .order("display_order", { ascending: true });
-
     const branding = Array.isArray(event.event_branding)
         ? event.event_branding[0]
         : event.event_branding;
@@ -68,21 +76,47 @@ export default async function RegisterPage({
     const secondary = branding?.secondary_color || "#EC4899";
     const background = branding?.background_color || "#F7F5FF";
 
-    const { data: form } = await supabaseServer
-        .from("registration_forms")
-        .select("*")
-        .eq("event_id", event.id)
-        .maybeSingle();
+    if (!registrationIsOpen) {
+        return (
+            <main
+                className="flex min-h-screen items-center justify-center px-5 py-8 text-slate-950 md:px-6"
+                style={{
+                    backgroundColor: background,
+                    backgroundImage: branding?.page_background_url
+                        ? `url(${branding.page_background_url})`
+                        : undefined,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                }}
+            >
+                <div className="w-full max-w-md rounded-[1.5rem] bg-white p-6 text-center shadow-2xl md:rounded-[2rem] md:p-10">
+                    <div className="text-5xl">🔒</div>
 
-    const { data: fields } = await supabaseServer
-        .from("registration_fields")
-        .select("*")
-        .eq("form_id", form?.id)
-        .order("sort_order", { ascending: true });
+                    <h1 className="mt-5 text-2xl font-black md:mt-6 md:text-3xl">
+                        Registration Closed
+                    </h1>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-600 md:text-base">
+                        {closedMessage}
+                    </p>
+                </div>
+            </main>
+        );
+    }
+
+    const { data: fields } = form?.id
+        ? await supabaseServer
+              .from("registration_fields")
+              .select("*")
+              .eq("form_id", form.id)
+              .order("sort_order", { ascending: true })
+        : { data: [] };
+
+    const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
         <main
-            className="min-h-screen px-6 py-10 text-slate-950"
+            className="min-h-screen px-4 py-5 text-slate-950 sm:px-5 md:px-6 md:py-10"
             style={{
                 backgroundColor: background,
                 backgroundImage: branding?.page_background_url
@@ -90,12 +124,11 @@ export default async function RegisterPage({
                     : undefined,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
-                backgroundAttachment: "fixed",
             }}
         >
-            <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+            <div className="mx-auto max-w-6xl overflow-hidden rounded-[1.5rem] bg-white shadow-2xl md:rounded-[2rem]">
                 <section
-                    className="relative min-h-[300px] overflow-hidden p-10 text-white"
+                    className="relative min-h-[240px] overflow-hidden p-5 text-white md:min-h-[300px] md:p-10"
                     style={{
                         backgroundImage: branding?.banner_background_url
                             ? `url(${branding.banner_background_url})`
@@ -114,15 +147,15 @@ export default async function RegisterPage({
                     )}
 
                     <div className="relative z-10">
-                        <p className="mb-6 inline-flex rounded-full bg-white/20 px-5 py-2 text-sm font-black backdrop-blur">
+                        <p className="mb-5 inline-flex rounded-full bg-white/20 px-4 py-2 text-xs font-black backdrop-blur md:mb-6 md:px-5 md:text-sm">
                             Event Registration
                         </p>
 
-                        <h1 className="text-5xl font-black">
-                            {branding?.hero_title || event.event_name}
+                        <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
+                            {branding?.hero_title || eventName}
                         </h1>
 
-                        <p className="mt-4 max-w-2xl text-xl text-white/90">
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/90 md:mt-4 md:text-xl md:leading-8">
                             {branding?.hero_subtitle ||
                                 "Complete your registration below. Your QR pass will be sent after verification."}
                         </p>
@@ -130,28 +163,30 @@ export default async function RegisterPage({
                 </section>
 
                 <section className="grid lg:grid-cols-[360px_1fr]">
-                    <aside className="bg-[#FAFAFF] p-8">
-                        <h2 className="text-2xl font-black">Event Details</h2>
+                    <aside className="border-b border-slate-100 bg-[#FAFAFF] p-5 md:p-8 lg:border-b-0 lg:border-r">
+                        <h2 className="text-xl font-black md:text-2xl">
+                            Event Details
+                        </h2>
 
-                        <div className="mt-6 space-y-4">
-                            <Info label="Date" value={event.event_date || "-"} />
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 md:mt-6 md:gap-4">
+                            <Info label="Date" value={formatDate(event.event_date)} />
                             <Info label="Time" value={event.event_time || "-"} />
                             <Info label="Venue" value={event.venue || "-"} />
                             <Info label="Entry" value="QR Code Required" />
                         </div>
                     </aside>
 
-                    <section className="p-8">
-                        <h2 className="text-2xl font-black">
+                    <section className="p-5 md:p-8">
+                        <h2 className="text-xl font-black md:text-2xl">
                             {form?.form_title || "Registration Form"}
                         </h2>
 
-                        <p className="mt-2 text-slate-500">
+                        <p className="mt-2 text-sm leading-6 text-slate-500 md:text-base">
                             Fields marked with{" "}
-                            <span className="text-red-500">*</span> are required.
+                            <span className="font-black text-red-500">*</span> are required.
                         </p>
 
-                        <div className="mt-8">
+                        <div className="mt-6 md:mt-8">
                             <DynamicRegistrationForm
                                 event={event}
                                 fields={fields || []}
@@ -167,9 +202,24 @@ export default async function RegisterPage({
 
 function Info({ label, value }: { label: string; value: string }) {
     return (
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-bold text-slate-500">{label}</p>
-            <p className="mt-1 text-lg font-black">{value}</p>
+        <div className="rounded-2xl bg-white p-4 shadow-sm md:p-5">
+            <p className="text-xs font-bold text-slate-500 md:text-sm">
+                {label}
+            </p>
+
+            <p className="mt-1 break-words text-base font-black leading-6 text-slate-950 md:text-lg">
+                {value}
+            </p>
         </div>
     );
+}
+
+function formatDate(date: string | null) {
+    if (!date) return "-";
+
+    return new Intl.DateTimeFormat("en-SG", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    }).format(new Date(`${date}T00:00:00`));
 }

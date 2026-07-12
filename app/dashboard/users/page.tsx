@@ -342,12 +342,12 @@ export default function UsersPermissionsPage() {
 
     if (loading) {
         return (
-            <div className="space-y-8 p-8">
-                <div className="h-24 animate-pulse rounded-3xl bg-white shadow-sm" />
+            <div className="space-y-5 p-5 md:space-y-8 md:p-8">
+                <div className="h-24 animate-pulse rounded-[1.5rem] bg-white shadow-sm md:rounded-[2rem]" />
 
-                <div className="grid gap-8 lg:grid-cols-[420px_1fr]">
-                    <div className="h-[560px] animate-pulse rounded-3xl bg-white shadow-sm" />
-                    <div className="h-[560px] animate-pulse rounded-3xl bg-white shadow-sm" />
+                <div className="grid gap-5 lg:grid-cols-[420px_1fr] lg:gap-8">
+                    <div className="h-[520px] animate-pulse rounded-[1.5rem] bg-white shadow-sm md:rounded-[2rem]" />
+                    <div className="h-[520px] animate-pulse rounded-[1.5rem] bg-white shadow-sm md:rounded-[2rem]" />
                 </div>
             </div>
         );
@@ -355,10 +355,12 @@ export default function UsersPermissionsPage() {
 
     if (profile?.role !== "admin") {
         return (
-            <div className="p-8">
-                <div className="rounded-3xl border border-red-100 bg-red-50 p-6">
-                    <h1 className="text-2xl font-black text-red-700">Access denied</h1>
-                    <p className="mt-2 text-red-600">
+            <div className="p-5 md:p-8">
+                <div className="rounded-[1.5rem] border border-red-100 bg-red-50 p-6 md:rounded-[2rem]">
+                    <h1 className="text-2xl font-black text-red-700">
+                        Access denied
+                    </h1>
+                    <p className="mt-2 text-sm leading-6 text-red-600">
                         Only admin accounts can access Users & Permissions.
                     </p>
                 </div>
@@ -367,22 +369,22 @@ export default function UsersPermissionsPage() {
     }
 
     return (
-        <div className="space-y-8 p-8">
-            <div>
-                <div className="flex items-center gap-3">
-                    <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                        <ShieldCheck size={28} />
+        <div className="space-y-5 p-5 md:space-y-8 md:p-8">
+            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                <div className="flex items-start gap-3">
+                    <div className="shrink-0 rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
+                        <ShieldCheck size={24} />
                     </div>
                     <div>
-                        <h1 className="text-3xl font-black text-slate-900">
+                        <h1 className="text-3xl font-black text-slate-900 md:text-4xl">
                             Users & Permissions
                         </h1>
-                        <p className="mt-1 text-slate-500">
+                        <p className="mt-2 text-sm leading-6 text-slate-500 md:text-base">
                             Create, edit, delete accounts and assign users to specific events.
                         </p>
                     </div>
                 </div>
-            </div>
+            </section>
 
             {message && (
                 <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm">
@@ -390,12 +392,12 @@ export default function UsersPermissionsPage() {
                 </div>
             )}
 
-            <div className="grid gap-8 lg:grid-cols-[420px_1fr]">
+            <div className="grid gap-5 lg:grid-cols-[420px_1fr] lg:gap-8">
                 <form
                     onSubmit={createUser}
-                    className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+                    className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-6"
                 >
-                    <div className="mb-6 flex items-center gap-3">
+                    <div className="mb-5 flex items-center gap-3 md:mb-6">
                         <div className="rounded-2xl bg-indigo-50 p-3 text-[#4F46E5]">
                             <UserPlus size={22} />
                         </div>
@@ -410,22 +412,16 @@ export default function UsersPermissionsPage() {
                     </div>
 
                     <div className="space-y-4">
-                        <div>
-                            <label className="mb-1 block text-sm font-bold text-slate-700">
-                                Full Name
-                            </label>
+                        <Field label="Full Name">
                             <input
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
-                                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                 placeholder="Client User"
                             />
-                        </div>
+                        </Field>
 
-                        <div>
-                            <label className="mb-1 block text-sm font-bold text-slate-700">
-                                Email
-                            </label>
+                        <Field label="Email">
                             <div className="relative">
                                 <Mail
                                     size={18}
@@ -434,17 +430,14 @@ export default function UsersPermissionsPage() {
                                 <input
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none focus:border-[#4F46E5]"
+                                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 text-sm outline-none focus:border-[#4F46E5]"
                                     placeholder="user@email.com"
                                     type="email"
                                 />
                             </div>
-                        </div>
+                        </Field>
 
-                        <div>
-                            <label className="mb-1 block text-sm font-bold text-slate-700">
-                                Password
-                            </label>
+                        <Field label="Password">
                             <div className="relative">
                                 <Lock
                                     size={18}
@@ -453,21 +446,18 @@ export default function UsersPermissionsPage() {
                                 <input
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none focus:border-[#4F46E5]"
+                                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 text-sm outline-none focus:border-[#4F46E5]"
                                     placeholder="Temporary password"
                                     type="password"
                                 />
                             </div>
-                        </div>
+                        </Field>
 
-                        <div>
-                            <label className="mb-1 block text-sm font-bold text-slate-700">
-                                System Role
-                            </label>
+                        <Field label="System Role">
                             <select
                                 value={role}
                                 onChange={(e) => setRole(e.target.value as Role)}
-                                className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                             >
                                 {roleOptions.map((option) => (
                                     <option key={option.value} value={option.value}>
@@ -475,18 +465,15 @@ export default function UsersPermissionsPage() {
                                     </option>
                                 ))}
                             </select>
-                        </div>
+                        </Field>
 
                         {role !== "admin" && (
                             <>
-                                <div>
-                                    <label className="mb-1 block text-sm font-bold text-slate-700">
-                                        Assign Event
-                                    </label>
+                                <Field label="Assign Event">
                                     <select
                                         value={eventId}
                                         onChange={(e) => setEventId(e.target.value)}
-                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                     >
                                         <option value="">Select an event</option>
                                         {events.map((event) => (
@@ -495,39 +482,36 @@ export default function UsersPermissionsPage() {
                                             </option>
                                         ))}
                                     </select>
-                                </div>
+                                </Field>
 
-                                <div>
-                                    <label className="mb-1 block text-sm font-bold text-slate-700">
-                                        Event Permission
-                                    </label>
+                                <Field label="Event Permission">
                                     <select
                                         value={eventRole}
                                         onChange={(e) =>
                                             setEventRole(e.target.value as Exclude<Role, "admin">)
                                         }
-                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                     >
                                         <option value="organizer">Organizer</option>
                                         <option value="viewer">Viewer</option>
                                         <option value="scanner">Scanner</option>
                                     </select>
-                                </div>
+                                </Field>
                             </>
                         )}
 
                         <button
                             type="submit"
                             disabled={creating}
-                            className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {creating ? "Creating..." : "Create User"}
                         </button>
                     </div>
                 </form>
 
-                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="mb-6 flex items-center gap-3">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-6">
+                    <div className="mb-5 flex items-center gap-3 md:mb-6">
                         <div className="rounded-2xl bg-pink-50 p-3 text-[#EC4899]">
                             <Users size={22} />
                         </div>
@@ -552,15 +536,15 @@ export default function UsersPermissionsPage() {
                                 return (
                                     <div
                                         key={user.id}
-                                        className="border-b border-slate-100 px-5 py-4 last:border-b-0"
+                                        className="border-b border-slate-100 px-4 py-4 last:border-b-0 md:px-5"
                                     >
                                         {!isEditing ? (
                                             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                                                <div>
-                                                    <p className="font-black text-slate-900">
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-black text-slate-900">
                                                         {user.full_name || "Unnamed User"}
                                                     </p>
-                                                    <p className="text-sm text-slate-500">
+                                                    <p className="break-all text-sm text-slate-500">
                                                         {user.email}
                                                     </p>
                                                     {isSelf && (
@@ -591,19 +575,14 @@ export default function UsersPermissionsPage() {
                                                         className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                                                     >
                                                         <Trash2 size={14} />
-                                                        {deletingUserId === user.id
-                                                            ? "Deleting..."
-                                                            : "Delete"}
+                                                        {deletingUserId === user.id ? "Deleting..." : "Delete"}
                                                     </button>
                                                 </div>
                                             </div>
                                         ) : (
                                             <div className="space-y-4 rounded-2xl bg-slate-50 p-4">
                                                 <div className="grid gap-3 md:grid-cols-2">
-                                                    <div>
-                                                        <label className="mb-1 block text-xs font-black text-slate-600">
-                                                            Full Name
-                                                        </label>
+                                                    <Field label="Full Name" small>
                                                         <input
                                                             value={editFullName}
                                                             onChange={(e) =>
@@ -611,12 +590,9 @@ export default function UsersPermissionsPage() {
                                                             }
                                                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                                         />
-                                                    </div>
+                                                    </Field>
 
-                                                    <div>
-                                                        <label className="mb-1 block text-xs font-black text-slate-600">
-                                                            Email
-                                                        </label>
+                                                    <Field label="Email" small>
                                                         <input
                                                             value={editEmail}
                                                             onChange={(e) =>
@@ -625,12 +601,9 @@ export default function UsersPermissionsPage() {
                                                             type="email"
                                                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                                         />
-                                                    </div>
+                                                    </Field>
 
-                                                    <div>
-                                                        <label className="mb-1 block text-xs font-black text-slate-600">
-                                                            Role
-                                                        </label>
+                                                    <Field label="Role" small>
                                                         <select
                                                             value={editRole}
                                                             onChange={(e) =>
@@ -647,12 +620,9 @@ export default function UsersPermissionsPage() {
                                                                 </option>
                                                             ))}
                                                         </select>
-                                                    </div>
+                                                    </Field>
 
-                                                    <div>
-                                                        <label className="mb-1 block text-xs font-black text-slate-600">
-                                                            New Password Optional
-                                                        </label>
+                                                    <Field label="New Password Optional" small>
                                                         <input
                                                             value={editPassword}
                                                             onChange={(e) =>
@@ -662,7 +632,7 @@ export default function UsersPermissionsPage() {
                                                             placeholder="Leave blank to keep current password"
                                                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#4F46E5]"
                                                         />
-                                                    </div>
+                                                    </Field>
                                                 </div>
 
                                                 <div className="flex flex-wrap gap-2">
@@ -695,10 +665,10 @@ export default function UsersPermissionsPage() {
                         )}
                     </div>
 
-                    <div className="mt-6 rounded-2xl bg-slate-50 p-4">
+                    <div className="mt-5 rounded-2xl bg-slate-50 p-4 md:mt-6">
                         <div className="flex gap-3">
-                            <CalendarDays className="mt-1 text-slate-400" size={18} />
-                            <p className="text-sm text-slate-500">
+                            <CalendarDays className="mt-1 shrink-0 text-slate-400" size={18} />
+                            <p className="text-sm leading-6 text-slate-500">
                                 Admin users can access every event and dashboard feature.
                                 Non-admin users should still be assigned to specific events
                                 through your create-user flow.
@@ -707,6 +677,29 @@ export default function UsersPermissionsPage() {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function Field({
+    label,
+    children,
+    small = false,
+}: {
+    label: string;
+    children: React.ReactNode;
+    small?: boolean;
+}) {
+    return (
+        <div>
+            <label
+                className={`mb-1 block font-bold text-slate-700 ${
+                    small ? "text-xs" : "text-sm"
+                }`}
+            >
+                {label}
+            </label>
+            {children}
         </div>
     );
 }

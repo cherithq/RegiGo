@@ -175,8 +175,8 @@ export default async function EventOverviewPage({
 
     if (eventResult.error) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">
                         Failed to load event: {eventResult.error.message}
                     </p>
@@ -187,8 +187,8 @@ export default async function EventOverviewPage({
 
     if (!event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
@@ -212,7 +212,6 @@ export default async function EventOverviewPage({
 
     function canAccessModule(moduleKey: EventModuleKey, allowedByRole: boolean) {
         if (!allowedByRole) return false;
-
         if (isAdmin) return true;
 
         return enabledModules[moduleKey] !== false;
@@ -381,37 +380,37 @@ export default async function EventOverviewPage({
         administrationCards.length > 0;
 
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-            <div className="mx-auto max-w-7xl">
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
                 <Link
                     href="/dashboard/events"
-                    className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] transition hover:text-[#EC4899]"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
                 >
                     <ArrowLeft size={16} />
                     Back to My Events
                 </Link>
 
-                <section className="relative mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
-                    <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                    <div className="absolute bottom-0 right-40 h-64 w-64 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-64 md:w-64" />
+                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-40 md:h-64 md:w-64" />
 
-                    <div className="relative z-10 grid gap-8 lg:grid-cols-[1.4fr_0.8fr] lg:items-center">
-                        <div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <LayoutDashboard size={16} />
+                    <div className="relative z-10 grid gap-6 lg:grid-cols-[1.4fr_0.8fr] lg:items-center lg:gap-8">
+                        <div className="min-w-0">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                                <LayoutDashboard size={15} />
                                 Event Workspace
                             </div>
 
-                            <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
                                 {event.event_name || event.title || event.name || "Event"}
                             </h1>
 
-                            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Manage registrations, guests, check-in operations and
-                                event-day reporting from one control centre.
+                            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:mt-4 md:text-lg md:leading-7">
+                                Manage registrations, guests, check-in operations and event-day
+                                reporting from one control centre.
                             </p>
 
-                            <div className="mt-6 flex flex-wrap gap-3">
+                            <div className="mt-5 flex flex-wrap gap-2 md:mt-6 md:gap-3">
                                 <EventInfo
                                     icon={BadgeCheck}
                                     label={formatStatus(event.status)}
@@ -434,10 +433,10 @@ export default async function EventOverviewPage({
                             </div>
                         </div>
 
-                        <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-6">
+                        <div className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-5 md:rounded-[2rem] md:p-6">
                             <div className="flex items-center gap-3">
                                 <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
-                                    <ShieldCheck size={24} />
+                                    <ShieldCheck size={22} />
                                 </div>
 
                                 <div>
@@ -445,7 +444,7 @@ export default async function EventOverviewPage({
                                         Your Access
                                     </p>
 
-                                    <p className="text-3xl font-black capitalize text-slate-950">
+                                    <p className="text-2xl font-black capitalize text-slate-950 md:text-3xl">
                                         {role}
                                     </p>
                                 </div>
@@ -463,7 +462,7 @@ export default async function EventOverviewPage({
                                     />
                                 </div>
 
-                                <p className="mt-3 text-sm font-semibold text-slate-500">
+                                <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
                                     {checkedIn} of {total} guests checked in.
                                 </p>
                             </div>
@@ -471,34 +470,19 @@ export default async function EventOverviewPage({
                     </div>
                 </section>
 
-                <section className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                    <StatCard
-                        title="Total Guests"
-                        value={total}
-                        text="Registered guests"
-                        icon={Users}
-                    />
-
+                <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+                    <StatCard title="Guests" value={total} text="Registered" icon={Users} />
                     <StatCard
                         title="Checked In"
                         value={checkedIn}
                         text="Verified arrivals"
                         icon={CheckCircle2}
                     />
-
+                    <StatCard title="Pending" value={pending} text="Awaiting" icon={QrCode} />
                     <StatCard
-                        title="Pending"
-                        value={pending}
-                        text="Awaiting check-in"
-                        icon={QrCode}
-                    />
-
-                    <StatCard
-                        title="Table Assigned"
+                        title="Tables"
                         value={assignedTables}
-                        text={`${ticketTypes} ticket type${
-                            ticketTypes === 1 ? "" : "s"
-                        } created`}
+                        text={`${ticketTypes} ticket type${ticketTypes === 1 ? "" : "s"}`}
                         icon={Utensils}
                     />
                 </section>
@@ -556,7 +540,7 @@ export default async function EventOverviewPage({
                 )}
 
                 {!hasAnyModuleAccess && (
-                    <section className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-8 text-center shadow-sm">
+                    <section className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-sm md:rounded-[2rem] md:p-8">
                         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#F7F5FF] text-[#4F46E5]">
                             <ShieldCheck size={28} />
                         </div>
@@ -566,9 +550,8 @@ export default async function EventOverviewPage({
                         </h2>
 
                         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-                            Your current role does not have access to management tools
-                            for this event. Please contact an admin if you need additional
-                            access.
+                            Your current role does not have access to management tools for this
+                            event. Please contact an admin if you need additional access.
                         </p>
                     </section>
                 )}
@@ -589,14 +572,14 @@ function WorkspaceSection({
     children: ReactNode;
 }) {
     return (
-        <section className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-            <div className="mb-6">
-                <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                    <Sparkles size={16} />
+        <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+            <div className="mb-5 md:mb-6">
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                    <Sparkles size={15} />
                     {eyebrow}
                 </div>
 
-                <h2 className="mt-4 text-2xl font-black text-slate-950">
+                <h2 className="mt-4 text-xl font-black text-slate-950 md:text-2xl">
                     {title}
                 </h2>
 
@@ -605,7 +588,7 @@ function WorkspaceSection({
                 </p>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {children}
             </div>
         </section>
@@ -628,7 +611,7 @@ function ModuleCard({
     return (
         <Link
             href={href}
-            className={`group rounded-[2rem] border p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
+            className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg md:rounded-[2rem] md:p-6 ${
                 highlight
                     ? "border-[#4F46E5]/20 bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-white"
                     : "border-slate-200 bg-white text-slate-950"
@@ -641,11 +624,11 @@ function ModuleCard({
                         : "bg-[#F7F5FF] text-[#4F46E5] group-hover:bg-[#4F46E5] group-hover:text-white"
                 }`}
             >
-                <Icon size={24} />
+                <Icon size={22} />
             </div>
 
             <h3
-                className={`mt-6 text-lg font-black ${
+                className={`mt-5 text-base font-black md:mt-6 md:text-lg ${
                     highlight ? "text-white" : "text-slate-950"
                 }`}
             >
@@ -675,18 +658,22 @@ function StatCard({
     icon: LucideIcon;
 }) {
     return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                <Icon size={24} />
+        <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:rounded-[2rem] md:p-6">
+            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-2.5 text-[#4F46E5] md:p-3">
+                <Icon size={20} />
             </div>
 
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
+            <p className="mt-4 text-xs font-bold text-slate-500 md:mt-6 md:text-sm">
+                {title}
+            </p>
 
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+            <p className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:mt-2 md:text-4xl">
                 {value}
             </p>
 
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 md:mt-3 md:text-sm md:leading-6">
+                {text}
+            </p>
         </div>
     );
 }
@@ -699,9 +686,9 @@ function EventInfo({
     label: string;
 }) {
     return (
-        <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-sm">
-            <Icon size={16} className="text-[#4F46E5]" />
-            <span>{label}</span>
+        <div className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm md:px-4 md:py-3 md:text-sm">
+            <Icon size={15} className="shrink-0 text-[#4F46E5]" />
+            <span className="truncate">{label}</span>
         </div>
     );
 }

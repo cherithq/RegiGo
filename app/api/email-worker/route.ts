@@ -246,7 +246,7 @@ async function runEmailWorker(req: Request) {
 
                 if (tableAssignment?.table_id) {
                     const { data: table } = await supabaseServer
-                        .from("tables")
+                        .from("event_tables")
                         .select("*")
                         .eq("id", tableAssignment.table_id)
                         .maybeSingle();

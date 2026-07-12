@@ -72,7 +72,8 @@ export default async function GuestsPage({
             .from("registrations")
             .select("*")
             .eq("event_id", eventId)
-            .order("created_at", { ascending: false }),
+            .order("created_at", { ascending: false })
+            .limit(100),
 
         supabaseServer
             .from("registration_forms")
@@ -85,8 +86,8 @@ export default async function GuestsPage({
 
     if (eventResult.error) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">
                         Failed to load event: {eventResult.error.message}
                     </p>
@@ -97,8 +98,8 @@ export default async function GuestsPage({
 
     if (!event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
@@ -152,42 +153,50 @@ export default async function GuestsPage({
     const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-            <div className="mx-auto max-w-7xl">
-                <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <Link
-                            href={`/dashboard/events/${eventId}`}
-                            className="inline-flex items-center gap-2 font-bold text-[#4F46E5] transition hover:text-[#EC4899]"
-                        >
-                            <ArrowLeft size={18} />
-                            Back to Event
-                        </Link>
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-6">
+                <Link
+                    href={`/dashboard/events/${eventId}`}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
+                >
+                    <ArrowLeft size={16} />
+                    Back to Event
+                </Link>
 
-                        <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950">
-                            Guests
-                        </h1>
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <h1 className="text-3xl font-black tracking-tight text-slate-950 md:text-5xl">
+                                Guests
+                            </h1>
 
-                        <p className="mt-1 text-sm font-bold text-slate-500">
-                            {eventName}
-                        </p>
+                            <p className="mt-2 text-sm font-bold text-slate-500 md:text-base">
+                                {eventName}
+                            </p>
+
+                            <p className="mt-2 text-sm leading-6 text-slate-500">
+                                Showing latest 100 guests for faster loading.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-3 sm:flex sm:flex-wrap lg:justify-end">
+                            <BulkEmailButton eventId={eventId} type="reminder" />
+                            <BulkEmailButton
+                                eventId={eventId}
+                                type="thank_you"
+                                checkedInOnly={true}
+                            />
+                        </div>
                     </div>
+                </section>
 
-                    <div className="flex flex-wrap gap-3 lg:justify-end">
-                        <BulkEmailButton eventId={eventId} type="reminder" />
-                        <BulkEmailButton
-                            eventId={eventId}
-                            type="thank_you"
-                            checkedInOnly={true}
-                        />
-                    </div>
+                <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
+                    <GuestsManager
+                        eventId={eventId}
+                        initialGuests={guestsWithQrTickets}
+                        fields={fields}
+                    />
                 </div>
-
-                <GuestsManager
-                    eventId={eventId}
-                    initialGuests={guestsWithQrTickets}
-                    fields={fields}
-                />
             </div>
         </main>
     );

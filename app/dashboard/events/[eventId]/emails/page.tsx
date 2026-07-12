@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft, Mail } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import EmailCentre from "@/components/forms/EmailCentre";
 
@@ -23,16 +24,24 @@ export default async function EmailsPage({
     } = await supabaseServer.auth.getUser();
 
     if (!user) {
-        redirect("/login");
+        redirect("/auth/login");
     }
 
-    const { data: profile } = await supabaseServer
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+    const [profileResult, eventResult] = await Promise.all([
+        supabaseServer
+            .from("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .maybeSingle(),
 
-    const role = profile?.role;
+        supabaseServer
+            .from("events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle(),
+    ]);
+
+    const role = profileResult.data?.role;
 
     const isAdmin = role === "admin";
     const isOrganizer = role === "organizer" || role === "organiser";
@@ -41,26 +50,18 @@ export default async function EmailsPage({
         redirect("/dashboard");
     }
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .maybeSingle();
+    const event = eventResult.data;
 
     if (!event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
         );
     }
 
-    /**
-     * Admin always has access.
-     * Organizer only has access if Email Centre module is enabled.
-     */
     if (!isAdmin) {
         const { data: settings } = await supabaseServer
             .from("event_settings")
@@ -82,32 +83,45 @@ export default async function EmailsPage({
         .eq("event_id", eventId)
         .order("created_at", { ascending: false });
 
+    const eventName = event.event_name || event.title || event.name || "Event";
+
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-            <div className="mx-auto max-w-7xl">
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
                 <Link
                     href={`/dashboard/events/${eventId}`}
-                    className="inline-flex font-bold text-[#4F46E5] transition hover:text-[#EC4899]"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
                 >
-                    ← Back to Event
+                    <ArrowLeft size={16} />
+                    Back to Event
                 </Link>
 
-                <section className="mt-6 rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
-                    <p className="text-sm font-black uppercase tracking-[0.25em] text-[#4F46E5]">
-                        Event Emails
-                    </p>
+                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />
+                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-32 md:h-56 md:w-56" />
 
-                    <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
-                        Email Centre
-                    </h1>
+                    <div className="relative z-10">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                            <Mail size={15} />
+                            Event Emails
+                        </div>
 
-                    <p className="mt-2 text-slate-600">
-                        {event.event_name || event.title || event.name || "Event"}
-                    </p>
+                        <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
+                            Email Centre
+                        </h1>
 
-                    <div className="mt-8">
-                        <EmailCentre event={event} templates={templates || []} />
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
+                            Manage confirmation, reminder, update, and thank-you templates for{" "}
+                            <span className="font-black text-slate-950">
+                                {eventName}
+                            </span>
+                            .
+                        </p>
                     </div>
+                </section>
+
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                    <EmailCentre event={event} templates={templates || []} />
                 </section>
             </div>
         </main>

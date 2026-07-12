@@ -37,15 +37,7 @@ export default async function DashboardPage() {
         data: { user },
     } = await supabaseServer.auth.getUser();
 
-    const [
-        profileResult,
-        totalEventsResult,
-        publishedEventsResult,
-        draftEventsResult,
-        upcomingEventsResult,
-        recentEventsResult,
-        upcomingListResult,
-    ] = await Promise.all([
+    const [profileResult, eventsResult] = await Promise.all([
         user
             ? supabaseServer
                   .from("profiles")
@@ -56,48 +48,36 @@ export default async function DashboardPage() {
 
         supabaseServer
             .from("events")
-            .select("id", { count: "exact", head: true }),
-
-        supabaseServer
-            .from("events")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "published"),
-
-        supabaseServer
-            .from("events")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "draft"),
-
-        supabaseServer
-            .from("events")
-            .select("id", { count: "exact", head: true })
-            .gte("event_date", today),
-
-        supabaseServer
-            .from("events")
             .select("id, event_name, event_date, event_time, venue, status, created_at")
             .order("created_at", { ascending: false })
-            .limit(5),
-
-        supabaseServer
-            .from("events")
-            .select("id, event_name, event_date, event_time, venue, status, created_at")
-            .gte("event_date", today)
-            .order("event_date", { ascending: true })
-            .limit(5),
+            .limit(100),
     ]);
 
     const profile = profileResult.data;
     const role = (profile?.role || "organizer") as UserRole;
     const displayName = profile?.full_name || user?.email?.split("@")[0] || "there";
 
-    const totalEvents = totalEventsResult.count || 0;
-    const publishedEvents = publishedEventsResult.count || 0;
-    const draftEvents = draftEventsResult.count || 0;
-    const upcomingEvents = upcomingEventsResult.count || 0;
+    const events = (eventsResult.data || []) as EventItem[];
 
-    const recentEvents = (recentEventsResult.data || []) as EventItem[];
-    const upcomingList = (upcomingListResult.data || []) as EventItem[];
+    const totalEvents = events.length;
+    const publishedEvents = events.filter(
+        (event) => event.status === "published"
+    ).length;
+    const draftEvents = events.filter((event) => event.status === "draft").length;
+    const upcomingEvents = events.filter(
+        (event) => event.event_date && event.event_date >= today
+    ).length;
+
+    const recentEvents = events.slice(0, 5);
+
+    const upcomingList = events
+        .filter((event) => event.event_date && event.event_date >= today)
+        .sort((a, b) => {
+            const dateA = a.event_date || "";
+            const dateB = b.event_date || "";
+            return dateA.localeCompare(dateB);
+        })
+        .slice(0, 5);
 
     const completionRate =
         totalEvents > 0 ? Math.round((publishedEvents / totalEvents) * 100) : 0;
@@ -105,42 +85,42 @@ export default async function DashboardPage() {
     const quickActions = getQuickActions(role);
 
     return (
-        <div className="space-y-8">
-            <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
-                <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                <div className="absolute bottom-0 right-32 h-56 w-56 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+        <div className="space-y-5 md:space-y-8">
+            <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />
+                <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:h-56 md:w-56" />
 
-                <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                            <Sparkles size={16} />
+                <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                            <Sparkles size={15} />
                             RegiGo Workspace
                         </div>
 
-                        <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                        <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
                             Welcome back, {displayName}
                         </h1>
 
-                        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:mt-4 md:text-lg md:leading-7">
                             Monitor event performance, manage registrations, and prepare your
                             event workspace from one central dashboard.
                         </p>
 
-                        <div className="mt-5 flex flex-wrap items-center gap-3">
-                            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold capitalize text-slate-700">
+                        <div className="mt-4 flex flex-wrap items-center gap-2 md:mt-5 md:gap-3">
+                            <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-bold capitalize text-slate-700 md:px-4 md:text-sm">
                                 Role: {role}
                             </span>
 
-                            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+                            <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 md:px-4 md:text-sm">
                                 {upcomingEvents} upcoming
                             </span>
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="grid gap-3 sm:flex sm:flex-row">
                         <Link
                             href="/dashboard/events"
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-4 font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 sm:w-auto md:px-6 md:py-4 md:text-base"
                         >
                             View Events
                             <ArrowRight size={18} />
@@ -149,7 +129,7 @@ export default async function DashboardPage() {
                         {role === "admin" && (
                             <Link
                                 href="/dashboard/events/new"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90 sm:w-auto md:px-6 md:py-4 md:text-base"
                             >
                                 <PlusCircle size={19} />
                                 Create Event
@@ -159,11 +139,11 @@ export default async function DashboardPage() {
                 </div>
             </section>
 
-            <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     title="Total Events"
                     value={totalEvents}
-                    subtitle="Events available to your account"
+                    subtitle="Events loaded in your dashboard"
                     icon={CalendarDays}
                 />
 
@@ -189,8 +169,8 @@ export default async function DashboardPage() {
                 />
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-                <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+            <section className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr] xl:gap-6">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                     <SectionHeader
                         title="Recent Events"
                         text="Continue working on your latest event workspaces."
@@ -198,7 +178,7 @@ export default async function DashboardPage() {
                         linkText="View all"
                     />
 
-                    <div className="mt-6 space-y-3">
+                    <div className="mt-5 space-y-3 md:mt-6">
                         {recentEvents.length > 0 ? (
                             recentEvents.map((event) => (
                                 <EventRow key={event.id} event={event} />
@@ -219,43 +199,44 @@ export default async function DashboardPage() {
                     </div>
                 </div>
 
-                <div className="space-y-6">
-                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+                <div className="space-y-5 md:space-y-6">
+                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                         <div className="flex items-start justify-between gap-4">
                             <div>
-                                <h2 className="text-xl font-black text-slate-950">
+                                <h2 className="text-lg font-black text-slate-950 md:text-xl">
                                     Publishing Progress
                                 </h2>
                                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                                    Percentage of events currently marked as published.
+                                    Percentage of loaded events currently marked as published.
                                 </p>
                             </div>
 
-                            <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
+                            <div className="shrink-0 rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
                                 <BarChart3 size={22} />
                             </div>
                         </div>
 
-                        <div className="mt-7">
-                            <p className="text-5xl font-black text-slate-950">
+                        <div className="mt-6 md:mt-7">
+                            <p className="text-4xl font-black text-slate-950 md:text-5xl">
                                 {completionRate}%
                             </p>
 
-                            <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
+                            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 md:mt-5">
                                 <div
                                     className="h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#EC4899]"
                                     style={{ width: `${completionRate}%` }}
                                 />
                             </div>
 
-                            <p className="mt-4 text-sm text-slate-500">
-                                {publishedEvents} out of {totalEvents} events are published.
+                            <p className="mt-3 text-sm leading-6 text-slate-500 md:mt-4">
+                                {publishedEvents} out of {totalEvents} loaded events are
+                                published.
                             </p>
                         </div>
                     </div>
 
-                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-                        <h2 className="text-xl font-black text-slate-950">
+                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                        <h2 className="text-lg font-black text-slate-950 md:text-xl">
                             Upcoming Events
                         </h2>
 
@@ -280,13 +261,13 @@ export default async function DashboardPage() {
                 </div>
             </section>
 
-            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
                 <SectionHeader
                     title="Quick Actions"
                     text="Jump into the areas you use most often."
                 />
 
-                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 md:mt-6">
                     {quickActions.map((action) => (
                         <ChecklistCard
                             key={action.href + action.title}
@@ -400,16 +381,18 @@ function SectionHeader({
     linkText?: string;
 }) {
     return (
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <h2 className="text-2xl font-black text-slate-950">{title}</h2>
+                <h2 className="text-xl font-black text-slate-950 md:text-2xl">
+                    {title}
+                </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-500">{text}</p>
             </div>
 
             {href && linkText && (
                 <Link
                     href={href}
-                    className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] hover:text-[#EC4899]"
+                    className="inline-flex w-fit items-center gap-2 text-sm font-black text-[#4F46E5] hover:text-[#EC4899]"
                 >
                     {linkText}
                     <ArrowRight size={16} />
@@ -431,22 +414,24 @@ function StatCard({
     icon: LucideIcon;
 }) {
     return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+        <div className="group rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg md:rounded-[2rem] md:p-6">
             <div className="flex items-start justify-between gap-4">
                 <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                    <Icon size={24} />
+                    <Icon size={22} />
                 </div>
 
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 md:text-xs">
                     Active
                 </span>
             </div>
 
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+            <p className="mt-5 text-sm font-bold text-slate-500 md:mt-6">{title}</p>
+            <p className="mt-2 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
                 {value}
             </p>
-            <p className="mt-3 text-sm leading-6 text-slate-500">{subtitle}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500 md:mt-3">
+                {subtitle}
+            </p>
         </div>
     );
 }
@@ -455,27 +440,35 @@ function EventRow({ event }: { event: EventItem }) {
     return (
         <Link
             href={`/dashboard/events/${event.id}`}
-            className="block rounded-3xl border border-slate-100 bg-slate-50 p-5 transition hover:border-indigo-100 hover:bg-[#F7F5FF]"
+            className="block rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:border-indigo-100 hover:bg-[#F7F5FF] md:rounded-3xl md:p-5"
         >
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-4">
-                    <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
-                        <CalendarDays size={22} />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
+                <div className="flex min-w-0 items-start gap-3 md:gap-4">
+                    <div className="shrink-0 rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
+                        <CalendarDays size={20} />
                     </div>
 
-                    <div>
-                        <p className="text-lg font-black text-slate-950">
+                    <div className="min-w-0">
+                        <p className="truncate text-base font-black text-slate-950 md:text-lg">
                             {event.event_name}
                         </p>
 
                         <p className="mt-1 text-sm leading-6 text-slate-500">
-                            {formatDate(event.event_date)} · {event.event_time || "No time"} ·{" "}
-                            {event.venue || "No venue"}
+                            {formatDate(event.event_date)}
+                            <span className="hidden sm:inline">
+                                {" "}
+                                · {event.event_time || "No time"} ·{" "}
+                                {event.venue || "No venue"}
+                            </span>
+                        </p>
+
+                        <p className="mt-1 text-xs font-semibold text-slate-400 sm:hidden">
+                            {event.event_time || "No time"} · {event.venue || "No venue"}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-3 md:justify-end">
                     <StatusBadge status={event.status || "draft"} />
 
                     <div className="rounded-full bg-white p-2 text-slate-400">
@@ -494,8 +487,10 @@ function EventMini({ event }: { event: EventItem }) {
             className="block rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:border-indigo-100 hover:bg-[#F7F5FF]"
         >
             <div className="flex items-start justify-between gap-3">
-                <div>
-                    <p className="font-black text-slate-950">{event.event_name}</p>
+                <div className="min-w-0">
+                    <p className="truncate font-black text-slate-950">
+                        {event.event_name}
+                    </p>
 
                     <p className="mt-1 text-sm leading-6 text-slate-500">
                         {formatDate(event.event_date)} · {event.event_time || "No time"}
@@ -522,16 +517,16 @@ function ChecklistCard({
     return (
         <Link
             href={href}
-            className="group rounded-3xl border border-slate-200 bg-slate-50 p-6 transition hover:-translate-y-1 hover:border-indigo-100 hover:bg-[#F7F5FF] hover:shadow-md"
+            className="group rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:-translate-y-1 hover:border-indigo-100 hover:bg-[#F7F5FF] hover:shadow-md md:rounded-3xl md:p-6"
         >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                <Icon size={23} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm transition group-hover:bg-[#4F46E5] group-hover:text-white md:h-12 md:w-12">
+                <Icon size={22} />
             </div>
 
-            <p className="mt-5 font-black text-slate-950">{title}</p>
+            <p className="mt-4 font-black text-slate-950 md:mt-5">{title}</p>
             <p className="mt-2 text-sm leading-6 text-slate-500">{text}</p>
 
-            <div className="mt-5 inline-flex items-center gap-2 text-sm font-black text-[#4F46E5]">
+            <div className="mt-4 inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] md:mt-5">
                 Open
                 <ArrowRight size={15} />
             </div>
@@ -553,7 +548,7 @@ function EmptyState({
     action?: string;
 }) {
     return (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center md:rounded-3xl md:p-8">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm">
                 <Icon size={26} />
             </div>
@@ -594,7 +589,7 @@ function StatusBadge({
 
     return (
         <span
-            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${styles} ${
+            className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black uppercase md:text-xs ${styles} ${
                 compact ? "hidden sm:inline-flex" : "inline-flex"
             }`}
         >

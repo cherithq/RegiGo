@@ -7,7 +7,6 @@ import {
     Trophy,
     CheckCircle2,
 } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
 import LuckyDrawWheel from "@/components/lucky-draw/LuckyDrawWheel";
 
@@ -36,10 +35,7 @@ export default async function LuckyDrawPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
-
-    await requirePermission("can_scan_qr");
-
+    const { supabaseServer } = await requirePermission("can_scan_qr");
     const { eventId } = await params;
 
     const [
@@ -85,8 +81,8 @@ export default async function LuckyDrawPage({
 
     if (eventResult.error) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">
                         Failed to load event: {eventResult.error.message}
                     </p>
@@ -97,8 +93,8 @@ export default async function LuckyDrawPage({
 
     if (!event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
@@ -109,7 +105,7 @@ export default async function LuckyDrawPage({
 
     const checkedInRegistrationIds = Array.from(
         new Set(
-            checkIns
+            (checkIns || [])
                 .map((item: any) => item.registration_id)
                 .filter(Boolean)
         )
@@ -172,34 +168,34 @@ export default async function LuckyDrawPage({
     const eventName = event.event_name || event.title || event.name || "Event";
 
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-            <div className="mx-auto max-w-7xl">
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
                 <Link
                     href={`/dashboard/events/${eventId}`}
-                    className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] transition hover:text-[#EC4899]"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
                 >
                     <ArrowLeft size={16} />
                     Back to Event
                 </Link>
 
-                <section className="relative mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
-                    <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                    <div className="absolute bottom-0 right-40 h-64 w-64 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-64 md:w-64" />
+                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-40 md:h-64 md:w-64" />
 
-                    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <Gift size={16} />
+                    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+                        <div className="min-w-0">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                                <Gift size={15} />
                                 Event Day Lucky Draw
                             </div>
 
-                            <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
                                 Lucky Draw Wheel
                             </h1>
 
-                            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                                Create prizes, choose which checked-in guests are eligible
-                                for each prize, then spin the wheel for the selected prize.
+                            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:mt-4 md:text-lg md:leading-7">
+                                Create prizes, choose which checked-in guests are eligible for
+                                each prize, then spin the wheel for the selected prize.
                             </p>
 
                             <p className="mt-3 text-sm font-bold text-slate-500">
@@ -207,66 +203,65 @@ export default async function LuckyDrawPage({
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-4">
+                        <div className="grid gap-4">
                             <Link
                                 href={`/display/events/${eventId}/lucky-draw`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90 sm:w-auto md:px-6 md:py-4 md:text-base"
                             >
                                 <ExternalLink size={18} />
                                 Open Audience Display
                             </Link>
 
-                            <div className="rounded-[2rem] border border-slate-100 bg-slate-50 p-6">
+                            <div className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-5 md:rounded-[2rem] md:p-6">
                                 <div className="flex items-center gap-3">
                                     <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
-                                        <Sparkles size={24} />
+                                        <Sparkles size={22} />
                                     </div>
 
                                     <div>
                                         <p className="text-sm font-bold text-slate-500">
                                             Prize Eligibility
                                         </p>
-                                        <p className="text-3xl font-black text-slate-950">
+                                        <p className="text-xl font-black text-slate-950 md:text-2xl">
                                             Select by form field
                                         </p>
                                     </div>
                                 </div>
 
                                 <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
-                                    Filter checked-in guests using answers from the registration
-                                    form, then select all matching guests for a prize.
+                                    Filter checked-in guests using registration form answers.
                                 </p>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <section className="mt-6 grid gap-5 md:grid-cols-3">
+                <section className="grid grid-cols-3 gap-3 md:gap-5">
                     <StatCard
-                        title="Checked-In Guests"
+                        title="Checked-In"
                         value={totalCheckedIn}
-                        text="Guests currently available for draw setup"
+                        text="Available"
                         icon={CheckCircle2}
                     />
 
                     <StatCard
-                        title="Prizes Created"
+                        title="Prizes"
                         value={prizes.length}
-                        text="Each prize can have its own eligible group"
+                        text="Created"
                         icon={Gift}
                     />
 
                     <StatCard
-                        title="Winners Drawn"
+                        title="Winners"
                         value={totalWinners}
-                        text="Saved lucky draw winners"
+                        text="Drawn"
                         icon={Trophy}
                     />
                 </section>
 
-                <section className="mt-8">
+                <section className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
                     <LuckyDrawWheel
                         eventId={eventId}
                         eventName={eventName}
@@ -293,18 +288,22 @@ function StatCard({
     icon: any;
 }) {
     return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                <Icon size={24} />
+        <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:rounded-[2rem] md:p-6">
+            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-2.5 text-[#4F46E5] md:p-3">
+                <Icon size={20} />
             </div>
 
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
+            <p className="mt-4 text-xs font-bold text-slate-500 md:mt-6 md:text-sm">
+                {title}
+            </p>
 
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+            <p className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:mt-2 md:text-4xl">
                 {value}
             </p>
 
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 md:mt-3 md:text-sm md:leading-6">
+                {text}
+            </p>
         </div>
     );
 }

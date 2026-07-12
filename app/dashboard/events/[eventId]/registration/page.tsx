@@ -51,8 +51,8 @@ export default async function RegistrationBuilderPage({
 
     if (eventResult.error) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">
                         Failed to load event: {eventResult.error.message}
                     </p>
@@ -63,8 +63,8 @@ export default async function RegistrationBuilderPage({
 
     if (!event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">Event not found.</p>
                 </div>
             </main>
@@ -104,27 +104,28 @@ export default async function RegistrationBuilderPage({
 
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
-    <div className="mx-auto max-w-7xl space-y-6">
-        <Link
-            href={`/dashboard/events/${event.id}`}
-            className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
-        >
-            <ArrowLeft size={16} />
-            Back to Event
-        </Link>
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-6">
+                <Link
+                    href={`/dashboard/events/${event.id}`}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
+                >
+                    <ArrowLeft size={16} />
+                    Back to Event
+                </Link>
 
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                        <ClipboardList size={16} />
-                        Registration Builder
-                    </div>
-                            <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                                <ClipboardList size={15} />
+                                Registration Builder
+                            </div>
+
+                            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:text-5xl">
                                 Guest Registration Form
                             </h1>
 
-                            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+                            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
                                 Build the form guests complete before attending{" "}
                                 <span className="font-black text-slate-950">
                                     {eventName}
@@ -134,12 +135,12 @@ export default async function RegistrationBuilderPage({
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-3 sm:flex-row">
+                        <div className="grid gap-3 sm:flex sm:flex-row">
                             {eventSlug && (
                                 <Link
                                     href={`/event/${eventSlug}`}
                                     target="_blank"
-                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-[#F7F5FF] hover:text-[#4F46E5]"
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-[#F7F5FF] hover:text-[#4F46E5] sm:w-auto"
                                 >
                                     <Eye size={17} />
                                     View Public Form
@@ -148,7 +149,7 @@ export default async function RegistrationBuilderPage({
 
                             <a
                                 href="#builder"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90 sm:w-auto"
                             >
                                 <MousePointerClick size={17} />
                                 Edit Form
@@ -157,37 +158,37 @@ export default async function RegistrationBuilderPage({
                     </div>
                 </section>
 
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                     <SummaryCard
-                        title="Total Fields"
+                        title="Fields"
                         value={fields.length}
-                        text="Questions in this form"
+                        text="Questions"
                         icon={ClipboardList}
                     />
 
                     <SummaryCard
                         title="Required"
                         value={requiredFields}
-                        text="Guests must complete these"
+                        text="Must complete"
                         icon={ListChecks}
                     />
 
                     <SummaryCard
-                        title="Choice Fields"
+                        title="Choices"
                         value={choiceFields}
-                        text="Dropdown, radio and checkbox fields"
+                        text="Fixed options"
                         icon={Settings2}
                     />
 
                     <SummaryCard
-                        title="Image Choices"
+                        title="Images"
                         value={imageChoiceFields}
-                        text="Visual options like food or gifts"
+                        text="Visual choices"
                         icon={ImagePlus}
                     />
                 </section>
 
-                <section className="grid gap-5 lg:grid-cols-3">
+                <section className="grid gap-4 lg:grid-cols-3">
                     <GuideCard
                         number="01"
                         title="Add guest details"
@@ -209,16 +210,16 @@ export default async function RegistrationBuilderPage({
 
                 <section
                     id="builder"
-                    className="scroll-mt-8 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm lg:p-6"
+                    className="scroll-mt-8 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-6"
                 >
-                    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between md:mb-6">
                         <div>
-                            <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <Sparkles size={16} />
+                            <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                                <Sparkles size={15} />
                                 Builder Area
                             </div>
 
-                            <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                            <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                                 Add, edit and reorder fields
                             </h2>
 
@@ -228,7 +229,7 @@ export default async function RegistrationBuilderPage({
                             </p>
                         </div>
 
-                        <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-5 py-3 text-sm font-black text-slate-700">
+                        <div className="flex w-fit items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-700 md:px-5">
                             <PlusCircle size={17} className="text-[#4F46E5]" />
                             {fields.length} field{fields.length === 1 ? "" : "s"} saved
                         </div>
@@ -240,7 +241,7 @@ export default async function RegistrationBuilderPage({
                             initialFields={fields || []}
                         />
                     ) : (
-                        <div className="rounded-[2rem] border border-red-100 bg-red-50 p-8 text-red-700">
+                        <div className="rounded-[1.5rem] border border-red-100 bg-red-50 p-6 text-red-700 md:rounded-[2rem] md:p-8">
                             <p className="text-lg font-black">
                                 No registration form found.
                             </p>
@@ -267,21 +268,25 @@ function SummaryCard({
     icon: any;
 }) {
     return (
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:rounded-[2rem] md:p-5">
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <p className="text-sm font-bold text-slate-500">{title}</p>
-                    <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+                    <p className="text-xs font-bold text-slate-500 md:text-sm">
+                        {title}
+                    </p>
+                    <p className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:mt-2 md:text-4xl">
                         {value}
                     </p>
                 </div>
 
-                <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                    <Icon size={22} />
+                <div className="rounded-2xl bg-[#F7F5FF] p-2.5 text-[#4F46E5] md:p-3">
+                    <Icon size={20} />
                 </div>
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500 md:mt-3 md:text-sm md:leading-6">
+                {text}
+            </p>
         </div>
     );
 }
@@ -296,13 +301,15 @@ function GuideCard({
     text: string;
 }) {
     return (
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem]">
             <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-sm font-black text-white">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-sm font-black text-white md:h-11 md:w-11">
                     {number}
                 </div>
 
-                <h3 className="text-lg font-black text-slate-950">{title}</h3>
+                <h3 className="text-base font-black text-slate-950 md:text-lg">
+                    {title}
+                </h3>
             </div>
 
             <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>

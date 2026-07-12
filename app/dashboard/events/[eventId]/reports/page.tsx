@@ -12,7 +12,6 @@ import {
     UserX,
     Users,
 } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import ExportGuestsButton from "@/components/reports/ExportGuestsButton";
 import { requirePermission } from "@/lib/permissions";
 
@@ -49,65 +48,74 @@ export default async function ReportsPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
-    await requirePermission("can_manage_reports");
-
+    const { supabaseServer } = await requirePermission("can_manage_reports");
     const { eventId } = await params;
 
-    const { data: event } = await supabaseServer
-        .from("events")
-        .select("*")
-        .eq("id", eventId)
-        .single();
+    const [eventResult, guestsResult, checkInsResult, formResult, assignmentsResult, tablesResult] =
+        await Promise.all([
+            supabaseServer
+                .from("events")
+                .select("*")
+                .eq("id", eventId)
+                .maybeSingle(),
 
-    if (!event) {
+            supabaseServer
+                .from("registrations")
+                .select("*")
+                .eq("event_id", eventId)
+                .order("full_name", { ascending: true }),
+
+            supabaseServer
+                .from("check_ins")
+                .select("*")
+                .eq("event_id", eventId)
+                .eq("scan_result", "checked_in"),
+
+            supabaseServer
+                .from("registration_forms")
+                .select("*")
+                .eq("event_id", eventId)
+                .maybeSingle(),
+
+            supabaseServer
+                .from("table_assignments")
+                .select("id, registration_id, table_id")
+                .eq("event_id", eventId),
+
+            supabaseServer
+                .from("event_tables")
+                .select("id, table_name")
+                .eq("event_id", eventId),
+        ]);
+
+    const event = eventResult.data;
+
+    if (eventResult.error || !event) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-                <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-8 shadow-sm">
-                    <p className="font-black text-red-600">Event not found.</p>
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
+                    <p className="font-black text-red-600">
+                        {eventResult.error?.message || "Event not found."}
+                    </p>
                 </div>
             </main>
         );
     }
 
-    const { data: guests } = await supabaseServer
-        .from("registrations")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("full_name", { ascending: true });
+    const form = formResult.data;
 
-    const { data: checkIns } = await supabaseServer
-        .from("check_ins")
-        .select("*")
-        .eq("event_id", eventId)
-        .eq("scan_result", "checked_in");
+    const { data: fields } = form?.id
+        ? await supabaseServer
+              .from("registration_fields")
+              .select("*")
+              .eq("form_id", form.id)
+              .order("sort_order", { ascending: true })
+        : { data: [] };
 
-    const { data: form } = await supabaseServer
-        .from("registration_forms")
-        .select("*")
-        .eq("event_id", eventId)
-        .maybeSingle();
-
-    const { data: fields } = await supabaseServer
-        .from("registration_fields")
-        .select("*")
-        .eq("form_id", form?.id)
-        .order("sort_order", { ascending: true });
-
-    const { data: assignments } = await supabaseServer
-        .from("table_assignments")
-        .select("id, registration_id, table_id")
-        .eq("event_id", eventId);
-
-    const { data: tables } = await supabaseServer
-        .from("tables")
-        .select("id, table_name")
-        .eq("event_id", eventId);
-
-    const guestList = (guests || []) as Guest[];
-    const checkInList = (checkIns || []) as CheckIn[];
-    const assignmentList = (assignments || []) as TableAssignment[];
-    const tableList = (tables || []) as EventTable[];
+    const guestList = (guestsResult.data || []) as Guest[];
+    const checkInList = (checkInsResult.data || []) as CheckIn[];
+    const assignmentList = (assignmentsResult.data || []) as TableAssignment[];
+    const tableList = (tablesResult.data || []) as EventTable[];
 
     const checkInMap = new Map<string, CheckIn>();
 
@@ -162,92 +170,95 @@ export default async function ReportsPage({
         })),
     ];
 
+    const eventName = event.event_name || event.title || event.name || "Event";
+    const eventSlug = event.event_slug || event.slug || "event";
+
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-8 text-slate-950">
-            <div className="mx-auto max-w-7xl">
+        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
                 <Link
                     href={`/dashboard/events/${eventId}`}
-                    className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] transition hover:text-[#EC4899]"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
                 >
                     <ArrowLeft size={16} />
                     Back to Event
                 </Link>
 
-                <section className="relative mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
-                    <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                    <div className="absolute bottom-0 right-40 h-64 w-64 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
+                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-64 md:w-64" />
+                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-40 md:h-64 md:w-64" />
 
                     <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <BarChart3 size={16} />
+                        <div className="min-w-0">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
+                                <BarChart3 size={15} />
                                 Event Reports
                             </div>
 
-                            <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
+                            <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
                                 Reports
                             </h1>
 
-                            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+                            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
                                 View checked-in and not checked-in guests for{" "}
                                 <span className="font-black text-slate-950">
-                                    {event.event_name}
+                                    {eventName}
                                 </span>
                                 .
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="grid gap-3 sm:flex sm:items-center">
                             <Link
                                 href={`/dashboard/events/${eventId}/analytics`}
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-[#F7F5FF] hover:text-[#4F46E5]"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-[#F7F5FF] hover:text-[#4F46E5] sm:w-auto"
                             >
                                 <BarChart3 size={17} />
                                 Analytics
                             </Link>
 
-                            <div className="inline-flex items-center gap-2">
+                            <div className="inline-flex w-full items-center justify-center gap-2 sm:w-auto">
                                 <Download size={17} className="hidden text-[#4F46E5]" />
                                 <ExportGuestsButton
                                     guests={exportGuests}
                                     fields={fields || []}
-                                    filename={`${event.event_slug}-guest-report.csv`}
+                                    filename={`${eventSlug}-guest-report.csv`}
                                 />
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <section className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                     <StatCard
-                        title="Total Registered"
+                        title="Registered"
                         value={total}
-                        text="All submitted registrations"
+                        text="Total"
                         icon={Users}
                     />
 
                     <StatCard
                         title="Checked In"
                         value={checkedIn}
-                        text="Guests already verified"
+                        text="Verified"
                         icon={CheckCircle2}
                     />
 
                     <StatCard
-                        title="Not Checked In"
+                        title="Pending"
                         value={pending}
-                        text="Guests pending arrival"
+                        text="Not arrived"
                         icon={Clock3}
                     />
 
                     <ProgressCard
-                        title="Attendance Rate"
+                        title="Attendance"
                         value={checkedInRate}
-                        text={`${checkedIn} of ${total} guests checked in`}
+                        text={`${checkedIn} of ${total}`}
                     />
                 </section>
 
-                <section className="mt-8 grid gap-6 xl:grid-cols-2">
+                <section className="grid gap-5 xl:grid-cols-2 xl:gap-6">
                     <GuestList
                         title="Not Checked In"
                         guests={notCheckedInGuests}
@@ -283,16 +294,20 @@ function StatCard({
     icon: any;
 }) {
     return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                <Icon size={24} />
+        <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:rounded-[2rem] md:p-6">
+            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-2.5 text-[#4F46E5] md:p-3">
+                <Icon size={20} />
             </div>
 
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+            <p className="mt-4 text-xs font-bold text-slate-500 md:mt-6 md:text-sm">
+                {title}
+            </p>
+            <p className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:mt-2 md:text-4xl">
                 {value}
             </p>
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 md:mt-3 md:text-sm md:leading-6">
+                {text}
+            </p>
         </div>
     );
 }
@@ -307,24 +322,28 @@ function ProgressCard({
     text: string;
 }) {
     return (
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                <BarChart3 size={24} />
+        <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:rounded-[2rem] md:p-6">
+            <div className="w-fit rounded-2xl bg-[#F7F5FF] p-2.5 text-[#4F46E5] md:p-3">
+                <BarChart3 size={20} />
             </div>
 
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
+            <p className="mt-4 text-xs font-bold text-slate-500 md:mt-6 md:text-sm">
+                {title}
+            </p>
+            <p className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:mt-2 md:text-4xl">
                 {value}%
             </p>
 
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100 md:mt-4">
                 <div
                     className="h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#EC4899]"
                     style={{ width: `${value}%` }}
                 />
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500 md:mt-3 md:text-sm md:leading-6">
+                {text}
+            </p>
         </div>
     );
 }
@@ -347,20 +366,23 @@ function GuestList({
     const isChecked = type === "checked";
 
     return (
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-4">
+                <div className="flex items-start gap-3 md:gap-4">
                     <div
-                        className={`rounded-2xl p-3 ${isChecked
+                        className={`rounded-2xl p-3 ${
+                            isChecked
                                 ? "bg-green-50 text-green-700"
                                 : "bg-yellow-50 text-yellow-700"
-                            }`}
+                        }`}
                     >
-                        {isChecked ? <UserCheck size={24} /> : <UserX size={24} />}
+                        {isChecked ? <UserCheck size={22} /> : <UserX size={22} />}
                     </div>
 
                     <div>
-                        <h2 className="text-2xl font-black text-slate-950">{title}</h2>
+                        <h2 className="text-xl font-black text-slate-950 md:text-2xl">
+                            {title}
+                        </h2>
                         <p className="mt-1 text-sm leading-6 text-slate-500">
                             {isChecked
                                 ? "Guests who have been checked in."
@@ -370,18 +392,19 @@ function GuestList({
                 </div>
 
                 <span
-                    className={`rounded-full px-4 py-2 text-sm font-black ${isChecked
+                    className={`w-fit rounded-full px-4 py-2 text-sm font-black ${
+                        isChecked
                             ? "bg-green-50 text-green-700"
                             : "bg-yellow-50 text-yellow-700"
-                        }`}
+                    }`}
                 >
                     {guests.length} guest{guests.length === 1 ? "" : "s"}
                 </span>
             </div>
 
-            <div className="mt-6 max-h-[620px] space-y-3 overflow-y-auto pr-1">
+            <div className="mt-5 max-h-[620px] space-y-3 overflow-y-auto pr-1 md:mt-6">
                 {guests.length === 0 ? (
-                    <p className="rounded-2xl bg-[#F7F5FF] p-5 text-center font-semibold text-slate-500">
+                    <p className="rounded-2xl bg-[#F7F5FF] p-5 text-center text-sm font-semibold text-slate-500">
                         {emptyText}
                     </p>
                 ) : (
@@ -416,26 +439,27 @@ function GuestRow({
     return (
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:bg-[#F7F5FF]">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
+                <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-lg font-black text-slate-950">
+                        <p className="truncate text-base font-black text-slate-950 md:text-lg">
                             {guest.full_name || "Unnamed Guest"}
                         </p>
 
                         <span
-                            className={`rounded-full px-3 py-1 text-xs font-black ${isChecked
+                            className={`rounded-full px-3 py-1 text-xs font-black ${
+                                isChecked
                                     ? "bg-green-100 text-green-700"
                                     : "bg-yellow-100 text-yellow-700"
-                                }`}
+                            }`}
                         >
                             {isChecked ? "Checked In" : "Not Checked In"}
                         </span>
                     </div>
 
                     <div className="mt-3 grid gap-2 text-sm font-semibold text-slate-500">
-                        <p className="inline-flex items-center gap-2">
-                            <Mail size={14} />
-                            {guest.email || "No email"}
+                        <p className="inline-flex min-w-0 items-center gap-2">
+                            <Mail size={14} className="shrink-0" />
+                            <span className="break-all">{guest.email || "No email"}</span>
                         </p>
 
                         <p className="inline-flex items-center gap-2">
