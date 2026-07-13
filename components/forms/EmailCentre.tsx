@@ -61,6 +61,24 @@ Regards,
 RegiGo`,
     },
     {
+        template_name: "Glitter Games Access",
+        email_type: "glitter_games_access",
+        subject: "You’re checked in — your Glitter Games pass for {{event_name}}",
+        body: `Hi {{name}},
+
+You’re successfully checked in for {{event_name}}.
+
+Scan your personal Glitter Games QR code below or open this link:
+{{game_url}}
+
+Each challenge lasts 20 seconds. Winners earn 10 points, and the overall Top 10 qualify for Stage Game #2.
+
+This game pass is unique to your registration. Please do not share it.
+
+Regards,
+RegiGo`,
+    },
+    {
         template_name: "Thank You Email",
         email_type: "thank_you",
         subject: "Thank you for attending {{event_name}}",
@@ -247,6 +265,14 @@ export default function EmailCentre({
         .replaceAll("{{table}}", "Table 1")
         .replaceAll("{{company}}", "RegiGo")
         .replaceAll("{{qr_link}}", "https://example.com/qr-code.png")
+        .replaceAll(
+            "{{game_url}}",
+            `https://example.com/event/${event.event_slug || "event"}/games/access?code=unique-token`,
+        )
+        .replaceAll(
+            "{{games_url}}",
+            `https://example.com/event/${event.event_slug || "event"}/games/access?code=unique-token`,
+        )
         .replaceAll("{{qr_code}}", "[QR code image will appear here]")
         .replaceAll("{{qr_image}}", "[QR code image will appear here]");
 
@@ -349,6 +375,9 @@ export default function EmailCentre({
                                 <option value="reminder">Reminder</option>
                                 <option value="update">Event Update</option>
                                 <option value="thank_you">Thank You</option>
+                                <option value="glitter_games_access">
+                                    Glitter Games Access
+                                </option>
                                 <option value="custom">Custom</option>
                             </select>
                         </div>
@@ -450,6 +479,8 @@ export default function EmailCentre({
                             "{{company}}",
                             "{{qr_code}}",
                             "{{qr_link}}",
+                            "{{game_url}}",
+                            "{{games_url}}",
                         ].map((item) => (
                             <span
                                 key={item}
@@ -461,9 +492,10 @@ export default function EmailCentre({
                     </div>
 
                     <p className="mt-4 text-sm font-semibold leading-6 text-slate-500">
-                        Use <b>{"{{qr_code}}"}</b> in the email body where you
-                        want the QR image to appear. If the guest has a QR image
-                        URL saved, the email will show the QR code image.
+                        Use <b>{"{{qr_code}}"}</b> where the QR image should be
+                        referenced. For the Glitter Games email, use
+                        <b>{" {{game_url}}"}</b> for the guest’s unique game link.
+                        The worker attaches the QR image automatically.
                     </p>
                 </div>
             </section>

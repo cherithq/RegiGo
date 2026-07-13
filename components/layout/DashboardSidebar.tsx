@@ -30,6 +30,7 @@ import {
     Globe2,
     Palette,
     Gift,
+    Gamepad2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -38,7 +39,7 @@ import {
     type EventModuleKey,
 } from "@/lib/event-modules";
 
-type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+type UserRole = "admin" | "organizer" | "organiser" | "viewer" | "scanner";
 
 type Profile = {
     id: string;
@@ -61,11 +62,11 @@ type NavGroupType = {
     items: NavItem[];
 };
 
-const allRoles: UserRole[] = ["admin", "organizer", "viewer", "scanner"];
+const allRoles: UserRole[] = ["admin", "organizer", "organiser", "viewer", "scanner"];
 const adminOnly: UserRole[] = ["admin"];
-const eventManagers: UserRole[] = ["admin", "organizer"];
-const scanners: UserRole[] = ["admin", "organizer", "scanner"];
-const reportViewers: UserRole[] = ["admin", "organizer", "viewer"];
+const eventManagers: UserRole[] = ["admin", "organizer", "organiser"];
+const scanners: UserRole[] = ["admin", "organizer", "organiser", "scanner"];
+const reportViewers: UserRole[] = ["admin", "organizer", "organiser", "viewer"];
 
 export default function DashboardSidebar() {
     const pathname = usePathname();
@@ -102,6 +103,7 @@ export default function DashboardSidebar() {
             } else if (
                 data?.role === "admin" ||
                 data?.role === "organizer" ||
+                data?.role === "organiser" ||
                 data?.role === "viewer" ||
                 data?.role === "scanner"
             ) {
@@ -136,6 +138,7 @@ export default function DashboardSidebar() {
         async function loadEventModules() {
             if (!eventId) {
                 setEnabledModules(defaultOrganizerEnabledModules);
+                setLoadingModules(false);
                 return;
             }
 
@@ -248,6 +251,22 @@ export default function DashboardSidebar() {
                         exact: true,
                         roles: scanners,
                         organizerModuleKey: "lucky_draw",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/games`,
+                        label: "Glitter Games",
+                        icon: Gamepad2,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "glitter_games",
+                    },
+                    {
+                        href: `/dashboard/events/${eventId}/games/qr-codes`,
+                        label: "Game Pass QR Codes",
+                        icon: QrCode,
+                        exact: true,
+                        roles: eventManagers,
+                        organizerModuleKey: "glitter_games",
                     },
                     {
                         href: `/dashboard/events/${eventId}/analytics`,
@@ -410,7 +429,7 @@ export default function DashboardSidebar() {
             )}
 
             <aside
-                className={`fixed left-0 top-0 z-50 h-screen border-r border-slate-200 bg-white p-5 transition-all duration-300 ${collapsed ? "lg:w-24" : "lg:w-72"
+                className={`fixed left-0 top-0 z-50 h-[100dvh] border-r border-slate-200 bg-white p-5 transition-all duration-300 ${collapsed ? "lg:w-24" : "lg:w-72"
                     } ${mobileOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
@@ -450,7 +469,7 @@ export default function DashboardSidebar() {
                     </button>
                 </div>
 
-                <nav className="mt-10 max-h-[calc(100vh-180px)] space-y-7 overflow-y-auto pb-24">
+                <nav className="mt-10 max-h-[calc(100dvh-180px)] space-y-7 overflow-y-auto overscroll-contain pb-[calc(6rem+env(safe-area-inset-bottom))]">
                     {loadingProfile ? (
                         <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-400">
                             {!collapsed && "Loading menu..."}
@@ -486,7 +505,7 @@ export default function DashboardSidebar() {
                     )}
                 </nav>
 
-                <div className="absolute bottom-5 left-0 w-full px-5">
+                <div className="absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-0 w-full px-5">
                     {!collapsed && profile && (
                         <div className="mb-3 rounded-2xl bg-[#F7F5FF] px-4 py-3">
                             <p className="truncate text-sm font-black text-slate-800">

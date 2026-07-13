@@ -24,6 +24,7 @@ import {
     Mic2,
     ListTodo,
     Gift,
+    Gamepad2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
@@ -43,6 +44,7 @@ type EventModuleKey =
     | "agenda"
     | "scanner"
     | "lucky_draw"
+    | "glitter_games"
     | "analytics"
     | "registration"
     | "website"
@@ -75,6 +77,7 @@ const defaultEnabledModules: Record<EventModuleKey, boolean> = {
     agenda: true,
     scanner: true,
     lucky_draw: true,
+    glitter_games: true,
     analytics: true,
     registration: true,
     website: true,
@@ -303,6 +306,14 @@ export default async function EventOverviewPage({
                 href: `/dashboard/events/${eventId}/lucky-draw`,
                 icon: Gift,
                 allowed: canAccessModule("lucky_draw", canScan),
+            },
+            {
+                moduleKey: "glitter_games",
+                title: "Glitter Games",
+                description: "Open the event games hub and prepare guest activities.",
+                href: `/dashboard/events/${eventId}/games`,
+                icon: Gamepad2,
+                allowed: canAccessModule("glitter_games", canManageEvent),
             },
         ] satisfies ModuleCardItem[]
     ).filter((item) => item.allowed);

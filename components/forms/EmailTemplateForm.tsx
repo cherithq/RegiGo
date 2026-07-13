@@ -17,6 +17,12 @@ const defaultTemplates = [
         body: "Hi {{full_name}}, here is your QR pass. Please show it during check-in.",
     },
     {
+        email_type: "glitter_games_access",
+        title: "Glitter Games Access",
+        subject: "You’re checked in — your Glitter Games pass for {{event_name}}",
+        body: "Hi {{full_name}}, scan your personal Glitter Games QR code or open {{game_url}}. Each challenge lasts 20 seconds, winners earn 10 points, and the overall Top 10 qualify for Stage Game #2.",
+    },
+    {
         email_type: "reminder",
         title: "Event Reminder",
         subject: "Reminder: {{event_name}} is coming soon",
@@ -108,7 +114,8 @@ export default function EmailTemplatesForm({
 
             <div className="rounded-2xl bg-white p-5 text-sm text-slate-600 shadow">
                 Available placeholders: <b>{"{{full_name}}"}</b>, <b>{"{{event_name}}"}</b>,{" "}
-                <b>{"{{event_date}}"}</b>, <b>{"{{qr_link}}"}</b>
+                <b>{"{{event_date}}"}</b>, <b>{"{{qr_link}}"}</b>,{" "}
+                <b>{"{{game_url}}"}</b>
             </div>
         </div>
     );

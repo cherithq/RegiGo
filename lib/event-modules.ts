@@ -8,6 +8,7 @@ export type EventModuleKey =
   | "agenda"
   | "scanner"
   | "lucky_draw"
+  | "glitter_games"
   | "analytics"
   | "registration"
   | "website"
@@ -26,6 +27,7 @@ export const eventModuleKeys: EventModuleKey[] = [
   "agenda",
   "scanner",
   "lucky_draw",
+  "glitter_games",
   "analytics",
   "registration",
   "website",
@@ -45,6 +47,7 @@ export const defaultOrganizerEnabledModules: Record<EventModuleKey, boolean> = {
   agenda: true,
   scanner: true,
   lucky_draw: true,
+  glitter_games: true,
   analytics: true,
   registration: true,
   website: true,

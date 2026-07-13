@@ -12,6 +12,7 @@ import {
     Mail,
     QrCode,
     Settings2,
+    Sparkles,
     Table2,
     UsersRound,
     Mic2,
@@ -106,6 +107,12 @@ const modules: ModuleConfig[] = [
         title: "Lucky Draw",
         description: "Allow organisers to run lucky draw features.",
         icon: <Gift size={20} />,
+    },
+    {
+        key: "glitter_games",
+        title: "Glitter Games",
+        description: "Allow organisers to access interactive event games.",
+        icon: <Sparkles size={20} />,
     },
     {
         key: "analytics",
