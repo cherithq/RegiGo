@@ -257,7 +257,7 @@ export default function DashboardSidebar() {
                         label: "Glitter Games",
                         icon: Gamepad2,
                         exact: true,
-                        roles: eventManagers,
+                        roles: adminOnly,
                         organizerModuleKey: "glitter_games",
                     },
                     {
@@ -266,7 +266,7 @@ export default function DashboardSidebar() {
                         icon: QrCode,
                         exact: true,
                         roles: eventManagers,
-                        organizerModuleKey: "glitter_games",
+                        organizerModuleKey: "glitter_games_qr_codes",
                     },
                     {
                         href: `/dashboard/events/${eventId}/analytics`,
@@ -407,15 +407,35 @@ export default function DashboardSidebar() {
         if (!profile) return false;
         if (!item.roles.includes(profile.role)) return false;
 
-        // Admin always sees everything.
-        if (profile.role === "admin") return true;
-
-        // Non-event links are not affected by module toggles.
+        // Non-event links are not affected by event module toggles.
         if (!eventId || !item.organizerModuleKey) return true;
 
         if (loadingModules) return false;
 
-        // Organizer only sees enabled modules.
+        // Glitter Games dashboard: admin-only and must respect its toggle.
+        if (item.organizerModuleKey === "glitter_games") {
+            return (
+                profile.role === "admin" &&
+                enabledModules.glitter_games !== false
+            );
+        }
+
+        // Game Pass QR Codes: admins and organisers, controlled separately.
+        if (item.organizerModuleKey === "glitter_games_qr_codes") {
+            const canManageQrCodes =
+                profile.role === "admin" ||
+                profile.role === "organizer" ||
+                profile.role === "organiser";
+
+            return (
+                canManageQrCodes &&
+                enabledModules.glitter_games_qr_codes !== false
+            );
+        }
+
+        // Admins retain access to other event modules.
+        if (profile.role === "admin") return true;
+
         return enabledModules[item.organizerModuleKey] !== false;
     }
 

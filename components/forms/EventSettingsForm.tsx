@@ -12,11 +12,11 @@ import {
     Mail,
     QrCode,
     Settings2,
-    Sparkles,
     Table2,
     UsersRound,
     Mic2,
     Gift,
+    Gamepad2,
     Map,
     ListTodo,
     Palette,
@@ -110,9 +110,15 @@ const modules: ModuleConfig[] = [
     },
     {
         key: "glitter_games",
-        title: "Glitter Games",
-        description: "Allow organisers to access interactive event games.",
-        icon: <Sparkles size={20} />,
+        title: "Glitter Games Dashboard",
+        description: "Enable the admin-only Glitter Games management dashboard.",
+        icon: <Gamepad2 size={20} />,
+    },
+    {
+        key: "glitter_games_qr_codes",
+        title: "Game Pass QR Codes",
+        description: "Allow admins and organisers to find checked-in guests’ game QR codes.",
+        icon: <QrCode size={20} />,
     },
     {
         key: "analytics",
@@ -224,7 +230,16 @@ export default function EventSettingsForm({
                 },
             );
 
-            const result = await response.json();
+            const responseText = await response.text();
+            let result: any = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(
+                    `Settings route returned ${response.status} instead of JSON. Check app/api/events/[eventId]/settings/modules/route.ts.`,
+                );
+            }
 
             if (!response.ok) {
                 throw new Error(result.error || "Failed to save settings.");
@@ -250,24 +265,37 @@ export default function EventSettingsForm({
             }
 
             setSaved(true);
+            return true;
         } catch (err) {
             setError(
                 err instanceof Error
                     ? err.message
                     : "Failed to save event settings.",
             );
+            return false;
         } finally {
             setSaving(false);
         }
     }
 
-    function toggleRegistrationOpen() {
-        const nextOpen = !registrationIsOpen;
+    async function toggleRegistrationOpen() {
+        if (saving) return;
+
+        const previousOpen = registrationIsOpen;
+        const nextOpen = !previousOpen;
+
         setRegistrationIsOpen(nextOpen);
-        saveSettings({ registration_is_open: nextOpen });
+
+        const savedSuccessfully = await saveSettings({
+            registration_is_open: nextOpen,
+        });
+
+        if (!savedSuccessfully) {
+            setRegistrationIsOpen(previousOpen);
+        }
     }
 
-    function toggleModule(key: EventModuleKey) {
+    async function toggleModule(key: EventModuleKey) {
         if (!canManageModules) return;
 
         const module = modules.find((item) => item.key === key);
@@ -280,8 +308,17 @@ export default function EventSettingsForm({
             settings: true,
         };
 
+        const previousModules = enabledModules;
+
         setEnabledModules(nextModules);
-        saveSettings({ enabled_modules: nextModules });
+
+        const savedSuccessfully = await saveSettings({
+            enabled_modules: nextModules,
+        });
+
+        if (!savedSuccessfully) {
+            setEnabledModules(previousModules);
+        }
     }
 
     return (
@@ -311,7 +348,7 @@ export default function EventSettingsForm({
 
                 <button
                     type="button"
-                    onClick={toggleRegistrationOpen}
+                    onClick={() => void toggleRegistrationOpen()}
                     disabled={saving}
                     className={`mt-6 flex w-full items-center justify-between gap-5 rounded-[1.5rem] border p-5 text-left transition ${registrationIsOpen
                             ? "border-emerald-200 bg-emerald-50"
@@ -384,11 +421,11 @@ export default function EventSettingsForm({
                 <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                     <div>
                         <h2 className="text-2xl font-black text-slate-950">
-                            Organizer Module Visibility
+                            Event Module Visibility
                         </h2>
                         <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
-                            Choose which modules organisers can see and access for
-                            this event. Admins still see every module.
+                            Choose which event tools are enabled. The Glitter Games dashboard is admin-only,
+                            while Game Pass QR Codes can be used by admins and organisers.
                         </p>
                     </div>
 
@@ -400,7 +437,10 @@ export default function EventSettingsForm({
                                 <button
                                     key={module.key}
                                     type="button"
-                                    onClick={() => toggleModule(module.key)}
+                                    role="switch"
+                                    aria-checked={enabled}
+                                    aria-label={`${module.title}: ${enabled ? "enabled" : "disabled"}`}
+                                    onClick={() => void toggleModule(module.key)}
                                     disabled={module.locked || saving}
                                     className="group flex w-full items-center justify-between gap-4 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-[#4F46E5]/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70"
                                 >

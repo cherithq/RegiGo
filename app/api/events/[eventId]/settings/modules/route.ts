@@ -5,18 +5,34 @@ import {
     defaultOrganizerEnabledModules,
 } from "@/lib/event-modules";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type SettingsPayload = {
     enabled_modules?: Record<string, boolean>;
     registration_is_open?: boolean;
     registration_closed_message?: string;
 };
 
-const defaultClosedMessage = "Registration for this event is currently closed.";
+const defaultClosedMessage =
+    "Registration for this event is currently closed.";
+
+function jsonNoStore(body: Record<string, unknown>, status = 200) {
+    return NextResponse.json(body, {
+        status,
+        headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            Pragma: "no-cache",
+            Expires: "0",
+        },
+    });
+}
 
 function cleanClosedMessage(value: unknown) {
     if (typeof value !== "string") return defaultClosedMessage;
+
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : defaultClosedMessage;
+    return trimmed.length > 0 ? trimmed.slice(0, 500) : defaultClosedMessage;
 }
 
 export async function PATCH(
@@ -25,7 +41,14 @@ export async function PATCH(
 ) {
     try {
         const { eventId } = await context.params;
-        const body = (await request.json()) as SettingsPayload;
+
+        let body: SettingsPayload;
+
+        try {
+            body = (await request.json()) as SettingsPayload;
+        } catch {
+            return jsonNoStore({ error: "Invalid JSON request body." }, 400);
+        }
 
         const supabaseServer = await createSupabaseServerClient();
 
@@ -34,9 +57,9 @@ export async function PATCH(
         } = await supabaseServer.auth.getUser();
 
         if (!user) {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: "You must be logged in to update event settings." },
-                { status: 401 },
+                401,
             );
         }
 
@@ -47,20 +70,18 @@ export async function PATCH(
             .maybeSingle();
 
         if (profileError) {
-            return NextResponse.json(
-                { error: profileError.message },
-                { status: 400 },
-            );
+            return jsonNoStore({ error: profileError.message }, 400);
         }
 
         const role = profile?.role;
         const isAdmin = role === "admin";
-        const isOrganizer = role === "organizer";
+        const isOrganizer =
+            role === "organizer" || role === "organiser";
 
         if (!isAdmin && !isOrganizer) {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: "You do not have permission to update event settings." },
-                { status: 403 },
+                403,
             );
         }
 
@@ -74,20 +95,19 @@ export async function PATCH(
                 .maybeSingle();
 
         if (existingError) {
-            return NextResponse.json(
-                { error: existingError.message },
-                { status: 400 },
-            );
+            return jsonNoStore({ error: existingError.message }, 400);
         }
 
         const existingModules = cleanOrganizerEnabledModules(
             existingSettings?.enabled_modules,
         );
 
-        // Admin can update organizer module visibility.
-        // Organizer can update only registration open/closed status and message.
+        // Module visibility remains an admin-controlled setting.
+        // The canonical cleaner now includes glitter_games, so the value is kept.
         const nextEnabledModules = isAdmin
-            ? cleanOrganizerEnabledModules(body.enabled_modules ?? existingModules)
+            ? cleanOrganizerEnabledModules(
+                  body.enabled_modules ?? existingModules,
+              )
             : existingModules;
 
         const nextRegistrationIsOpen =
@@ -98,11 +118,13 @@ export async function PATCH(
         const nextClosedMessage =
             body.registration_closed_message !== undefined
                 ? cleanClosedMessage(body.registration_closed_message)
-                : existingSettings?.registration_closed_message || defaultClosedMessage;
+                : existingSettings?.registration_closed_message ||
+                  defaultClosedMessage;
 
         const payload = {
             event_id: eventId,
-            enabled_modules: nextEnabledModules || defaultOrganizerEnabledModules,
+            enabled_modules:
+                nextEnabledModules || defaultOrganizerEnabledModules,
             registration_is_open: nextRegistrationIsOpen,
             registration_closed_message: nextClosedMessage,
         };
@@ -116,13 +138,10 @@ export async function PATCH(
                 .single();
 
             if (error) {
-                return NextResponse.json(
-                    { error: error.message },
-                    { status: 400 },
-                );
+                return jsonNoStore({ error: error.message }, 400);
             }
 
-            return NextResponse.json({ settings: data });
+            return jsonNoStore({ settings: data });
         }
 
         const { data, error } = await supabaseServer
@@ -132,16 +151,13 @@ export async function PATCH(
             .single();
 
         if (error) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            return jsonNoStore({ error: error.message }, 400);
         }
 
-        return NextResponse.json({ settings: data }, { status: 201 });
+        return jsonNoStore({ settings: data }, 201);
     } catch (error) {
         console.error("Save settings failed:", error);
 
-        return NextResponse.json(
-            { error: "Failed to save settings." },
-            { status: 500 },
-        );
+        return jsonNoStore({ error: "Failed to save settings." }, 500);
     }
 }

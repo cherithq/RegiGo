@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import * as QRCode from "qrcode";
 import {
     ArrowLeft,
@@ -29,42 +29,10 @@ type GuestQr = GuestAccessRow & {
     qrDataUrl: string;
 };
 
-async function getBaseUrl() {
-    const requestHeaders = await headers();
+const PUBLIC_APP_URL = "https://regigo-events-henna.vercel.app";
 
-    const forwardedHost = requestHeaders
-        .get("x-forwarded-host")
-        ?.split(",")[0]
-        ?.trim();
-
-    const host = forwardedHost || requestHeaders.get("host")?.trim();
-
-    const forwardedProto = requestHeaders
-        .get("x-forwarded-proto")
-        ?.split(",")[0]
-        ?.trim();
-
-    const protocol =
-        forwardedProto ||
-        (host?.startsWith("localhost") ||
-        host?.startsWith("127.0.0.1") ||
-        host?.startsWith("192.168.") ||
-        host?.startsWith("10.")
-            ? "http"
-            : "https");
-
-    // Prefer the address that the organiser is currently using.
-    // This makes local/LAN testing work when the QR is scanned on another phone.
-    if (host) {
-        return `${protocol}://${host}`.replace(/\/$/, "");
-    }
-
-    return (
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        process.env.APP_URL ||
-        "http://localhost:3000"
-    ).replace(/\/$/, "");
+function getBaseUrl() {
+    return PUBLIC_APP_URL;
 }
 
 export default async function GuestGameQrCodesPage({
@@ -76,6 +44,42 @@ export default async function GuestGameQrCodesPage({
 }) {
     const { supabaseServer } = await requirePermission("can_manage_guests");
     const { eventId } = await params;
+
+    const {
+        data: { user },
+    } = await supabaseServer.auth.getUser();
+
+    if (!user) {
+        redirect("/auth/login");
+    }
+
+    const { data: profile } = await supabaseServer
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    const canManageQrCodes =
+        profile?.role === "admin" ||
+        profile?.role === "organizer" ||
+        profile?.role === "organiser";
+
+    if (!canManageQrCodes) {
+        redirect(`/dashboard/events/${eventId}`);
+    }
+
+    const { data: moduleSettings } = await supabaseServer
+        .from("event_settings")
+        .select("enabled_modules")
+        .eq("event_id", eventId)
+        .maybeSingle();
+
+    const enabledModules =
+        (moduleSettings?.enabled_modules as Record<string, boolean> | null) || {};
+
+    if (enabledModules.glitter_games_qr_codes === false) {
+        redirect(`/dashboard/events/${eventId}`);
+    }
     const { q = "" } = await searchParams;
     const searchQuery = q.trim().toLowerCase();
 
@@ -109,7 +113,7 @@ export default async function GuestGameQrCodesPage({
 
     const readyGuests = rows.filter((row) => row.checked_in);
     const pendingGuests = rows.filter((row) => !row.checked_in);
-    const baseUrl = await getBaseUrl();
+    const baseUrl = getBaseUrl();
 
     const guestQrs: GuestQr[] = await Promise.all(
         readyGuests.map(async (guest) => {
@@ -141,15 +145,15 @@ export default async function GuestGameQrCodesPage({
             <div className="mx-auto w-full max-w-7xl space-y-5 md:space-y-8">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link
-                        href={`/dashboard/events/${eventId}/games`}
+                        href={`/dashboard/events/${eventId}`}
                         className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
                     >
                         <ArrowLeft size={17} />
-                        Back to Glitter Games
+                        Back to Event
                     </Link>
 
                     <Link
-                        href={`/event/${event.event_slug}/games`}
+                        href={`${baseUrl}/event/${encodeURIComponent(event.event_slug)}/games`}
                         target="_blank"
                         className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-[#4F46E5]/20 bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:border-[#4F46E5]/40"
                     >
@@ -167,13 +171,13 @@ export default async function GuestGameQrCodesPage({
                             <QrCodeIcon size={28} />
                         </div>
                         <p className="mt-5 text-xs font-black uppercase tracking-[0.18em] text-[#4F46E5]">
-                            Unique Guest Access
+                            Guest Game Pass Access
                         </p>
                         <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl md:text-5xl">
                             Glitter Games QR Codes
                         </h1>
                         <p className="mt-3 text-sm font-semibold leading-6 text-slate-600 sm:text-base sm:leading-7">
-                            Each checked-in guest receives a different QR code. The QR now uses the same website address that opened this dashboard, so it works correctly on localhost, a shared Wi-Fi address, and the deployed site.
+                            Each checked-in guest receives a different QR code. Every QR opens the live RegiGo website, so guests can scan it from any phone.
                         </p>
 
                         <div className="mt-5 rounded-2xl border border-indigo-100 bg-[#F7F5FF] px-4 py-3 text-sm font-bold text-slate-600">

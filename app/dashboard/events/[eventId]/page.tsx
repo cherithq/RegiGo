@@ -45,6 +45,7 @@ type EventModuleKey =
     | "scanner"
     | "lucky_draw"
     | "glitter_games"
+    | "glitter_games_qr_codes"
     | "analytics"
     | "registration"
     | "website"
@@ -78,6 +79,7 @@ const defaultEnabledModules: Record<EventModuleKey, boolean> = {
     scanner: true,
     lucky_draw: true,
     glitter_games: true,
+    glitter_games_qr_codes: true,
     analytics: true,
     registration: true,
     website: true,
@@ -215,6 +217,15 @@ export default async function EventOverviewPage({
 
     function canAccessModule(moduleKey: EventModuleKey, allowedByRole: boolean) {
         if (!allowedByRole) return false;
+
+        // These two toggles must also apply to admins.
+        if (
+            moduleKey === "glitter_games" ||
+            moduleKey === "glitter_games_qr_codes"
+        ) {
+            return enabledModules[moduleKey] !== false;
+        }
+
         if (isAdmin) return true;
 
         return enabledModules[moduleKey] !== false;
@@ -310,10 +321,21 @@ export default async function EventOverviewPage({
             {
                 moduleKey: "glitter_games",
                 title: "Glitter Games",
-                description: "Open the event games hub and prepare guest activities.",
+                description: "Run pre-dinner mini games, points and the live leaderboard.",
                 href: `/dashboard/events/${eventId}/games`,
                 icon: Gamepad2,
-                allowed: canAccessModule("glitter_games", canManageEvent),
+                allowed: canAccessModule("glitter_games", isAdmin),
+            },
+            {
+                moduleKey: "glitter_games_qr_codes",
+                title: "Game Pass QR Codes",
+                description: "Find the unique game QR code for each checked-in guest.",
+                href: `/dashboard/events/${eventId}/games/qr-codes`,
+                icon: QrCode,
+                allowed: canAccessModule(
+                    "glitter_games_qr_codes",
+                    isAdmin || isOrganizer,
+                ),
             },
         ] satisfies ModuleCardItem[]
     ).filter((item) => item.allowed);
@@ -513,8 +535,8 @@ export default async function EventOverviewPage({
                 {eventDayCards.length > 0 && (
                     <WorkspaceSection
                         eyebrow="Event Day"
-                        title="Check-In Tools"
-                        description="Scan QR passes and process guest arrivals during the event."
+                        title="Event-Day Tools"
+                        description="Manage guest arrivals, engagement activities and live event interactions."
                     >
                         {eventDayCards.map(({ moduleKey, allowed, ...item }) => (
                             <ModuleCard key={`${moduleKey}-${item.title}`} {...item} />

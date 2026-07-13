@@ -9,6 +9,7 @@ export type EventModuleKey =
   | "scanner"
   | "lucky_draw"
   | "glitter_games"
+  | "glitter_games_qr_codes"
   | "analytics"
   | "registration"
   | "website"
@@ -28,6 +29,7 @@ export const eventModuleKeys: EventModuleKey[] = [
   "scanner",
   "lucky_draw",
   "glitter_games",
+  "glitter_games_qr_codes",
   "analytics",
   "registration",
   "website",
@@ -48,6 +50,7 @@ export const defaultOrganizerEnabledModules: Record<EventModuleKey, boolean> = {
   scanner: true,
   lucky_draw: true,
   glitter_games: true,
+  glitter_games_qr_codes: true,
   analytics: true,
   registration: true,
   website: true,
@@ -58,7 +61,10 @@ export const defaultOrganizerEnabledModules: Record<EventModuleKey, boolean> = {
 };
 
 export function isEventModuleKey(value: unknown): value is EventModuleKey {
-  return typeof value === "string" && eventModuleKeys.includes(value as EventModuleKey);
+  return (
+    typeof value === "string" &&
+    eventModuleKeys.includes(value as EventModuleKey)
+  );
 }
 
 export function cleanOrganizerEnabledModules(
@@ -80,11 +86,12 @@ export function cleanOrganizerEnabledModules(
     }
   }
 
-  // Required modules. Admin is never affected by this anyway, but these stay on
-  // so organisers do not lose the event landing page or settings/status page.
   output.overview = true;
   output.settings = true;
 
+  // These are separate controls:
+  // - glitter_games controls the admin dashboard.
+  // - glitter_games_qr_codes controls the QR lookup page.
   return output;
 }
 
@@ -93,11 +100,35 @@ export function canRoleSeeEventModule({
   enabledModules,
   moduleKey,
 }: {
-  role: "admin" | "organizer" | "viewer" | "scanner" | string | null | undefined;
+  role:
+    | "admin"
+    | "organizer"
+    | "organiser"
+    | "viewer"
+    | "scanner"
+    | string
+    | null
+    | undefined;
   enabledModules: Record<EventModuleKey, boolean>;
   moduleKey?: EventModuleKey | null;
 }) {
-  if (role === "admin") return true;
   if (!moduleKey) return true;
+
+  if (moduleKey === "glitter_games") {
+    return role === "admin" && enabledModules.glitter_games !== false;
+  }
+
+  if (moduleKey === "glitter_games_qr_codes") {
+    const canManageQrCodes =
+      role === "admin" || role === "organizer" || role === "organiser";
+
+    return (
+      canManageQrCodes &&
+      enabledModules.glitter_games_qr_codes !== false
+    );
+  }
+
+  if (role === "admin") return true;
+
   return enabledModules[moduleKey] !== false;
 }
