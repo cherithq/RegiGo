@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/permissions";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,7 +11,7 @@ type RequestBody = {
 
 function jsonNoStore(
     body: Record<string, unknown>,
-    status = 200,
+    status = 200
 ) {
     return NextResponse.json(body, {
         status,
@@ -33,10 +33,10 @@ function cleanIds(value: unknown) {
                 .filter(
                     (item): item is string =>
                         typeof item === "string" &&
-                        item.trim().length > 0,
+                        item.trim().length > 0
                 )
-                .map((item) => item.trim()),
-        ),
+                .map((item) => item.trim())
+        )
     );
 }
 
@@ -47,16 +47,86 @@ export async function PATCH(
             eventId: string;
             prizeId: string;
         }>;
-    },
+    }
 ) {
     try {
         const { eventId, prizeId } = await context.params;
-
-        // Match the permission already used by the Lucky Draw pages.
-        await requirePermission("can_scan_qr");
-
         const body = (await request.json()) as RequestBody;
         const requestedIds = cleanIds(body.registrationIds);
+
+        const supabaseServer =
+            await createSupabaseServerClient();
+
+        const {
+            data: { user },
+            error: userError,
+        } = await supabaseServer.auth.getUser();
+
+        if (userError || !user) {
+            return jsonNoStore(
+                {
+                    error:
+                        "You must be logged in to change lucky draw eligibility.",
+                },
+                401
+            );
+        }
+
+        const { data: profile, error: profileError } =
+            await supabaseServer
+                .from("profiles")
+                .select("role")
+                .eq("id", user.id)
+                .maybeSingle();
+
+        if (profileError) {
+            return jsonNoStore(
+                { error: profileError.message },
+                400
+            );
+        }
+
+        const role = String(profile?.role || "").toLowerCase();
+
+        if (
+            role !== "admin" &&
+            role !== "organizer" &&
+            role !== "organiser"
+        ) {
+            return jsonNoStore(
+                {
+                    error:
+                        "Only admins and organizers can change lucky draw eligibility.",
+                },
+                403
+            );
+        }
+
+        // Confirm the signed-in user can read this event through the normal
+        // server client before using the service-role client for the update.
+        const { data: accessibleEvent, error: eventError } =
+            await supabaseServer
+                .from("events")
+                .select("id")
+                .eq("id", eventId)
+                .maybeSingle();
+
+        if (eventError) {
+            return jsonNoStore(
+                { error: eventError.message },
+                400
+            );
+        }
+
+        if (!accessibleEvent) {
+            return jsonNoStore(
+                {
+                    error:
+                        "You do not have access to this event.",
+                },
+                403
+            );
+        }
 
         const supabaseUrl =
             process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -69,12 +139,10 @@ export async function PATCH(
                     error:
                         "SUPABASE_SERVICE_ROLE_KEY is missing from the server environment.",
                 },
-                500,
+                500
             );
         }
 
-        // This client exists only inside the server route. The service-role
-        // key is never sent to the browser.
         const supabaseAdmin = createClient(
             supabaseUrl,
             serviceRoleKey,
@@ -83,7 +151,7 @@ export async function PATCH(
                     persistSession: false,
                     autoRefreshToken: false,
                 },
-            },
+            }
         );
 
         const { data: prize, error: prizeError } =
@@ -97,7 +165,7 @@ export async function PATCH(
         if (prizeError) {
             return jsonNoStore(
                 { error: prizeError.message },
-                400,
+                400
             );
         }
 
@@ -107,38 +175,38 @@ export async function PATCH(
                     error:
                         "This prize was not found for the selected event.",
                 },
-                404,
+                404
             );
         }
 
         let validIds: string[] = [];
 
         if (requestedIds.length > 0) {
-            const { data: registrations, error: registrationError } =
+            const { data: registrations, error: registrationsError } =
                 await supabaseAdmin
                     .from("registrations")
                     .select("id")
                     .eq("event_id", eventId)
                     .in("id", requestedIds);
 
-            if (registrationError) {
+            if (registrationsError) {
                 return jsonNoStore(
-                    { error: registrationError.message },
-                    400,
+                    { error: registrationsError.message },
+                    400
                 );
             }
 
             validIds = (registrations || []).map((row) =>
-                String(row.id),
+                String(row.id)
             );
 
             if (validIds.length !== requestedIds.length) {
                 return jsonNoStore(
                     {
                         error:
-                            "Some filtered guests do not belong to this event. Refresh the Lucky Draw page and try again.",
+                            "Some selected guests do not belong to this event. Refresh and try again.",
                     },
-                    400,
+                    400
                 );
             }
         }
@@ -152,20 +220,18 @@ export async function PATCH(
                 })
                 .eq("id", prizeId)
                 .eq("event_id", eventId)
-                .select(
-                    "id,eligible_registration_ids",
-                )
+                .select("id,eligible_registration_ids")
                 .single();
 
         if (updateError) {
             return jsonNoStore(
                 { error: updateError.message },
-                400,
+                400
             );
         }
 
         const savedIds = Array.isArray(
-            updatedPrize.eligible_registration_ids,
+            updatedPrize.eligible_registration_ids
         )
             ? updatedPrize.eligible_registration_ids.map(String)
             : validIds;
@@ -176,8 +242,8 @@ export async function PATCH(
         });
     } catch (error) {
         console.error(
-            "Update lucky draw eligible guests failed:",
-            error,
+            "Lucky draw eligibility update failed:",
+            error
         );
 
         return jsonNoStore(
@@ -185,9 +251,9 @@ export async function PATCH(
                 error:
                     error instanceof Error
                         ? error.message
-                        : "Unable to update the prize guest list.",
+                        : "Unable to save selected guests.",
             },
-            500,
+            500
         );
     }
 }
