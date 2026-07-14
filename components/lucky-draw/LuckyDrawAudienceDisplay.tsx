@@ -115,6 +115,7 @@ export default function LuckyDrawAudienceDisplay({
     guests?: CheckedInGuest[];
     initialWinners?: Winner[];
     initialPrizes?: Prize[];
+    displaySettings?: unknown;
 }) {
     const [winners, setWinners] = useState<Winner[]>(initialWinners);
     const [prizes, setPrizes] = useState<Prize[]>(initialPrizes);
@@ -762,6 +763,12 @@ export default function LuckyDrawAudienceDisplay({
                 <h2 className="mx-auto mt-3 max-w-5xl text-3xl font-black tracking-tight sm:text-5xl md:text-7xl">
                     {latestDraw.prizeName}
                 </h2>
+
+                <p className="mt-3 text-sm font-semibold text-white/60 sm:text-base">
+                    All {latestDraw.winners.length} selected winner
+                    {latestDraw.winners.length === 1 ? "" : "s"} revealed
+                    together
+                </p>
             </div>
 
             <div
@@ -787,6 +794,12 @@ export default function LuckyDrawAudienceDisplay({
                             <h3 className="mt-2 break-words text-xl font-black tracking-tight sm:text-2xl md:text-3xl">
                                 {winner.winner_name || "Unnamed Guest"}
                             </h3>
+
+                            {winner.winner_email ? (
+                                <p className="mt-2 break-all text-xs font-semibold text-slate-500 sm:text-sm">
+                                    {winner.winner_email}
+                                </p>
+                            ) : null}
                         </div>
                     </article>
                 ))}
