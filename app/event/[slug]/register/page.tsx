@@ -35,7 +35,8 @@ export default async function RegisterPage({
         );
     }
 
-    const [settingsResult, ticketsResult, formResult] = await Promise.all([
+    const [settingsResult, ticketsResult, tablesResult, formResult] =
+        await Promise.all([
         supabaseServer
             .from("event_settings")
             .select("registration_is_open, registration_closed_message")
@@ -49,6 +50,11 @@ export default async function RegisterPage({
             .order("display_order", { ascending: true }),
 
         supabaseServer
+            .from("event_tables")
+            .select("*")
+            .eq("event_id", event.id),
+
+        supabaseServer
             .from("registration_forms")
             .select("*")
             .eq("event_id", event.id)
@@ -57,6 +63,7 @@ export default async function RegisterPage({
 
     const settings = settingsResult.data;
     const tickets = ticketsResult.data || [];
+    const tables = tablesResult.data || [];
     const form = formResult.data;
 
     const registrationIsOpen =
@@ -191,6 +198,7 @@ export default async function RegisterPage({
                                 event={event}
                                 fields={fields || []}
                                 tickets={tickets || []}
+                                tables={tables || []}
                             />
                         </div>
                     </section>

@@ -128,6 +128,149 @@ function makeId(prefix: string) {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function parseFieldOptionsValue(value: unknown): Record<string, unknown> {
+    if (!value) return {};
+
+    if (typeof value === "object" && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+
+        if (!trimmed) return {};
+
+        try {
+            const parsed = JSON.parse(trimmed);
+
+            if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+            ) {
+                return parsed as Record<string, unknown>;
+            }
+        } catch {
+            // Older rows may contain newline-separated dropdown choices.
+            return {
+                choices: trimmed
+                    .split(/\r?\n/)
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+            };
+        }
+    }
+
+    return {};
+}
+
+function normaliseChoiceValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return Array.from(
+            new Set(
+                value
+                    .map((item) => {
+                        if (typeof item === "string") {
+                            return item.trim();
+                        }
+
+                        if (item && typeof item === "object") {
+                            const record = item as Record<string, unknown>;
+
+                            return String(
+                                record.label ??
+                                    record.value ??
+                                    record.name ??
+                                    ""
+                            ).trim();
+                        }
+
+                        return String(item ?? "").trim();
+                    })
+                    .filter(Boolean)
+            )
+        );
+    }
+
+    if (typeof value === "string") {
+        return Array.from(
+            new Set(
+                value
+                    .split(/\r?\n/)
+                    .map((item) => item.trim())
+                    .filter(Boolean)
+            )
+        );
+    }
+
+    return [];
+}
+
+function normaliseStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+
+    return Array.from(
+        new Set(
+            value
+                .map((item) => String(item ?? "").trim())
+                .filter(Boolean)
+        )
+    );
+}
+
+function getMergedFieldOptions(field: RegistrationField): FieldOptions {
+    const legacyOptions = parseFieldOptionsValue(field.options);
+    const currentOptions = parseFieldOptionsValue(field.field_options);
+
+    // Merge the old `options` column first, then let populated values from
+    // `field_options` override it. An empty object must not hide legacy data.
+    const merged = {
+        ...legacyOptions,
+        ...currentOptions,
+    } as Record<string, unknown>;
+
+    const currentChoices = normaliseChoiceValues(
+        currentOptions.choices ??
+            currentOptions.dropdown_options ??
+            currentOptions.values ??
+            currentOptions.items
+    );
+
+    const legacyChoices = normaliseChoiceValues(
+        legacyOptions.choices ??
+            legacyOptions.dropdown_options ??
+            legacyOptions.values ??
+            legacyOptions.items
+    );
+
+    const choices =
+        currentChoices.length > 0 ? currentChoices : legacyChoices;
+
+    const currentCountryCodes = normaliseStringArray(
+        currentOptions.country_codes
+    );
+    const legacyCountryCodes = normaliseStringArray(
+        legacyOptions.country_codes
+    );
+
+    const validation =
+        merged.validation &&
+        typeof merged.validation === "object" &&
+        !Array.isArray(merged.validation)
+            ? (merged.validation as FieldOptions["validation"])
+            : undefined;
+
+    return {
+        ...(merged as FieldOptions),
+        choices,
+        country_codes:
+            currentCountryCodes.length > 0
+                ? currentCountryCodes
+                : legacyCountryCodes,
+        validation,
+    };
+}
+
 export default function RegistrationFieldsBuilder({
     formId,
     initialFields = [],
@@ -205,7 +348,7 @@ export default function RegistrationFieldsBuilder({
     }
 
     function getOptionsFromField(field: RegistrationField): FieldOptions {
-        return field.field_options || field.options || {};
+        return getMergedFieldOptions(field);
     }
 
     function getCleanImageChoices() {
@@ -330,7 +473,15 @@ export default function RegistrationFieldsBuilder({
             return;
         }
 
-        setFields((current) => [...current, data as RegistrationField]);
+        const createdField = data as RegistrationField;
+
+        setFields((current) => [
+            ...current,
+            {
+                ...createdField,
+                field_options: getMergedFieldOptions(createdField),
+            },
+        ]);
         resetForm();
         setMessage("Field added successfully.");
         setSavingId(null);
@@ -439,7 +590,14 @@ export default function RegistrationFieldsBuilder({
 
         setFields((current) =>
             current.map((field) =>
-                field.id === editingFieldId ? (data as RegistrationField) : field
+                field.id === editingFieldId
+                    ? {
+                          ...(data as RegistrationField),
+                          field_options: getMergedFieldOptions(
+                              data as RegistrationField
+                          ),
+                      }
+                    : field
             )
         );
 

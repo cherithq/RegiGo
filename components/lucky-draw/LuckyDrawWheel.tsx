@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Check,
     CheckCircle2,
@@ -8,11 +8,11 @@ import {
     Gift,
     History,
     Plus,
-    RotateCw,
     Search,
     Sparkles,
     Trash2,
     Trophy,
+    UserPlus,
     Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -36,6 +36,7 @@ type Winner = {
     winner_email: string | null;
     prize_name: string | null;
     draw_round: number | null;
+    is_excluded?: boolean | null;
     created_at: string | null;
 };
 
@@ -44,6 +45,7 @@ type Prize = {
     event_id: string;
     prize_name: string;
     prize_order: number;
+    winner_count?: number | null;
     eligible_registration_ids: string[];
     created_at: string | null;
     updated_at?: string | null;
@@ -59,16 +61,6 @@ type RegistrationField = {
     sort_order?: number;
 };
 
-const wheelColors = [
-    "#4F46E5",
-    "#EC4899",
-    "#8B5CF6",
-    "#06B6D4",
-    "#10B981",
-    "#F59E0B",
-    "#EF4444",
-    "#6366F1",
-];
 
 const HAS_VALUE_FILTER = "__HAS_VALUE__";
 
@@ -133,21 +125,86 @@ export default function LuckyDrawWheel({
 
     const [newPrizeName, setNewPrizeName] = useState("");
     const [guestSearch, setGuestSearch] = useState("");
+    const [winnerHistorySearch, setWinnerHistorySearch] = useState("");
+    const [draftEligibleIds, setDraftEligibleIds] = useState<string[]>(
+        initialPrizes[0]?.eligible_registration_ids || []
+    );
+    const [savingEligibility, setSavingEligibility] = useState(false);
+    const [restoringRegistrationId, setRestoringRegistrationId] =
+        useState<string | null>(null);
+    const [addingAllWinnersBack, setAddingAllWinnersBack] =
+        useState(false);
     const [fieldFilterKey, setFieldFilterKey] = useState("");
     const [fieldFilterValue, setFieldFilterValue] = useState("");
-    const [rotation, setRotation] = useState(0);
     const [spinning, setSpinning] = useState(false);
-    const [selectedWinner, setSelectedWinner] = useState<CheckedInGuest | null>(
-        null
+    const [shufflePreview, setShufflePreview] = useState<string[]>([]);
+    const liveDrawChannelRef = useRef<
+        ReturnType<typeof supabase.channel> | null
+    >(null);
+    const liveDrawChannelReadyRef = useRef(false);
+    const shuffleIntervalRef = useRef<number | null>(null);
+    const drawTimeoutRef = useRef<number | null>(null);
+    const [selectedWinners, setSelectedWinners] = useState<CheckedInGuest[]>([]);
+    const [winnerCountDraft, setWinnerCountDraft] = useState<number>(
+        Math.max(1, Number(initialPrizes[0]?.winner_count || 1))
     );
+    const [savingWinnerCount, setSavingWinnerCount] = useState(false);
     const [message, setMessage] = useState("");
 
     const selectedPrize = useMemo(() => {
         return prizes.find((prize) => prize.id === selectedPrizeId) || null;
     }, [prizes, selectedPrizeId]);
 
-    const winnerRegistrationIds = useMemo(() => {
-        return new Set(winners.map((winner) => winner.registration_id));
+    useEffect(() => {
+        setWinnerCountDraft(
+            Math.max(1, Number(selectedPrize?.winner_count || 1))
+        );
+    }, [selectedPrize?.id, selectedPrize?.winner_count]);
+
+    useEffect(() => {
+        setDraftEligibleIds(
+            Array.isArray(selectedPrize?.eligible_registration_ids)
+                ? selectedPrize.eligible_registration_ids.map(String)
+                : []
+        );
+    }, [selectedPrize?.id, selectedPrize?.eligible_registration_ids]);
+
+
+    useEffect(() => {
+        const channel = supabase.channel(`lucky-draw-live-${eventId}`, {
+            config: {
+                broadcast: {
+                    self: false,
+                },
+            },
+        });
+
+        channel.subscribe((status) => {
+            liveDrawChannelReadyRef.current = status === "SUBSCRIBED";
+        });
+        liveDrawChannelRef.current = channel;
+
+        return () => {
+            if (shuffleIntervalRef.current !== null) {
+                window.clearInterval(shuffleIntervalRef.current);
+            }
+
+            if (drawTimeoutRef.current !== null) {
+                window.clearTimeout(drawTimeoutRef.current);
+            }
+
+            liveDrawChannelReadyRef.current = false;
+            liveDrawChannelRef.current = null;
+            void supabase.removeChannel(channel);
+        };
+    }, [eventId]);
+
+    const excludedWinnerRegistrationIds = useMemo(() => {
+        return new Set(
+            winners
+                .filter((winner) => winner.is_excluded !== false)
+                .map((winner) => winner.registration_id)
+        );
     }, [winners]);
 
     const selectedPrizeEligibleIds = useMemo(() => {
@@ -260,6 +317,25 @@ export default function LuckyDrawWheel({
         });
     }, [guests, guestSearch, fieldFilterKey, fieldFilterValue]);
 
+    const draftEligibleIdSet = useMemo(() => {
+        return new Set(draftEligibleIds);
+    }, [draftEligibleIds]);
+
+    const newFilteredGuestIds = useMemo(() => {
+        return filteredGuests
+            .map((guest) => guest.id)
+            .filter((registrationId) => !draftEligibleIdSet.has(registrationId));
+    }, [filteredGuests, draftEligibleIdSet]);
+
+    const hasUnsavedEligibilityChanges = useMemo(() => {
+        const saved = [...selectedPrizeEligibleIds].sort();
+        const draft = [...draftEligibleIds].sort();
+
+        if (saved.length !== draft.length) return true;
+
+        return saved.some((id, index) => id !== draft[index]);
+    }, [draftEligibleIds, selectedPrizeEligibleIds]);
+
     const prizePoolGuests = useMemo(() => {
         if (!selectedPrize) return [];
 
@@ -274,9 +350,9 @@ export default function LuckyDrawWheel({
 
     const eligibleGuests = useMemo(() => {
         return prizePoolGuests.filter(
-            (guest) => !winnerRegistrationIds.has(guest.id)
+            (guest) => !excludedWinnerRegistrationIds.has(guest.id)
         );
-    }, [prizePoolGuests, winnerRegistrationIds]);
+    }, [prizePoolGuests, excludedWinnerRegistrationIds]);
 
     const latestWinners = useMemo(() => {
         return [...winners].sort((a, b) => {
@@ -286,6 +362,28 @@ export default function LuckyDrawWheel({
             return bDate - aDate;
         });
     }, [winners]);
+
+    const filteredWinnerHistory = useMemo(() => {
+        const keyword = winnerHistorySearch.trim().toLowerCase();
+
+        if (!keyword) {
+            return latestWinners;
+        }
+
+        return latestWinners.filter((winner) => {
+            const searchableText = [
+                winner.winner_name,
+                winner.winner_email,
+                winner.prize_name,
+                winner.draw_round?.toString(),
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+
+            return searchableText.includes(keyword);
+        });
+    }, [latestWinners, winnerHistorySearch]);
 
     async function addPrize() {
         const cleanPrizeName = newPrizeName.trim();
@@ -308,6 +406,7 @@ export default function LuckyDrawWheel({
                 event_id: eventId,
                 prize_name: cleanPrizeName,
                 prize_order: nextOrder,
+                winner_count: 1,
                 eligible_registration_ids: [],
             })
             .select("*")
@@ -322,8 +421,54 @@ export default function LuckyDrawWheel({
 
         setPrizes((current) => [...current, createdPrize]);
         setSelectedPrizeId(createdPrize.id);
+        setWinnerCountDraft(1);
         setNewPrizeName("");
         setMessage("Prize created. You can now select eligible guests for it.");
+    }
+
+    async function savePrizeWinnerCount() {
+        if (!selectedPrize) {
+            setMessage("Select a prize first.");
+            return;
+        }
+
+        const nextCount = Math.min(
+            50,
+            Math.max(1, Math.floor(Number(winnerCountDraft) || 1))
+        );
+
+        setSavingWinnerCount(true);
+        setMessage("");
+
+        const { error } = await supabase
+            .from("lucky_draw_prizes")
+            .update({
+                winner_count: nextCount,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", selectedPrize.id)
+            .eq("event_id", eventId);
+
+        if (error) {
+            setMessage(error.message);
+            setSavingWinnerCount(false);
+            return;
+        }
+
+        setPrizes((current) =>
+            current.map((prize) =>
+                prize.id === selectedPrize.id
+                    ? { ...prize, winner_count: nextCount }
+                    : prize
+            )
+        );
+        setWinnerCountDraft(nextCount);
+        setSavingWinnerCount(false);
+        setMessage(
+            `${selectedPrize.prize_name} will draw ${nextCount} winner${
+                nextCount === 1 ? "" : "s"
+            } per draw.`
+        );
     }
 
     async function deletePrize(prizeId: string) {
@@ -353,66 +498,125 @@ export default function LuckyDrawWheel({
         setMessage("Prize deleted.");
     }
 
-    async function updatePrizeEligibleIds(prizeId: string, ids: string[]) {
-        const uniqueIds = Array.from(new Set(ids));
+    async function updatePrizeEligibleIds(
+        prizeId: string,
+        ids: string[]
+    ): Promise<boolean> {
+        if (savingEligibility) return false;
 
-        const { error } = await supabase
-            .from("lucky_draw_prizes")
-            .update({
-                eligible_registration_ids: uniqueIds,
-                updated_at: new Date().toISOString(),
-            })
-            .eq("id", prizeId);
-
-        if (error) {
-            setMessage(error.message);
-            return;
-        }
-
-        setPrizes((current) =>
-            current.map((prize) =>
-                prize.id === prizeId
-                    ? {
-                          ...prize,
-                          eligible_registration_ids: uniqueIds,
-                      }
-                    : prize
+        const uniqueIds = Array.from(
+            new Set(
+                ids
+                    .filter(
+                        (id): id is string =>
+                            typeof id === "string" && id.trim().length > 0
+                    )
+                    .map((id) => id.trim())
             )
         );
+
+        setSavingEligibility(true);
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${encodeURIComponent(
+                    eventId
+                )}/lucky-draw/prizes/${encodeURIComponent(
+                    prizeId
+                )}/eligible-guests`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        registrationIds: uniqueIds,
+                    }),
+                }
+            );
+
+            const responseText = await response.text();
+            let result: {
+                error?: string;
+                eligibleRegistrationIds?: string[];
+            } = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(
+                    `The eligibility API returned ${response.status} instead of JSON.`
+                );
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Unable to save selected guests."
+                );
+            }
+
+            const savedIds = Array.isArray(
+                result.eligibleRegistrationIds
+            )
+                ? result.eligibleRegistrationIds.map(String)
+                : uniqueIds;
+
+            setPrizes((current) =>
+                current.map((prize) =>
+                    prize.id === prizeId
+                        ? {
+                              ...prize,
+                              eligible_registration_ids: savedIds,
+                          }
+                        : prize
+                )
+            );
+
+            setDraftEligibleIds(savedIds);
+            return true;
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to save selected guests."
+            );
+            return false;
+        } finally {
+            setSavingEligibility(false);
+        }
     }
 
-    async function toggleGuestEligibility(registrationId: string) {
+    function toggleGuestEligibility(registrationId: string) {
         if (!selectedPrize) {
             setMessage("Select or create a prize first.");
             return;
         }
 
-        const currentIds = selectedPrizeEligibleIds;
-
-        const nextIds = currentIds.includes(registrationId)
-            ? currentIds.filter((id) => id !== registrationId)
-            : [...currentIds, registrationId];
-
-        await updatePrizeEligibleIds(selectedPrize.id, nextIds);
-    }
-
-    async function selectAllGuestsForPrize() {
-        if (!selectedPrize) {
-            setMessage("Select or create a prize first.");
-            return;
-        }
-
-        await updatePrizeEligibleIds(
-            selectedPrize.id,
-            guests.map((guest) => guest.id)
+        setDraftEligibleIds((current) =>
+            current.includes(registrationId)
+                ? current.filter((id) => id !== registrationId)
+                : [...current, registrationId]
         );
 
         setMessage(
-            `All checked-in guests are selected for ${selectedPrize.prize_name}.`
+            "Selection updated. Press Save Selected Guests to apply it to this prize."
         );
     }
 
-    async function selectFilteredGuestsForPrize() {
+    function selectAllGuestsForPrize() {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        setDraftEligibleIds(guests.map((guest) => guest.id));
+        setMessage(
+            `All ${guests.length} checked-in guests are selected. Press Save Selected Guests to apply this to ${selectedPrize.prize_name}.`
+        );
+    }
+
+    function selectFilteredGuestsForPrize() {
         if (!selectedPrize) {
             setMessage("Select or create a prize first.");
             return;
@@ -423,101 +627,399 @@ export default function LuckyDrawWheel({
             return;
         }
 
-        await updatePrizeEligibleIds(
-            selectedPrize.id,
-            filteredGuests.map((guest) => guest.id)
+        if (newFilteredGuestIds.length === 0) {
+            setMessage(
+                "Everyone matching this filter is already in your current selection."
+            );
+            return;
+        }
+
+        setDraftEligibleIds((current) =>
+            Array.from(new Set([...current, ...newFilteredGuestIds]))
         );
 
         setMessage(
-            `${filteredGuests.length} filtered guest${
-                filteredGuests.length === 1 ? "" : "s"
-            } selected for ${selectedPrize.prize_name}.`
+            `${newFilteredGuestIds.length} guest${
+                newFilteredGuestIds.length === 1 ? "" : "s"
+            } added to your current selection. Change the filter to add another group, then save.`
         );
     }
 
-    async function clearSelectedGuestsForPrize() {
+    function useFilteredGuestsOnlyForPrize() {
         if (!selectedPrize) {
             setMessage("Select or create a prize first.");
             return;
         }
 
-        await updatePrizeEligibleIds(selectedPrize.id, []);
+        if (filteredGuests.length === 0) {
+            setMessage("No guests match the current filter.");
+            return;
+        }
+
+        const filteredIds = filteredGuests.map((guest) => guest.id);
+
+        setDraftEligibleIds(Array.from(new Set(filteredIds)));
 
         setMessage(
-            `Eligibility restriction cleared. ${selectedPrize.prize_name} is now open to all checked-in guests.`
+            `${filteredIds.length} filtered guest${
+                filteredIds.length === 1 ? "" : "s"
+            } now make up the full selection for ${selectedPrize.prize_name}. Press Save Selected to apply it.`
         );
     }
 
-    async function saveWinner(winner: CheckedInGuest) {
+    function clearSelectedGuestsForPrize() {
         if (!selectedPrize) {
-            setMessage("Select a prize before spinning.");
+            setMessage("Select or create a prize first.");
             return;
         }
+
+        setDraftEligibleIds([]);
+        setMessage(
+            `No restricted guests are selected. Saving this will open ${selectedPrize.prize_name} to all checked-in guests.`
+        );
+    }
+
+    async function saveSelectedGuestsForPrize() {
+        if (!selectedPrize) {
+            setMessage("Select or create a prize first.");
+            return;
+        }
+
+        const saved = await updatePrizeEligibleIds(
+            selectedPrize.id,
+            draftEligibleIds
+        );
+
+        if (!saved) return;
+
+        if (draftEligibleIds.length === 0) {
+            setMessage(
+                `${selectedPrize.prize_name} is now open to all checked-in guests.`
+            );
+            return;
+        }
+
+        setMessage(
+            `${draftEligibleIds.length} guest${
+                draftEligibleIds.length === 1 ? "" : "s"
+            } saved for ${selectedPrize.prize_name}.`
+        );
+    }
+
+    async function saveWinners(
+        winningGuests: CheckedInGuest[],
+        drawRound: number
+    ) {
+        if (!selectedPrize || winningGuests.length === 0) {
+            return false;
+        }
+
+        const payload = winningGuests.map((winner) => ({
+            event_id: eventId,
+            registration_id: winner.id,
+            prize_id: selectedPrize.id,
+            winner_name: winner.full_name || "Unnamed Guest",
+            winner_email: winner.email || "",
+            prize_name: selectedPrize.prize_name,
+            draw_round: drawRound,
+            is_excluded: true,
+        }));
 
         const { data, error } = await supabase
             .from("lucky_draw_winners")
-            .insert({
-                event_id: eventId,
-                registration_id: winner.id,
-                prize_id: selectedPrize.id,
-                winner_name: winner.full_name || "Unnamed Guest",
-                winner_email: winner.email || "",
-                prize_name: selectedPrize.prize_name,
-                draw_round: latestWinners.length + 1,
-            })
-            .select("*")
-            .single();
+            .insert(payload)
+            .select("*");
 
         if (error) {
             setMessage(error.message);
-            return;
+            return false;
         }
 
-        setWinners((current) => [data as Winner, ...current]);
-        setSelectedWinner(winner);
+        const savedWinners = (data || []) as Winner[];
+
+        setWinners((current) => [...savedWinners, ...current]);
+        setSelectedWinners(winningGuests);
+
+        const winnerNames = winningGuests
+            .map((winner) => winner.full_name || "Guest")
+            .join(", ");
 
         setMessage(
-            `${winner.full_name || "Guest"} won ${selectedPrize.prize_name}.`
+            `${winnerNames} won ${selectedPrize.prize_name}.`
         );
+
+        return true;
     }
 
-    async function spinWheel() {
+    async function startLiveDraw() {
         if (spinning) return;
 
         setMessage("");
-        setSelectedWinner(null);
+        setSelectedWinners([]);
 
         if (!selectedPrize) {
             setMessage("Create or select a prize first.");
             return;
         }
 
+        const winnerCount = Math.min(
+            50,
+            Math.max(
+                1,
+                Math.floor(
+                    Number(selectedPrize.winner_count || winnerCountDraft || 1)
+                )
+            )
+        );
+
         if (eligibleGuests.length === 0) {
             setMessage(
-                "No eligible checked-in guests available for this prize. Check the selected group or previous winners."
+                "No eligible checked-in guests are available for this prize. Add previous winners back or change the eligible group."
             );
             return;
         }
 
-        const winnerIndex = Math.floor(Math.random() * eligibleGuests.length);
-        const winner = eligibleGuests[winnerIndex];
+        if (eligibleGuests.length < winnerCount) {
+            setMessage(
+                `This prize needs ${winnerCount} winner${
+                    winnerCount === 1 ? "" : "s"
+                }, but only ${eligibleGuests.length} eligible guest${
+                    eligibleGuests.length === 1 ? " is" : "s are"
+                } available.`
+            );
+            return;
+        }
 
-        const segmentAngle = 360 / eligibleGuests.length;
-        const winnerCenterAngle = winnerIndex * segmentAngle + segmentAngle / 2;
+        const winningGuests = pickRandomGuests(eligibleGuests, winnerCount);
+        const drawRound =
+            winners.reduce(
+                (highest, winner) =>
+                    Math.max(highest, Number(winner.draw_round || 0)),
+                0
+            ) + 1;
 
-        const targetAngle = 360 - winnerCenterAngle;
-        const currentRemainder = ((rotation % 360) + 360) % 360;
-        const adjustment = (targetAngle - currentRemainder + 360) % 360;
-        const fullSpins = 6 * 360;
-        const newRotation = rotation + fullSpins + adjustment;
+        const durationMs = 5200;
+        const guestNames = eligibleGuests.map(
+            (guest) => guest.full_name || "Unnamed Guest"
+        );
+        const winnerNames = winningGuests.map(
+            (guest) => guest.full_name || "Unnamed Guest"
+        );
 
+        if (shuffleIntervalRef.current !== null) {
+            window.clearInterval(shuffleIntervalRef.current);
+        }
+
+        if (drawTimeoutRef.current !== null) {
+            window.clearTimeout(drawTimeoutRef.current);
+        }
+
+        setShufflePreview(pickRandomNames(guestNames, winnerCount));
         setSpinning(true);
-        setRotation(newRotation);
 
-        window.setTimeout(async () => {
-            await saveWinner(winner);
+        // Give Supabase Realtime a brief moment to finish subscribing.
+        // This prevents the audience display from missing the first draw.
+        for (
+            let attempt = 0;
+            attempt < 20 && !liveDrawChannelReadyRef.current;
+            attempt += 1
+        ) {
+            await new Promise((resolve) => window.setTimeout(resolve, 100));
+        }
+
+        const broadcastResult = await liveDrawChannelRef.current?.send({
+            type: "broadcast",
+            event: "draw-start",
+            payload: {
+                prizeId: selectedPrize.id,
+                prizeName: selectedPrize.prize_name,
+                winnerCount,
+                drawRound,
+                durationMs,
+                guestNames,
+                winnerNames,
+            },
+        });
+
+        if (
+            broadcastResult &&
+            broadcastResult !== "ok"
+        ) {
+            setMessage(
+                "The draw started, but the audience display did not confirm the live connection. Keep the audience page open and refresh it before the next draw."
+            );
+        }
+
+        shuffleIntervalRef.current = window.setInterval(() => {
+            setShufflePreview(pickRandomNames(guestNames, winnerCount));
+        }, 90);
+
+        drawTimeoutRef.current = window.setTimeout(async () => {
+            if (shuffleIntervalRef.current !== null) {
+                window.clearInterval(shuffleIntervalRef.current);
+                shuffleIntervalRef.current = null;
+            }
+
+            setShufflePreview(
+                winningGuests.map(
+                    (winner) => winner.full_name || "Unnamed Guest"
+                )
+            );
+
+            await saveWinners(winningGuests, drawRound);
             setSpinning(false);
-        }, 5200);
+            drawTimeoutRef.current = null;
+        }, durationMs);
+    }
+
+    async function addWinnerBack(winner: Winner) {
+        if (
+            !winner.registration_id ||
+            !excludedWinnerRegistrationIds.has(winner.registration_id)
+        ) {
+            return;
+        }
+
+        setRestoringRegistrationId(winner.registration_id);
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${encodeURIComponent(
+                    eventId
+                )}/lucky-draw/winners/add-back`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        registrationId: winner.registration_id,
+                    }),
+                }
+            );
+
+            const responseText = await response.text();
+            let result: {
+                error?: string;
+                updatedCount?: number;
+            } = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(
+                    `The add-back API returned ${response.status} instead of JSON.`
+                );
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Unable to add this winner back."
+                );
+            }
+
+            // Update every historical record for this registration. A guest
+            // may have won more than once, so changing only one history row
+            // would leave another excluded row blocking them from the draw.
+            setWinners((current) =>
+                current.map((item) =>
+                    item.registration_id === winner.registration_id
+                        ? { ...item, is_excluded: false }
+                        : item
+                )
+            );
+
+            setMessage(
+                `${winner.winner_name || "Guest"} has been added back to the draw. All winner history remains saved.`
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to add this winner back."
+            );
+        } finally {
+            setRestoringRegistrationId(null);
+        }
+    }
+
+    async function addAllWinnersBack() {
+        const activeRegistrationIds = Array.from(
+            excludedWinnerRegistrationIds
+        );
+
+        if (activeRegistrationIds.length === 0) {
+            setMessage("All previous winners are already back in the draw.");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Add ${activeRegistrationIds.length} previous winner${
+                activeRegistrationIds.length === 1 ? "" : "s"
+            } back to the draw? Their full winner history will remain.`
+        );
+
+        if (!confirmed) return;
+
+        setAddingAllWinnersBack(true);
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${encodeURIComponent(
+                    eventId
+                )}/lucky-draw/winners/add-back`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        addAll: true,
+                    }),
+                }
+            );
+
+            const responseText = await response.text();
+            let result: {
+                error?: string;
+                updatedCount?: number;
+            } = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(
+                    `The add-back API returned ${response.status} instead of JSON.`
+                );
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Unable to add all winners back."
+                );
+            }
+
+            setWinners((current) =>
+                current.map((winner) => ({
+                    ...winner,
+                    is_excluded: false,
+                }))
+            );
+
+            setMessage(
+                "All previous winners have been added back to the draw. Their history remains saved."
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to add all winners back."
+            );
+        } finally {
+            setAddingAllWinnersBack(false);
+        }
     }
 
     async function clearWinners() {
@@ -538,7 +1040,8 @@ export default function LuckyDrawWheel({
         }
 
         setWinners([]);
-        setSelectedWinner(null);
+        setSelectedWinners([]);
+        setShufflePreview([]);
         setMessage("Lucky draw history cleared.");
     }
 
@@ -549,11 +1052,11 @@ export default function LuckyDrawWheel({
                     <div>
                         <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                             <Sparkles size={16} />
-                            Wheel of Fortune
+                            Live Name Shuffle
                         </div>
 
                         <h2 className="mt-4 text-2xl font-black text-slate-950">
-                            Spin for Selected Prize
+                            Draw Winners Live
                         </h2>
 
                         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
@@ -561,7 +1064,7 @@ export default function LuckyDrawWheel({
                         </p>
 
                         <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
-                            The wheel only includes checked-in guests who are eligible for the selected prize.
+                            Eligible guest names shuffle live on the admin and audience screens before all selected winners are revealed together.
                         </p>
                     </div>
 
@@ -580,7 +1083,8 @@ export default function LuckyDrawWheel({
                             value={selectedPrizeId}
                             onChange={(event) => {
                                 setSelectedPrizeId(event.target.value);
-                                setSelectedWinner(null);
+                                setSelectedWinners([]);
+                                setShufflePreview([]);
                                 setMessage("");
                             }}
                             className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
@@ -604,6 +1108,54 @@ export default function LuckyDrawWheel({
                             </button>
                         )}
                     </div>
+
+                    {selectedPrize && (
+                        <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                <div className="min-w-0 flex-1">
+                                    <label
+                                        htmlFor="winner-count"
+                                        className="block text-sm font-black text-slate-700"
+                                    >
+                                        Number of winners for this prize
+                                    </label>
+                                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                                        One live draw will reveal this many different names together.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <input
+                                        id="winner-count"
+                                        type="number"
+                                        min={1}
+                                        max={50}
+                                        value={winnerCountDraft}
+                                        onChange={(event) =>
+                                            setWinnerCountDraft(
+                                                Math.min(
+                                                    50,
+                                                    Math.max(
+                                                        1,
+                                                        Number(event.target.value) || 1
+                                                    )
+                                                )
+                                            )
+                                        }
+                                        className="h-12 w-24 rounded-2xl border border-slate-200 bg-white px-4 text-center text-base font-black outline-none transition focus:border-[#4F46E5]"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={savePrizeWinnerCount}
+                                        disabled={savingWinnerCount}
+                                        className="h-12 rounded-2xl bg-[#4F46E5] px-5 text-sm font-black text-white transition hover:bg-[#4338CA] disabled:opacity-50"
+                                    >
+                                        {savingWinnerCount ? "Saving..." : "Save Qty"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
                         <input
@@ -648,35 +1200,127 @@ export default function LuckyDrawWheel({
                 </div>
 
                 <div className="mt-8 flex flex-col items-center">
-                    <div className="relative flex h-[360px] w-[360px] items-center justify-center sm:h-[480px] sm:w-[480px]">
-                        <div className="absolute -top-1 z-20 h-0 w-0 border-l-[18px] border-r-[18px] border-t-[34px] border-l-transparent border-r-transparent border-t-slate-950" />
+                    <div className="w-full overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-950 p-5 shadow-2xl sm:p-7">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-black uppercase tracking-[0.18em] text-white">
+                                    <Sparkles
+                                        size={14}
+                                        className={spinning ? "animate-pulse" : ""}
+                                    />
+                                    {spinning ? "Live Draw Running" : "Live Draw Machine"}
+                                </div>
 
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#4F46E5]/20 to-[#EC4899]/20 blur-2xl" />
+                                <h3 className="mt-4 text-2xl font-black text-white sm:text-3xl">
+                                    {selectedPrize?.prize_name || "Select a prize"}
+                                </h3>
 
-                        <div className="relative flex h-full w-full items-center justify-center rounded-full border-[10px] border-white bg-white shadow-2xl">
-                            <WheelSvg
-                                guests={eligibleGuests}
-                                rotation={rotation}
-                                spinning={spinning}
-                            />
-
-                            <div className="absolute flex h-24 w-24 items-center justify-center rounded-full border-8 border-white bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-xl sm:h-32 sm:w-32">
-                                <Gift size={36} />
+                                <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
+                                    {selectedPrize
+                                        ? `${Math.max(
+                                              1,
+                                              Number(
+                                                  selectedPrize.winner_count || 1
+                                              )
+                                          )} winner${
+                                              Math.max(
+                                                  1,
+                                                  Number(
+                                                      selectedPrize.winner_count || 1
+                                                  )
+                                              ) === 1
+                                                  ? ""
+                                                  : "s"
+                                          } will be revealed together.`
+                                        : "Choose a prize before starting the live draw."}
+                                </p>
                             </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-black text-white/80">
+                                {eligibleGuests.length} eligible
+                            </div>
+                        </div>
+
+                        <div
+                            className={`mt-6 grid gap-3 ${
+                                Math.max(
+                                    1,
+                                    Number(selectedPrize?.winner_count || 1)
+                                ) === 1
+                                    ? "grid-cols-1"
+                                    : "grid-cols-1 sm:grid-cols-2"
+                            }`}
+                        >
+                            {Array.from({
+                                length: Math.max(
+                                    1,
+                                    Number(selectedPrize?.winner_count || 1)
+                                ),
+                            }).map((_, index) => {
+                                const previewName =
+                                    shufflePreview[index] ||
+                                    (spinning ? "Selecting..." : "Ready");
+
+                                return (
+                                    <div
+                                        key={index}
+                                        className={`relative overflow-hidden rounded-[1.5rem] border p-5 text-center transition ${
+                                            spinning
+                                                ? "border-[#EC4899]/50 bg-gradient-to-br from-[#4F46E5]/35 to-[#EC4899]/25 shadow-[0_0_35px_rgba(236,72,153,0.18)]"
+                                                : "border-white/10 bg-white/10"
+                                        }`}
+                                    >
+                                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_60%)]" />
+
+                                        <div className="relative z-10">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
+                                                Winner Slot {index + 1}
+                                            </p>
+                                            <p
+                                                className={`mt-3 min-h-10 break-words text-xl font-black text-white sm:text-2xl ${
+                                                    spinning
+                                                        ? "animate-pulse"
+                                                        : ""
+                                                }`}
+                                            >
+                                                {previewName}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
                     <button
                         type="button"
-                        onClick={spinWheel}
-                        disabled={spinning || !selectedPrize || eligibleGuests.length === 0}
+                        onClick={startLiveDraw}
+                        disabled={
+                            spinning ||
+                            !selectedPrize ||
+                            eligibleGuests.length === 0
+                        }
                         className="mt-8 inline-flex h-14 w-full max-w-md items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-8 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        <RotateCw
+                        <Sparkles
                             size={18}
-                            className={spinning ? "animate-spin" : ""}
+                            className={spinning ? "animate-pulse" : ""}
                         />
-                        {spinning ? "Spinning..." : "Spin Selected Prize"}
+                        {spinning
+                            ? "Drawing Winners Live..."
+                            : selectedPrize
+                              ? `Start Live Draw for ${Math.max(
+                                    1,
+                                    Number(selectedPrize.winner_count || 1)
+                                )} Winner${
+                                    Math.max(
+                                        1,
+                                        Number(selectedPrize.winner_count || 1)
+                                    ) === 1
+                                        ? ""
+                                        : "s"
+                                }`
+                              : "Select a Prize"}
                     </button>
 
                     {message && (
@@ -685,27 +1329,48 @@ export default function LuckyDrawWheel({
                         </div>
                     )}
 
-                    {selectedWinner && selectedPrize && (
-                        <div className="mt-6 w-full rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6 text-center">
-                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-emerald-600 shadow-sm">
-                                <Trophy size={32} />
+                    {selectedWinners.length > 0 && selectedPrize && (
+                        <div className="mt-6 w-full rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6">
+                            <div className="text-center">
+                                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-emerald-600 shadow-sm">
+                                    <Trophy size={32} />
+                                </div>
+
+                                <p className="mt-4 text-sm font-black uppercase tracking-[0.25em] text-emerald-700">
+                                    {selectedWinners.length === 1
+                                        ? "Winner"
+                                        : `${selectedWinners.length} Winners`}
+                                </p>
+
+                                <p className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700">
+                                    {selectedPrize.prize_name}
+                                </p>
                             </div>
 
-                            <p className="mt-4 text-sm font-black uppercase tracking-[0.25em] text-emerald-700">
-                                Winner
-                            </p>
-
-                            <h3 className="mt-2 text-3xl font-black text-emerald-900">
-                                {selectedWinner.full_name || "Unnamed Guest"}
-                            </h3>
-
-                            <p className="mt-2 font-semibold text-emerald-700">
-                                {selectedWinner.email || "No email"}
-                            </p>
-
-                            <p className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700">
-                                {selectedPrize.prize_name}
-                            </p>
+                            <div
+                                className={`mt-5 grid gap-3 ${
+                                    selectedWinners.length === 1
+                                        ? "grid-cols-1"
+                                        : "sm:grid-cols-2"
+                                }`}
+                            >
+                                {selectedWinners.map((winner, index) => (
+                                    <div
+                                        key={winner.id}
+                                        className="rounded-2xl bg-white p-4 text-center shadow-sm"
+                                    >
+                                        <p className="text-xs font-black uppercase tracking-wide text-emerald-600">
+                                            Winner {index + 1}
+                                        </p>
+                                        <h3 className="mt-2 text-xl font-black text-emerald-900">
+                                            {winner.full_name || "Unnamed Guest"}
+                                        </h3>
+                                        <p className="mt-1 break-all text-sm font-semibold text-emerald-700">
+                                            {winner.email || "No email"}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -713,57 +1378,184 @@ export default function LuckyDrawWheel({
 
             <section className="space-y-8">
                 <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                                <Users size={16} />
-                                Prize Eligibility
-                            </div>
-
-                            <h2 className="mt-4 text-2xl font-black text-slate-950">
-                                Select Eligible Guests
-                            </h2>
-
-                            <p className="mt-2 text-sm leading-6 text-slate-500">
-                                Filter guests by useful registration answers, then select all matching guests for the current prize.
-                            </p>
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                            <Users size={16} />
+                            Prize Eligibility
                         </div>
 
-                        <span className="rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                            {selectedPrizeEligibleIds.length || "All"}
-                        </span>
+                        <h2 className="mt-4 text-2xl font-black text-slate-950">
+                            Select Guests for Each Prize
+                        </h2>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                            Choose the prize you are configuring, select guests
+                            across one or more filters, then save the complete
+                            selection for that prize.
+                        </p>
                     </div>
 
-                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    <div className="mt-5">
+                        <label
+                            htmlFor="eligibility-prize"
+                            className="mb-2 block text-sm font-black text-slate-700"
+                        >
+                            Prize to configure
+                        </label>
+
+                        <select
+                            id="eligibility-prize"
+                            value={selectedPrizeId}
+                            onChange={(event) => {
+                                setSelectedPrizeId(event.target.value);
+                                setMessage("");
+                            }}
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black outline-none transition focus:border-[#4F46E5]"
+                        >
+                            <option value="">Select prize</option>
+
+                            {prizes.map((prize) => {
+                                const count = Array.isArray(
+                                    prize.eligible_registration_ids
+                                )
+                                    ? prize.eligible_registration_ids.length
+                                    : 0;
+
+                                return (
+                                    <option key={prize.id} value={prize.id}>
+                                        {prize.prize_order}. {prize.prize_name} —{" "}
+                                        {count === 0
+                                            ? "All guests"
+                                            : `${count} saved`}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    </div>
+
+                    {selectedPrize && (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-4">
+                                <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                                    Saved for prize
+                                </p>
+                                <p className="mt-2 text-2xl font-black text-[#4F46E5]">
+                                    {selectedPrizeEligibleIds.length}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                    {selectedPrizeEligibleIds.length === 0
+                                        ? "All guests are eligible"
+                                        : "Restricted guest list"}
+                                </p>
+                            </div>
+
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                                <p className="text-[10px] font-black uppercase tracking-wide text-emerald-600">
+                                    Selected now
+                                </p>
+                                <p className="mt-2 text-2xl font-black text-emerald-700">
+                                    {draftEligibleIds.length}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-emerald-700/70">
+                                    {hasUnsavedEligibilityChanges
+                                        ? "Not saved yet"
+                                        : "Matches saved list"}
+                                </p>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                                    Current filter
+                                </p>
+                                <p className="mt-2 text-2xl font-black text-slate-950">
+                                    {filteredGuests.length}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                    {newFilteredGuestIds.length} new to add
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
                         <button
                             type="button"
                             onClick={selectAllGuestsForPrize}
-                            disabled={!selectedPrize || guests.length === 0}
+                            disabled={
+                                savingEligibility ||
+                                !selectedPrize ||
+                                guests.length === 0
+                            }
                             className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                             <Check size={16} />
-                            Select All
+                            Select All ({guests.length})
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={useFilteredGuestsOnlyForPrize}
+                            disabled={
+                                savingEligibility ||
+                                !selectedPrize ||
+                                filteredGuests.length === 0
+                            }
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#4F46E5] px-4 text-sm font-black text-white transition hover:bg-[#4338CA] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <Filter size={16} />
+                            Use Filter Only ({filteredGuests.length})
                         </button>
 
                         <button
                             type="button"
                             onClick={selectFilteredGuestsForPrize}
-                            disabled={!selectedPrize || filteredGuests.length === 0}
+                            disabled={
+                                savingEligibility ||
+                                !selectedPrize ||
+                                filteredGuests.length === 0 ||
+                                newFilteredGuestIds.length === 0
+                            }
                             className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-4 text-sm font-black text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            <Filter size={16} />
-                            Select Filtered
+                            <Plus size={16} />
+                            Add Filtered ({newFilteredGuestIds.length})
                         </button>
 
                         <button
                             type="button"
                             onClick={clearSelectedGuestsForPrize}
-                            disabled={!selectedPrize}
+                            disabled={savingEligibility || !selectedPrize}
                             className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 text-sm font-black text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            Clear Restriction
+                            Open to All Guests
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => void saveSelectedGuestsForPrize()}
+                            disabled={savingEligibility || !selectedPrize}
+                            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:col-span-2"
+                        >
+                            <CheckCircle2
+                                size={17}
+                                className={
+                                    savingEligibility ? "animate-pulse" : ""
+                                }
+                            />
+                            {savingEligibility
+                                ? "Saving..."
+                                : draftEligibleIds.length === 0
+                                  ? "Save: Open to All Guests"
+                                  : `Save Selected (${draftEligibleIds.length})`}
                         </button>
                     </div>
+
+                    {selectedPrize && !hasUnsavedEligibilityChanges && (
+                        <p className="mt-3 text-center text-xs font-bold text-slate-400">
+                            The current selection already matches the saved list.
+                            You can still press Save Selected again.
+                        </p>
+                    )}
 
                     <div className="relative mt-5">
                         <Search
@@ -856,11 +1648,9 @@ export default function LuckyDrawWheel({
                         ) : filteredGuests.length > 0 ? (
                             filteredGuests.map((guest) => {
                                 const selected =
-                                    selectedPrizeEligibleIds.length === 0
-                                        ? false
-                                        : selectedPrizeEligibleIds.includes(guest.id);
+                                    draftEligibleIdSet.has(guest.id);
 
-                                const alreadyWon = winnerRegistrationIds.has(guest.id);
+                                const alreadyWon = excludedWinnerRegistrationIds.has(guest.id);
 
                                 const selectedFieldAnswer = fieldFilterKey
                                     ? displayAnswerValue(
@@ -872,8 +1662,11 @@ export default function LuckyDrawWheel({
                                     <button
                                         key={guest.id}
                                         type="button"
-                                        onClick={() => toggleGuestEligibility(guest.id)}
-                                        className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition ${
+                                        onClick={() =>
+                                            toggleGuestEligibility(guest.id)
+                                        }
+                                        disabled={savingEligibility}
+                                        className={`flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition disabled:cursor-wait disabled:opacity-60 ${
                                             selected
                                                 ? "border-[#4F46E5] bg-[#F7F5FF]"
                                                 : "border-slate-100 bg-slate-50 hover:bg-[#F7F5FF]"
@@ -901,6 +1694,18 @@ export default function LuckyDrawWheel({
                                                     Already won before
                                                 </p>
                                             )}
+
+                                            <p
+                                                className={`mt-2 text-xs font-black ${
+                                                    selected
+                                                        ? "text-emerald-600"
+                                                        : "text-slate-400"
+                                                }`}
+                                            >
+                                                {selected
+                                                    ? "Selected — save to apply"
+                                                    : "Not selected"}
+                                            </p>
                                         </div>
 
                                         <div
@@ -934,52 +1739,170 @@ export default function LuckyDrawWheel({
                             </h2>
 
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                                Winners are saved so they are excluded from future draws.
+                                Every winner remains listed here. Their name is removed from future draws after winning, and you can add them back without deleting their history.
                             </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="rounded-full bg-[#F7F5FF] px-3 py-1 text-xs font-black text-[#4F46E5]">
+                                    {latestWinners.length} total winner record
+                                    {latestWinners.length === 1 ? "" : "s"}
+                                </span>
+
+                                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
+                                    {excludedWinnerRegistrationIds.size} currently removed
+                                </span>
+                            </div>
                         </div>
 
                         {winners.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={clearWinners}
-                                className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 transition hover:bg-red-100"
-                            >
-                                Clear
-                            </button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={addAllWinnersBack}
+                                    disabled={
+                                        addingAllWinnersBack ||
+                                        excludedWinnerRegistrationIds.size === 0
+                                    }
+                                    className="rounded-2xl bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    {addingAllWinnersBack
+                                        ? "Adding Back..."
+                                        : `Add All Back (${excludedWinnerRegistrationIds.size})`}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={clearWinners}
+                                    className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 transition hover:bg-red-100"
+                                >
+                                    Clear History
+                                </button>
+                            </div>
                         )}
                     </div>
 
-                    <div className="mt-6 max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                        {latestWinners.length > 0 ? (
-                            latestWinners.map((winner, index) => (
+                    <div className="relative mt-5">
+                        <Search
+                            size={17}
+                            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                            value={winnerHistorySearch}
+                            onChange={(event) =>
+                                setWinnerHistorySearch(event.target.value)
+                            }
+                            placeholder="Search winner name, email, prize or draw round..."
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                        />
+                    </div>
+
+                    {winnerHistorySearch.trim() && (
+                        <p className="mt-3 text-xs font-bold text-slate-500">
+                            Showing{" "}
+                            <span className="font-black text-[#4F46E5]">
+                                {filteredWinnerHistory.length}
+                            </span>{" "}
+                            of {latestWinners.length} winner record
+                            {latestWinners.length === 1 ? "" : "s"}.
+                        </p>
+                    )}
+
+                    <div className="mt-4 space-y-3">
+                        {filteredWinnerHistory.length > 0 ? (
+                            filteredWinnerHistory.map((winner) => { 
+                                const originalIndex = latestWinners.findIndex(
+                                    (item) => item.id === winner.id
+                                );
+                                const isStillExcluded =
+                                    excludedWinnerRegistrationIds.has(
+                                        winner.registration_id
+                                    );
+                                const isRestoring =
+                                    restoringRegistrationId ===
+                                    winner.registration_id;
+
+                                return (
                                 <div
                                     key={winner.id}
                                     className="rounded-2xl border border-slate-100 bg-slate-50 p-4"
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F7F5FF] text-sm font-black text-[#4F46E5]">
-                                            #{latestWinners.length - index}
+                                            #{latestWinners.length - originalIndex}
                                         </div>
 
-                                        <div>
+                                        <div className="min-w-0 flex-1">
                                             <p className="font-black text-slate-950">
                                                 {winner.winner_name || "Unnamed Guest"}
                                             </p>
 
-                                            <p className="text-sm font-semibold text-slate-500">
+                                            <p className="break-all text-sm font-semibold text-slate-500">
                                                 {winner.winner_email || "No email"}
                                             </p>
 
-                                            <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
-                                                <Gift size={13} />
-                                                {winner.prize_name || "Prize"}
+                                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                <p className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">
+                                                    <Gift size={13} />
+                                                    {winner.prize_name || "Prize"}
+                                                </p>
+
+                                                {isStillExcluded ? (
+                                                    <>
+                                                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
+                                                            Removed from draw
+                                                        </span>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                void addWinnerBack(
+                                                                    winner
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                isRestoring ||
+                                                                addingAllWinnersBack
+                                                            }
+                                                            className="inline-flex items-center gap-1 rounded-full bg-[#EEF2FF] px-3 py-1 text-xs font-black text-[#4F46E5] transition hover:bg-indigo-100 disabled:cursor-wait disabled:opacity-50"
+                                                        >
+                                                            <UserPlus
+                                                                size={13}
+                                                                className={
+                                                                    isRestoring
+                                                                        ? "animate-pulse"
+                                                                        : ""
+                                                                }
+                                                            />
+                                                            {isRestoring
+                                                                ? "Adding Back..."
+                                                                : "Add Back to Draw"}
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+                                                        Back in draw
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <p className="mt-2 text-xs font-bold text-slate-400">
+                                                Draw round {winner.draw_round || "-"}
+                                                {winner.created_at
+                                                    ? ` • ${new Date(
+                                                          winner.created_at
+                                                      ).toLocaleString(
+                                                          "en-SG"
+                                                      )}`
+                                                    : ""}
                                             </p>
                                         </div>
                                     </div>
                                 </div>
-                            ))
-                        ) : (
+                                );
+                            })
+                        ) : latestWinners.length === 0 ? (
                             <EmptyBox text="No winners drawn yet." />
+                        ) : (
+                            <EmptyBox text="No winner history matches your search." />
                         )}
                     </div>
                 </div>
@@ -988,158 +1911,41 @@ export default function LuckyDrawWheel({
     );
 }
 
-function WheelSvg({
-    guests,
-    rotation,
-    spinning,
-}: {
-    guests: CheckedInGuest[];
-    rotation: number;
-    spinning: boolean;
-}) {
-    const size = 440;
-    const radius = 210;
-    const center = 220;
+function pickRandomGuests(
+    guests: CheckedInGuest[],
+    count: number
+): CheckedInGuest[] {
+    const shuffled = [...guests];
 
-    if (guests.length === 0) {
-        return (
-            <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-100 text-center">
-                <div>
-                    <Users className="mx-auto text-slate-400" size={42} />
-                    <p className="mt-3 max-w-[220px] text-sm font-black text-slate-500">
-                        No eligible guests
-                    </p>
-                </div>
-            </div>
-        );
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[randomIndex]] = [
+            shuffled[randomIndex],
+            shuffled[index],
+        ];
     }
 
-    return (
-        <svg
-            width="100%"
-            height="100%"
-            viewBox={`0 0 ${size} ${size}`}
-            className="rounded-full"
-            style={{
-                transform: `rotate(${rotation}deg)`,
-                transition: spinning
-                    ? "transform 5.2s cubic-bezier(0.12, 0.75, 0.1, 1)"
-                    : "none",
-            }}
-        >
-            {guests.length === 1 ? (
-                <>
-                    <circle cx={center} cy={center} r={radius} fill={wheelColors[0]} />
-                    <WheelLabel
-                        x={center}
-                        y={center - 135}
-                        angle={0}
-                        name={guests[0].full_name || "Guest"}
-                    />
-                </>
-            ) : (
-                guests.map((guest, index) => {
-                    const segmentAngle = 360 / guests.length;
-                    const startAngle = index * segmentAngle;
-                    const endAngle = startAngle + segmentAngle;
-                    const labelAngle = startAngle + segmentAngle / 2;
-                    const labelPoint = polarToCartesian(
-                        center,
-                        center,
-                        radius * 0.63,
-                        labelAngle
-                    );
-
-                    return (
-                        <g key={guest.id}>
-                            <path
-                                d={describeSegment(
-                                    center,
-                                    center,
-                                    radius,
-                                    startAngle,
-                                    endAngle
-                                )}
-                                fill={wheelColors[index % wheelColors.length]}
-                                stroke="white"
-                                strokeWidth="3"
-                            />
-
-                            <WheelLabel
-                                x={labelPoint.x}
-                                y={labelPoint.y}
-                                angle={labelAngle}
-                                name={guest.full_name || "Guest"}
-                            />
-                        </g>
-                    );
-                })
-            )}
-        </svg>
-    );
+    return shuffled.slice(0, count);
 }
 
-function WheelLabel({
-    x,
-    y,
-    angle,
-    name,
-}: {
-    x: number;
-    y: number;
-    angle: number;
-    name: string;
-}) {
-    const displayName = name.length > 16 ? `${name.slice(0, 16)}...` : name;
-    const shouldFlip = angle > 90 && angle < 270;
+function pickRandomNames(names: string[], count: number): string[] {
+    if (names.length === 0) {
+        return Array.from({ length: count }, () => "Waiting...");
+    }
 
-    return (
-        <text
-            x={x}
-            y={y}
-            fill="white"
-            fontSize="13"
-            fontWeight="900"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            transform={`rotate(${shouldFlip ? angle + 180 : angle}, ${x}, ${y})`}
-        >
-            {displayName}
-        </text>
-    );
-}
+    const shuffled = [...names];
 
-function polarToCartesian(
-    centerX: number,
-    centerY: number,
-    radius: number,
-    angleInDegrees: number
-) {
-    const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[randomIndex]] = [
+            shuffled[randomIndex],
+            shuffled[index],
+        ];
+    }
 
-    return {
-        x: centerX + radius * Math.cos(angleInRadians),
-        y: centerY + radius * Math.sin(angleInRadians),
-    };
-}
-
-function describeSegment(
-    x: number,
-    y: number,
-    radius: number,
-    startAngle: number,
-    endAngle: number
-) {
-    const start = polarToCartesian(x, y, radius, endAngle);
-    const end = polarToCartesian(x, y, radius, startAngle);
-    const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-
-    return [
-        `M ${x} ${y}`,
-        `L ${start.x} ${start.y}`,
-        `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`,
-        "Z",
-    ].join(" ");
+    return Array.from({ length: count }, (_, index) => {
+        return shuffled[index % shuffled.length] || "Selecting...";
+    });
 }
 
 function EmptyBox({ text }: { text: string }) {
