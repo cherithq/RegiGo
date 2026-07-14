@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
     CheckCircle2,
     CirclePlus,
@@ -40,6 +41,45 @@ type Guest = {
     [key: string]: any;
 };
 
+type ImageChoiceSubField = {
+    id?: string;
+    label?: string;
+    value?: string;
+};
+
+type ImageChoice = {
+    id?: string;
+    label?: string;
+    description?: string;
+    image_url?: string;
+    sub_fields?: ImageChoiceSubField[];
+};
+
+type FieldOptions = {
+    placeholder?: string;
+    help_text?: string;
+    choices?: string[];
+    image_choices?: ImageChoice[];
+    choice_images?: Record<string, string>;
+    choice_descriptions?: Record<string, string>;
+    choice_sub_fields?: Record<string, ImageChoiceSubField[]>;
+    country_codes?: string[];
+    default_country_code?: string;
+    validation?: {
+        min_length?: string | number;
+        max_length?: string | number;
+    };
+    [key: string]: unknown;
+};
+
+type AnswerValue =
+    | string
+    | string[]
+    | number
+    | boolean
+    | null
+    | Record<string, unknown>;
+
 type RegistrationField = {
     id: string;
     label?: string;
@@ -49,12 +89,14 @@ type RegistrationField = {
     key?: string;
     field_key?: string;
     type?: string;
+    field_type?: string;
     input_type?: string;
     sort_order?: number;
-    options?: any;
+    options?: unknown;
+    field_options?: unknown;
     required?: boolean;
     is_required?: boolean;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 type CheckInFilter = "all" | "checked_in" | "not_checked_in";
@@ -76,133 +118,300 @@ function normalizeKey(value: unknown) {
 
 function fieldLabel(field: RegistrationField) {
     return (
-        field.label ||
         field.field_label ||
+        field.label ||
         field.name ||
         field.field_name ||
-        field.key ||
         field.field_key ||
+        field.key ||
         "Field"
     );
 }
 
 function fieldKey(field: RegistrationField) {
     return (
-        field.key ||
         field.field_key ||
+        field.key ||
         field.name ||
         field.field_name ||
-        field.label ||
         field.field_label ||
+        field.label ||
         field.id
     );
 }
 
 function fieldType(field: RegistrationField) {
-    return String(field.type || field.input_type || "text").toLowerCase();
+    return String(
+        field.field_type ||
+            field.type ||
+            field.input_type ||
+            "text"
+    ).toLowerCase();
 }
 
 function isRequired(field: RegistrationField) {
-    return Boolean(field.required || field.is_required);
+    return Boolean(field.is_required ?? field.required);
 }
 
-function parseOptions(options: any): string[] {
-    if (!options) return [];
+function parseOptionObject(value: unknown): FieldOptions {
+    if (!value) return {};
 
-    if (typeof options === "string") {
+    if (Array.isArray(value)) {
+        return {
+            choices: normaliseChoices(value),
+        };
+    }
+
+    if (typeof value === "object") {
+        return value as FieldOptions;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+
+        if (!trimmed) return {};
+
         try {
-            const parsed = JSON.parse(options);
-            return parseOptions(parsed);
+            const parsed = JSON.parse(trimmed);
+
+            if (Array.isArray(parsed)) {
+                return {
+                    choices: normaliseChoices(parsed),
+                };
+            }
+
+            if (
+                parsed &&
+                typeof parsed === "object"
+            ) {
+                return parsed as FieldOptions;
+            }
         } catch {
-            return options
-                .split("\n")
-                .flatMap((item) => item.split(","))
-                .map((item) => item.trim())
-                .filter(Boolean);
+            return {
+                choices: normaliseChoices(trimmed),
+            };
         }
     }
 
-    if (Array.isArray(options)) {
-        return options
-            .map((item) => {
-                if (typeof item === "string") return item;
-                return item?.label || item?.value || item?.name || "";
-            })
-            .map((item) => String(item).trim())
-            .filter(Boolean);
+    return {};
+}
+
+function normaliseChoices(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return Array.from(
+            new Set(
+                value
+                    .map((item) => {
+                        if (typeof item === "string") {
+                            return item.trim();
+                        }
+
+                        if (
+                            item &&
+                            typeof item === "object"
+                        ) {
+                            const record =
+                                item as Record<string, unknown>;
+
+                            return String(
+                                record.label ??
+                                    record.value ??
+                                    record.name ??
+                                    ""
+                            ).trim();
+                        }
+
+                        return String(item ?? "").trim();
+                    })
+                    .filter(Boolean)
+            )
+        );
     }
 
-    if (typeof options === "object") {
-        if (Array.isArray(options.options)) return parseOptions(options.options);
-        if (Array.isArray(options.choices)) return parseOptions(options.choices);
-        if (Array.isArray(options.values)) return parseOptions(options.values);
+    if (typeof value === "string") {
+        return Array.from(
+            new Set(
+                value
+                    .split(/\r?\n|,/)
+                    .map((item) => item.trim())
+                    .filter(Boolean)
+            )
+        );
     }
 
     return [];
 }
 
-function getDirectValue(guest: Guest, labelOrKey: string) {
+function getMergedFieldOptions(
+    field: RegistrationField
+): FieldOptions {
+    const legacy = parseOptionObject(field.options);
+    const current = parseOptionObject(field.field_options);
+
+    const merged: FieldOptions = {
+        ...legacy,
+        ...current,
+        validation: {
+            ...(legacy.validation || {}),
+            ...(current.validation || {}),
+        },
+        choice_images: {
+            ...(legacy.choice_images || {}),
+            ...(current.choice_images || {}),
+        },
+        choice_descriptions: {
+            ...(legacy.choice_descriptions || {}),
+            ...(current.choice_descriptions || {}),
+        },
+        choice_sub_fields: {
+            ...(legacy.choice_sub_fields || {}),
+            ...(current.choice_sub_fields || {}),
+        },
+    };
+
+    const possibleChoices =
+        current.choices ??
+        legacy.choices ??
+        current.dropdown_options ??
+        legacy.dropdown_options ??
+        current.values ??
+        legacy.values ??
+        current.items ??
+        legacy.items;
+
+    merged.choices = normaliseChoices(possibleChoices);
+
+    return merged;
+}
+
+function getImageChoices(options: FieldOptions): ImageChoice[] {
+    if (
+        Array.isArray(options.image_choices) &&
+        options.image_choices.length > 0
+    ) {
+        return options.image_choices;
+    }
+
+    return (options.choices || []).map((choice) => ({
+        id: choice,
+        label: choice,
+        description:
+            options.choice_descriptions?.[choice] || "",
+        image_url: options.choice_images?.[choice] || "",
+        sub_fields:
+            options.choice_sub_fields?.[choice] || [],
+    }));
+}
+
+function getDirectValue(
+    guest: Guest,
+    labelOrKey: string
+): AnswerValue {
     const key = normalizeKey(labelOrKey);
 
-    if (["full_name", "fullname", "name", "guest_name"].includes(key)) {
+    if (
+        ["full_name", "fullname", "name", "guest_name"].includes(
+            key
+        )
+    ) {
         return guest.full_name ?? "";
     }
 
-    if (["email", "email_address", "emailaddress"].includes(key)) {
+    if (
+        ["email", "email_address", "emailaddress"].includes(key)
+    ) {
         return guest.email ?? "";
     }
 
-    if (["phone", "mobile", "mobile_number", "mobilenumber"].includes(key)) {
+    if (
+        [
+            "phone",
+            "mobile",
+            "mobile_number",
+            "mobilenumber",
+        ].includes(key)
+    ) {
         return guest.phone ?? "";
     }
 
-    if (["department", "outlet", "department_outlet", "departmentoutlet"].includes(key)) {
+    if (
+        [
+            "department",
+            "outlet",
+            "department_outlet",
+            "departmentoutlet",
+        ].includes(key)
+    ) {
         return guest.department ?? "";
     }
 
-    if (["dietary_request", "dietary_requirements", "dietaryrequirements"].includes(key)) {
+    if (
+        [
+            "dietary_request",
+            "dietary_requirements",
+            "dietaryrequirements",
+        ].includes(key)
+    ) {
         return guest.dietary_request ?? "";
     }
 
-    if (["require_transport", "require_transport_from_outlet", "requiretransport", "transport"].includes(key)) {
+    if (
+        [
+            "require_transport",
+            "require_transport_from_outlet",
+            "requiretransport",
+            "transport",
+        ].includes(key)
+    ) {
         return guest.require_transport ?? "";
     }
 
     return "";
 }
 
-function getGuestFieldValue(guest: Guest, field: RegistrationField) {
+function getGuestFieldValue(
+    guest: Guest,
+    field: RegistrationField
+): AnswerValue {
     const answers = guest.custom_answers || {};
     const possibleKeys = [
-        field.id,
-        field.key,
         field.field_key,
+        field.key,
         field.name,
         field.field_name,
-        field.label,
         field.field_label,
+        field.label,
+        field.id,
     ].filter(Boolean) as string[];
 
     for (const key of possibleKeys) {
         const value = answers[key];
-        if (value !== undefined && value !== null && String(value).trim() !== "") {
-            return String(value);
+
+        if (!isEmptyAnswer(value as AnswerValue)) {
+            return value as AnswerValue;
         }
     }
 
-    const normalizedPossibleKeys = possibleKeys.map(normalizeKey);
+    const normalizedPossibleKeys =
+        possibleKeys.map(normalizeKey);
 
     for (const [answerKey, value] of Object.entries(answers)) {
-        if (normalizedPossibleKeys.includes(normalizeKey(answerKey))) {
-            if (value !== undefined && value !== null && String(value).trim() !== "") {
-                return String(value);
-            }
+        if (
+            normalizedPossibleKeys.includes(
+                normalizeKey(answerKey)
+            ) &&
+            !isEmptyAnswer(value as AnswerValue)
+        ) {
+            return value as AnswerValue;
         }
     }
 
     for (const key of possibleKeys) {
         const direct = getDirectValue(guest, key);
-        if (direct !== "") return String(direct);
+
+        if (!isEmptyAnswer(direct)) {
+            return direct;
+        }
     }
 
     return "";
@@ -221,9 +430,12 @@ function isFullNameField(field: RegistrationField) {
 }
 
 function isCheckedIn(guest: Guest) {
-    return guest.__qr_ticket?.is_active === false ||
+    return (
+        guest.__qr_ticket?.is_active === false ||
         Boolean(guest.__qr_ticket?.checked_in_at) ||
-        String(guest.registration_status || "").toLowerCase() === "checked_in";
+        String(guest.registration_status || "").toLowerCase() ===
+            "checked_in"
+    );
 }
 
 function checkInPillClass(checkedIn: boolean) {
@@ -232,11 +444,80 @@ function checkInPillClass(checkedIn: boolean) {
         : "border-slate-200 bg-slate-100 text-slate-700";
 }
 
-function displayValue(value: unknown) {
-    if (value === null || value === undefined || String(value).trim() === "") {
-        return "-";
+function isEmptyAnswer(value: AnswerValue | undefined) {
+    if (value === undefined || value === null) return true;
+
+    if (typeof value === "string") {
+        return value.trim().length === 0;
     }
-    return String(value);
+
+    if (Array.isArray(value)) {
+        return value.length === 0;
+    }
+
+    if (typeof value === "object") {
+        return Object.keys(value).length === 0;
+    }
+
+    return false;
+}
+
+function displayValue(value: unknown) {
+    if (value === null || value === undefined) return "-";
+
+    if (Array.isArray(value)) {
+        return value.length > 0
+            ? value.map(String).join(", ")
+            : "-";
+    }
+
+    if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+
+        if (record.name) {
+            return String(record.name);
+        }
+
+        if (record.label) {
+            return String(record.label);
+        }
+
+        if (record.value) {
+            return String(record.value);
+        }
+
+        return JSON.stringify(record);
+    }
+
+    const text = String(value).trim();
+    return text || "-";
+}
+
+function toggleArrayValue(
+    current: string[],
+    item: string,
+    checked: boolean
+) {
+    if (checked) {
+        return Array.from(new Set([...current, item]));
+    }
+
+    return current.filter((value) => value !== item);
+}
+
+function toOptionalNumber(value: unknown) {
+    const numberValue = Number(value);
+
+    return Number.isFinite(numberValue) && numberValue > 0
+        ? numberValue
+        : undefined;
+}
+
+function escapeRegExp(value: string) {
+    return value.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+    );
 }
 
 export default function GuestsManager({ eventId, initialGuests, fields }: Props) {
@@ -245,7 +526,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
     const [checkInFilter, setCheckInFilter] = useState<CheckInFilter>("all");
     const [modalOpen, setModalOpen] = useState(false);
     const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
-    const [formValues, setFormValues] = useState<Record<string, string>>({});
+    const [formValues, setFormValues] = useState<Record<string, AnswerValue>>({});
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
 
@@ -272,7 +553,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
                 guest.department,
                 guest.dietary_request,
                 guest.require_transport,
-                ...Object.values(guest.custom_answers || {}),
+                ...Object.values(guest.custom_answers || {}).map(displayValue),
             ]
                 .map((value) => String(value || "").toLowerCase())
                 .join(" ");
@@ -301,7 +582,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
     }
 
     function buildValuesFromGuest(guest: Guest | null) {
-        const values: Record<string, string> = {};
+        const values: Record<string, AnswerValue> = {};
 
         for (const field of orderedFields) {
             values[getFieldFormKey(field)] = guest ? getGuestFieldValue(guest, field) : "";
@@ -332,7 +613,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
         setError("");
     }
 
-    function setFieldValue(field: RegistrationField, value: string) {
+    function setFieldValue(field: RegistrationField, value: AnswerValue) {
         setFormValues((previous) => ({
             ...previous,
             [getFieldFormKey(field)]: value,
@@ -340,7 +621,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
     }
 
     function buildAnswersPayload() {
-        const answers: Record<string, string> = {};
+        const answers: Record<string, AnswerValue> = {};
 
         for (const field of orderedFields) {
             const value = formValues[getFieldFormKey(field)] ?? "";
@@ -375,9 +656,13 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
 
         for (const field of orderedFields) {
             if (isRequired(field)) {
-                const value = formValues[getFieldFormKey(field)];
-                if (!value || !String(value).trim()) {
-                    setError(`${fieldLabel(field)} is required.`);
+                const value =
+                    formValues[getFieldFormKey(field)];
+
+                if (isEmptyAnswer(value)) {
+                    setError(
+                        `${fieldLabel(field)} is required.`
+                    );
                     return;
                 }
             }
@@ -636,48 +921,600 @@ function FieldInput({
     onChange,
 }: {
     field: RegistrationField;
-    value: string;
-    onChange: (value: string) => void;
+    value: AnswerValue | undefined;
+    onChange: (value: AnswerValue) => void;
 }) {
     const label = fieldLabel(field);
     const type = fieldType(field);
-    const options = parseOptions(field.options);
+    const options = getMergedFieldOptions(field);
+    const choices = options.choices || [];
     const required = isRequired(field);
+    const helpText = options.help_text || "";
+    const placeholder =
+        options.placeholder || `Enter ${label}`;
+    const minLength = toOptionalNumber(
+        options.validation?.min_length
+    );
+    const maxLength = toOptionalNumber(
+        options.validation?.max_length
+    );
+    const fullWidth = [
+        "textarea",
+        "radio",
+        "checkbox",
+        "image_radio",
+        "image_checkbox",
+        "file",
+    ].includes(type);
 
-    return (
-        <label className={type === "textarea" ? "block lg:col-span-2" : "block"}>
-            <span className="mb-2 block text-sm font-black text-slate-700">
-                {label} {required && <span className="text-red-500">*</span>}
-            </span>
-
-            {type === "select" || type === "dropdown" || options.length > 0 ? (
-                <select
-                    value={value}
-                    onChange={(event) => onChange(event.target.value)}
-                    className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-950 outline-none transition focus:border-[#4F46E5] focus:bg-white"
-                >
-                    <option value="">Select an option</option>
-                    {options.map((option) => (
-                        <option key={option} value={option}>
-                            {option}
-                        </option>
-                    ))}
-                </select>
-            ) : type === "textarea" ? (
+    if (type === "textarea") {
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={helpText}
+                fullWidth
+            >
                 <textarea
-                    value={value}
-                    onChange={(event) => onChange(event.target.value)}
+                    required={required}
+                    value={String(value || "")}
+                    onChange={(event) =>
+                        onChange(event.target.value)
+                    }
+                    placeholder={placeholder}
+                    minLength={minLength}
+                    maxLength={maxLength}
                     rows={4}
                     className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none transition focus:border-[#4F46E5] focus:bg-white"
                 />
-            ) : (
-                <input
-                    value={value}
-                    onChange={(event) => onChange(event.target.value)}
-                    type={type === "email" ? "email" : type === "number" ? "number" : "text"}
+            </FieldShell>
+        );
+    }
+
+    if (type === "select" || type === "dropdown") {
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={helpText}
+            >
+                <select
+                    required={required}
+                    value={String(value || "")}
+                    onChange={(event) =>
+                        onChange(event.target.value)
+                    }
                     className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-950 outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                >
+                    <option value="">
+                        {options.placeholder ||
+                            "Select an option"}
+                    </option>
+
+                    {choices.map((choice) => (
+                        <option key={choice} value={choice}>
+                            {choice}
+                        </option>
+                    ))}
+                </select>
+
+                {choices.length === 0 && (
+                    <MissingOptionsNotice />
+                )}
+            </FieldShell>
+        );
+    }
+
+    if (type === "radio") {
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={helpText}
+                fullWidth
+            >
+                <div className="grid gap-3 sm:grid-cols-2">
+                    {choices.map((choice, index) => (
+                        <label
+                            key={choice}
+                            className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 font-bold transition ${
+                                String(value || "") === choice
+                                    ? "border-[#4F46E5] bg-[#F7F5FF]"
+                                    : "border-slate-200 bg-slate-50 hover:border-[#4F46E5]/50"
+                            }`}
+                        >
+                            <input
+                                required={
+                                    required && index === 0
+                                }
+                                type="radio"
+                                name={fieldKey(field)}
+                                value={choice}
+                                checked={
+                                    String(value || "") ===
+                                    choice
+                                }
+                                onChange={(event) =>
+                                    onChange(
+                                        event.target.value
+                                    )
+                                }
+                                className="accent-[#4F46E5]"
+                            />
+
+                            <span>{choice}</span>
+                        </label>
+                    ))}
+
+                    {choices.length === 0 && (
+                        <div className="sm:col-span-2">
+                            <MissingOptionsNotice />
+                        </div>
+                    )}
+                </div>
+            </FieldShell>
+        );
+    }
+
+    if (type === "checkbox") {
+        const selectedValues = Array.isArray(value)
+            ? value.map(String)
+            : [];
+
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={helpText}
+                fullWidth
+            >
+                <div className="grid gap-3 sm:grid-cols-2">
+                    {choices.map((choice) => {
+                        const selected =
+                            selectedValues.includes(choice);
+
+                        return (
+                            <label
+                                key={choice}
+                                className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 font-bold transition ${
+                                    selected
+                                        ? "border-[#4F46E5] bg-[#F7F5FF]"
+                                        : "border-slate-200 bg-slate-50 hover:border-[#4F46E5]/50"
+                                }`}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={(event) =>
+                                        onChange(
+                                            toggleArrayValue(
+                                                selectedValues,
+                                                choice,
+                                                event.target
+                                                    .checked
+                                            )
+                                        )
+                                    }
+                                    className="accent-[#4F46E5]"
+                                />
+
+                                <span>{choice}</span>
+                            </label>
+                        );
+                    })}
+
+                    {choices.length === 0 && (
+                        <div className="sm:col-span-2">
+                            <MissingOptionsNotice />
+                        </div>
+                    )}
+                </div>
+            </FieldShell>
+        );
+    }
+
+    if (
+        type === "image_radio" ||
+        type === "image_checkbox"
+    ) {
+        const imageChoices = getImageChoices(options);
+        const isMultiple =
+            type === "image_checkbox";
+        const selectedValues = isMultiple
+            ? Array.isArray(value)
+                ? value.map(String)
+                : []
+            : [String(value || "")];
+
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={helpText}
+                fullWidth
+            >
+                <div className="grid gap-4 sm:grid-cols-2">
+                    {imageChoices.map((choice, index) => {
+                        const choiceLabel =
+                            choice.label || "";
+                        const selected =
+                            selectedValues.includes(
+                                choiceLabel
+                            );
+
+                        return (
+                            <label
+                                key={
+                                    choice.id ||
+                                    `${choiceLabel}-${index}`
+                                }
+                                className={`cursor-pointer overflow-hidden rounded-2xl border-2 transition ${
+                                    selected
+                                        ? "border-[#4F46E5] bg-[#F7F5FF] shadow-md"
+                                        : "border-slate-200 bg-white hover:border-[#4F46E5]/40"
+                                }`}
+                            >
+                                {choice.image_url ? (
+                                    <img
+                                        src={choice.image_url}
+                                        alt={choiceLabel}
+                                        className="h-40 w-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex h-40 items-center justify-center bg-slate-100 text-sm font-bold text-slate-400">
+                                        No image
+                                    </div>
+                                )}
+
+                                <div className="p-4">
+                                    <div className="flex items-start gap-3">
+                                        <input
+                                            type={
+                                                isMultiple
+                                                    ? "checkbox"
+                                                    : "radio"
+                                            }
+                                            name={
+                                                isMultiple
+                                                    ? undefined
+                                                    : fieldKey(
+                                                          field
+                                                      )
+                                            }
+                                            required={
+                                                !isMultiple &&
+                                                required &&
+                                                index === 0
+                                            }
+                                            checked={selected}
+                                            onChange={(event) => {
+                                                if (
+                                                    isMultiple
+                                                ) {
+                                                    onChange(
+                                                        toggleArrayValue(
+                                                            selectedValues,
+                                                            choiceLabel,
+                                                            event
+                                                                .target
+                                                                .checked
+                                                        )
+                                                    );
+                                                    return;
+                                                }
+
+                                                onChange(
+                                                    choiceLabel
+                                                );
+                                            }}
+                                            className="mt-1 accent-[#4F46E5]"
+                                        />
+
+                                        <div>
+                                            <p className="font-black text-slate-950">
+                                                {
+                                                    choiceLabel
+                                                }
+                                            </p>
+
+                                            {choice.description && (
+                                                <p className="mt-1 text-sm leading-6 text-slate-500">
+                                                    {
+                                                        choice.description
+                                                    }
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {Array.isArray(
+                                        choice.sub_fields
+                                    ) &&
+                                        choice.sub_fields
+                                            .length > 0 && (
+                                            <div className="mt-3 space-y-2">
+                                                {choice.sub_fields.map(
+                                                    (
+                                                        subField,
+                                                        subIndex
+                                                    ) => (
+                                                        <div
+                                                            key={
+                                                                subField.id ||
+                                                                `${subField.label}-${subIndex}`
+                                                            }
+                                                            className="rounded-lg bg-white px-3 py-2 text-xs"
+                                                        >
+                                                            <span className="font-black text-slate-500">
+                                                                {
+                                                                    subField.label
+                                                                }
+                                                            </span>
+
+                                                            {subField.value && (
+                                                                <span className="ml-2 font-semibold text-slate-700">
+                                                                    {
+                                                                        subField.value
+                                                                    }
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
+                                        )}
+                                </div>
+                            </label>
+                        );
+                    })}
+
+                    {imageChoices.length === 0 && (
+                        <div className="sm:col-span-2">
+                            <MissingOptionsNotice />
+                        </div>
+                    )}
+                </div>
+            </FieldShell>
+        );
+    }
+
+    if (type === "phone") {
+        return (
+            <PhoneField
+                field={field}
+                value={String(value || "")}
+                options={options}
+                onChange={onChange}
+            />
+        );
+    }
+
+    if (type === "file") {
+        const currentFile =
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value)
+                ? (value as Record<string, unknown>)
+                : null;
+
+        return (
+            <FieldShell
+                label={label}
+                required={required}
+                helpText={
+                    helpText ||
+                    "The selected filename will be saved with the guest record."
+                }
+                fullWidth
+            >
+                {Boolean(currentFile?.name) && (
+                    <p className="mb-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
+                        Current file:{" "}
+                        {String(currentFile?.name ?? "")}
+                    </p>
+                )}
+
+                <input
+                    required={required && !currentFile}
+                    type="file"
+                    onChange={(event) => {
+                        const file =
+                            event.target.files?.[0];
+
+                        onChange(
+                            file
+                                ? {
+                                      name: file.name,
+                                      size: file.size,
+                                      type: file.type,
+                                  }
+                                : null
+                        );
+                    }}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
                 />
+            </FieldShell>
+        );
+    }
+
+    const htmlInputType =
+        type === "email"
+            ? "email"
+            : type === "number"
+              ? "number"
+              : type === "date"
+                ? "date"
+                : type === "time"
+                  ? "time"
+                  : "text";
+
+    return (
+        <FieldShell
+            label={label}
+            required={required}
+            helpText={helpText}
+            fullWidth={fullWidth}
+        >
+            <input
+                required={required}
+                value={String(value || "")}
+                onChange={(event) =>
+                    onChange(event.target.value)
+                }
+                type={htmlInputType}
+                placeholder={placeholder}
+                minLength={
+                    htmlInputType === "text"
+                        ? minLength
+                        : undefined
+                }
+                maxLength={
+                    htmlInputType === "text"
+                        ? maxLength
+                        : undefined
+                }
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-950 outline-none transition focus:border-[#4F46E5] focus:bg-white"
+            />
+        </FieldShell>
+    );
+}
+
+function PhoneField({
+    field,
+    value,
+    options,
+    onChange,
+}: {
+    field: RegistrationField;
+    value: string;
+    options: FieldOptions;
+    onChange: (value: AnswerValue) => void;
+}) {
+    const countryCodes =
+        Array.isArray(options.country_codes) &&
+        options.country_codes.length > 0
+            ? options.country_codes.map(String)
+            : ["+65"];
+
+    const defaultCode =
+        options.default_country_code &&
+        countryCodes.includes(
+            options.default_country_code
+        )
+            ? options.default_country_code
+            : countryCodes[0];
+
+    const detectedCode =
+        countryCodes.find((code) =>
+            value.trim().startsWith(code)
+        ) || defaultCode;
+
+    const numberValue = value
+        .replace(
+            new RegExp(
+                `^${escapeRegExp(detectedCode)}\\s*`
+            ),
+            ""
+        )
+        .trim();
+
+    function updatePhone(
+        code: string,
+        number: string
+    ) {
+        const cleanNumber = number.trim();
+
+        onChange(
+            cleanNumber ? `${code} ${cleanNumber}` : ""
+        );
+    }
+
+    return (
+        <FieldShell
+            label={fieldLabel(field)}
+            required={isRequired(field)}
+            helpText={options.help_text || ""}
+        >
+            <div className="grid grid-cols-[120px_1fr] gap-3">
+                <select
+                    value={detectedCode}
+                    onChange={(event) =>
+                        updatePhone(
+                            event.target.value,
+                            numberValue
+                        )
+                    }
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 font-bold outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                >
+                    {countryCodes.map((code) => (
+                        <option key={code} value={code}>
+                            {code}
+                        </option>
+                    ))}
+                </select>
+
+                <input
+                    required={isRequired(field)}
+                    type="tel"
+                    value={numberValue}
+                    onChange={(event) =>
+                        updatePhone(
+                            detectedCode,
+                            event.target.value
+                        )
+                    }
+                    placeholder={
+                        options.placeholder ||
+                        "Enter phone number"
+                    }
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-bold outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                />
+            </div>
+        </FieldShell>
+    );
+}
+
+function FieldShell({
+    label,
+    required,
+    helpText,
+    fullWidth,
+    children,
+}: {
+    label: string;
+    required?: boolean;
+    helpText?: string;
+    fullWidth?: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <div
+            className={
+                fullWidth ? "lg:col-span-2" : undefined
+            }
+        >
+            <label className="mb-2 block text-sm font-black text-slate-700">
+                {label}
+                {required && (
+                    <span className="text-red-500"> *</span>
+                )}
+            </label>
+
+            {children}
+
+            {helpText && (
+                <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                    {helpText}
+                </p>
             )}
-        </label>
+        </div>
+    );
+}
+
+function MissingOptionsNotice() {
+    return (
+        <p className="mt-2 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+            No options have been configured for this field.
+        </p>
     );
 }
