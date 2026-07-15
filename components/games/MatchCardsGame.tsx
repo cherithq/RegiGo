@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Grid2X2, Loader2 } from "lucide-react";
+import { Check, Citrus, Gem, Grape, Grid2X2, Loader2, Star, Cherry, Circle } from "lucide-react";
 import {
     asObject,
     CommonDuelState,
@@ -61,6 +61,92 @@ function emptyState(raw: Record<string, unknown>): MatchCardsState {
         player_total_wins: 0,
         player_total_plays: 0,
     };
+}
+
+function SymbolArtwork({ symbol }: { symbol?: string }) {
+    const iconClass = "h-9 w-9 sm:h-11 sm:w-11";
+    const icons: Record<string, React.ReactNode> = {
+        "🍒": <Cherry className={`${iconClass} text-rose-500`} />,
+        "🍋": <Citrus className={`${iconClass} text-amber-500`} />,
+        "🍉": <Circle className={`${iconClass} fill-emerald-100 text-emerald-500`} />,
+        "🍇": <Grape className={`${iconClass} text-violet-500`} />,
+        "⭐": <Star className={`${iconClass} fill-amber-200 text-amber-500`} />,
+        "💎": <Gem className={`${iconClass} text-cyan-500`} />,
+    };
+
+    return icons[symbol || ""] || <Grid2X2 className={`${iconClass} text-[#4F46E5]`} />;
+}
+
+function MemoryCard({
+    index,
+    symbol,
+    matched,
+    disabled,
+    onFlip,
+}: {
+    index: number;
+    symbol?: string;
+    matched: boolean;
+    disabled: boolean;
+    onFlip: () => void;
+}) {
+    const faceUp = Boolean(symbol) || matched;
+
+    return (
+        <button
+            type="button"
+            onClick={onFlip}
+            disabled={disabled}
+            className="group aspect-[3/4] touch-manipulation outline-none active:scale-[0.97] disabled:cursor-default"
+            style={{ perspective: "1000px" }}
+            aria-label={`Card ${index + 1}${faceUp ? ", revealed" : ""}`}
+        >
+            <span
+                className="relative block h-full w-full transition-transform duration-500 [transform-style:preserve-3d]"
+                style={{
+                    transform: faceUp ? "rotateY(180deg)" : "rotateY(0deg)",
+                }}
+            >
+                <span className="absolute inset-0 overflow-hidden rounded-2xl border border-indigo-200/30 bg-gradient-to-br from-[#312E81] via-[#4F46E5] to-[#EC4899] shadow-[0_16px_30px_rgba(15,23,42,0.34)] [backface-visibility:hidden] group-hover:-translate-y-1 group-hover:shadow-[0_20px_38px_rgba(79,70,229,0.32)]">
+                    <span className="absolute inset-[7px] rounded-xl border border-white/30" />
+                    <span className="absolute inset-[13px] rounded-lg border border-dashed border-white/20" />
+                    <span className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,white_1.5px,transparent_1.5px)] [background-size:14px_14px]" />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="flex h-12 w-12 rotate-45 items-center justify-center rounded-xl border border-white/25 bg-white/15 shadow-inner sm:h-14 sm:w-14">
+                            <Grid2X2 className="-rotate-45 text-white" size={26} />
+                        </span>
+                    </span>
+                </span>
+
+                <span className={`absolute inset-0 overflow-hidden rounded-2xl border bg-white shadow-[0_16px_30px_rgba(15,23,42,0.24)] [backface-visibility:hidden] [transform:rotateY(180deg)] ${
+                    matched ? "border-emerald-300 ring-4 ring-emerald-300/20" : "border-slate-200"
+                }`}>
+                    <span className="absolute left-3 top-2 text-xs font-black text-slate-400">
+                        {index + 1}
+                    </span>
+                    <span className="absolute bottom-2 right-3 rotate-180 text-xs font-black text-slate-400">
+                        {index + 1}
+                    </span>
+
+                    <span className="absolute inset-0 flex items-center justify-center">
+                        <span className={`flex h-[58%] w-[58%] items-center justify-center rounded-2xl border shadow-inner ${
+                            matched
+                                ? "border-emerald-200 bg-emerald-50"
+                                : "border-indigo-100 bg-[#F7F5FF]"
+                        }`}>
+                            <SymbolArtwork symbol={symbol} />
+                        </span>
+                    </span>
+
+                    {matched && (
+                        <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg">
+                            <Check size={16} strokeWidth={3} />
+                        </span>
+                    )}
+                </span>
+            </span>
+        </button>
+    );
 }
 
 export default function MatchCardsGame({
@@ -334,37 +420,34 @@ export default function MatchCardsGame({
                                 seconds={match.seconds_remaining}
                                 label="Pairs"
                             />
-                            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 md:rounded-[2rem]">
-                                <p className="mb-4 text-center text-sm font-bold text-slate-500">
-                                    Your attempts: {match.your_attempts}. Matched cards stay checked.
+                            <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 p-4 text-white shadow-2xl sm:p-6">
+                                <p className="mb-5 text-center text-sm font-bold text-white/55">
+                                    Your attempts: {match.your_attempts}. Tap a card to flip it. Matched pairs stay face up.
                                 </p>
-                                <div className="mx-auto grid max-w-2xl grid-cols-4 gap-2 sm:gap-3">
+                                <div className="mx-auto grid max-w-3xl grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4">
                                     {Array.from({ length: 12 }, (_, index) => {
                                         const matched = match.your_matched_indexes.includes(index);
                                         const symbol = revealed[index];
+
                                         return (
-                                            <button
+                                            <MemoryCard
                                                 key={index}
-                                                type="button"
-                                                onClick={() => void flipCard(index)}
-                                                disabled={matched || flipping || match.match_status !== "active"}
-                                                className={`aspect-square rounded-2xl border text-2xl font-black shadow-sm transition sm:text-4xl ${
-                                                    matched
-                                                        ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                                                        : symbol
-                                                          ? "border-[#4F46E5]/30 bg-white"
-                                                          : "border-slate-200 bg-[#F7F5FF] text-[#4F46E5] hover:border-[#4F46E5]/40"
-                                                } disabled:cursor-default`}
-                                                aria-label={`Card ${index + 1}`}
-                                            >
-                                                {matched ? "✓" : symbol || "?"}
-                                            </button>
+                                                index={index}
+                                                symbol={symbol}
+                                                matched={matched}
+                                                disabled={
+                                                    matched ||
+                                                    flipping ||
+                                                    match.match_status !== "active"
+                                                }
+                                                onFlip={() => void flipCard(index)}
+                                            />
                                         );
                                     })}
                                 </div>
                                 {flipping && (
-                                    <div className="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-slate-500">
-                                        <Loader2 size={16} className="animate-spin" /> Checking cards…
+                                    <div className="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-white/55">
+                                        <Loader2 size={16} className="animate-spin" /> Checking cards...
                                     </div>
                                 )}
                             </section>

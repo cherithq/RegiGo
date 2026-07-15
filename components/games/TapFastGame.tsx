@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MousePointerClick } from "lucide-react";
+import { MousePointerClick, Zap } from "lucide-react";
 import {
     asObject,
     CommonDuelState,
@@ -183,13 +183,14 @@ export default function TapFastGame({ eventId, eventName, slug, lobbyHref }: {
                 : <>
                     <DuelScoreboard playerName={player.display_name} opponentName={match.opponent_name}
                         yourScore={localTaps} opponentScore={match.opponent_score} seconds={match.seconds_remaining} label="Taps" />
-                    <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-center shadow-sm sm:p-8 md:rounded-[2rem]">
-                        <p className="text-sm font-bold text-slate-500">Use one finger and tap as quickly as you can.</p>
+                    <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 p-5 text-center text-white shadow-2xl sm:p-8">
+                        <p className="text-sm font-bold text-white/55">Use one finger and tap as quickly as you can.</p>
                         <button type="button" onPointerDown={(event) => { event.preventDefault(); tap(); }}
-                            className="mx-auto mt-6 flex aspect-square w-full max-w-sm touch-manipulation select-none items-center justify-center rounded-full bg-gradient-to-br from-[#4F46E5] to-[#EC4899] text-4xl font-black text-white shadow-xl active:scale-95 sm:text-5xl">
-                            TAP
+                            className="group mx-auto mt-6 flex aspect-square w-full max-w-sm touch-manipulation select-none flex-col items-center justify-center rounded-full border-[10px] border-white/10 bg-gradient-to-br from-[#4F46E5] via-[#7C3AED] to-[#EC4899] text-white shadow-[0_24px_80px_rgba(79,70,229,0.45)] transition active:scale-95">
+                            <Zap size={58} className="transition group-active:scale-90" />
+                            <span className="mt-3 text-3xl font-black uppercase tracking-[0.18em] sm:text-4xl">Tap</span>
                         </button>
-                        <p className="mt-5 text-5xl font-black text-[#4F46E5]">{localTaps}</p>
+                        <p className="mt-5 bg-gradient-to-r from-[#A5B4FC] to-[#F9A8D4] bg-clip-text text-6xl font-black text-transparent">{localTaps}</p>
                         <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">Your live taps</p>
                     </section>
                 </>}

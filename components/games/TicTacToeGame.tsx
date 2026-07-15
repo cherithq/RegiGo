@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Users } from "lucide-react";
+import { Circle, Loader2, LogOut, Users, X } from "lucide-react";
 import {
     asObject,
     CommonDuelState,
@@ -159,25 +159,32 @@ export default function TicTacToeGame({ eventId, eventName, slug, lobbyHref }: {
                 : <>
                     <DuelScoreboard playerName={`${player.display_name} (${match.your_mark})`} opponentName={`${match.opponent_name || "Opponent"} (${match.your_mark === "X" ? "O" : "X"})`}
                         yourScore={match.your_score} opponentScore={match.opponent_score} seconds={match.seconds_remaining} label="Position" />
-                    <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 md:rounded-[2rem]">
+                    <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 p-4 text-white shadow-2xl sm:p-6">
                         <div className="mb-5 text-center">
-                            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#4F46E5]">{yourTurn ? "Your turn" : "Opponent's turn"}</p>
+                            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#A5B4FC]">{yourTurn ? "Your turn" : "Opponent's turn"}</p>
                             <h2 className="mt-2 text-xl font-black">{yourTurn ? `Place your ${match.your_mark}` : `Waiting for ${match.opponent_name || "opponent"}`}</h2>
                         </div>
                         <div className="mx-auto grid max-w-lg grid-cols-3 gap-2 sm:gap-3">
                             {board.map((mark, index) => (
                                 <button key={index} type="button" onClick={() => void placeMark(index)}
                                     disabled={!yourTurn || mark !== null || movingCell !== null}
-                                    className={`aspect-square rounded-2xl border bg-white text-5xl font-black shadow-sm transition sm:text-6xl ${
-                                        mark === "X" ? "border-[#4F46E5]/30 text-[#4F46E5]" : mark === "O" ? "border-[#EC4899]/30 text-[#EC4899]" : yourTurn ? "border-slate-200 hover:border-[#4F46E5]/40 hover:bg-[#FAFAFF]" : "border-slate-200"
+                                    className={`flex aspect-square items-center justify-center rounded-2xl border shadow-lg transition active:scale-95 ${
+                                        mark === "X" ? "border-indigo-300/30 bg-indigo-400/15 text-indigo-300" : mark === "O" ? "border-pink-300/30 bg-pink-400/15 text-pink-300" : yourTurn ? "border-white/10 bg-white/10 hover:border-white/25 hover:bg-white/15" : "border-white/10 bg-white/5"
                                     } disabled:cursor-default`}>
-                                    {movingCell === index ? <Loader2 size={28} className="mx-auto animate-spin text-[#4F46E5]" /> : mark || ""}
+                                    {movingCell === index ? (
+                                        <Loader2 size={28} className="animate-spin text-white" />
+                                    ) : mark === "X" ? (
+                                        <X size={54} strokeWidth={3} />
+                                    ) : mark === "O" ? (
+                                        <Circle size={48} strokeWidth={3} />
+                                    ) : null}
                                 </button>
                             ))}
                         </div>
                         <button type="button" onClick={leaveMatch} disabled={leaving}
-                            className="mx-auto mt-6 flex min-h-11 items-center justify-center rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-black text-red-600 hover:bg-red-50 disabled:opacity-60">
-                            {leaving ? "Leaving…" : "Leave match (forfeit)"}
+                            className="mx-auto mt-6 flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-black text-white hover:bg-white/15 disabled:opacity-60">
+                            {leaving ? <Loader2 size={17} className="animate-spin" /> : <LogOut size={17} />}
+                            {leaving ? "Leaving..." : "Leave match (forfeit)"}
                         </button>
                     </section>
                 </>}

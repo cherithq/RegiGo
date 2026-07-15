@@ -110,6 +110,78 @@ function asRound(value: unknown): CoinRound | null {
     return value && typeof value === "object" ? (value as CoinRound) : null;
 }
 
+function RealCoin({
+    side,
+    spinning = false,
+    compact = false,
+}: {
+    side: CoinSide;
+    spinning?: boolean;
+    compact?: boolean;
+}) {
+    const sizeClass = compact
+        ? "h-14 w-14"
+        : "h-28 w-28 sm:h-36 sm:w-36";
+
+    return (
+        <div
+            className={`${sizeClass} relative`}
+            style={{ perspective: "900px" }}
+            aria-label={`${side} coin`}
+        >
+            <div
+                className="relative h-full w-full [transform-style:preserve-3d]"
+                style={{
+                    animation: spinning
+                        ? "regigo-real-coin-flip 900ms cubic-bezier(.2,.75,.25,1)"
+                        : "regigo-real-coin-float 2.8s ease-in-out infinite",
+                    transform:
+                        side === "tails"
+                            ? "rotateY(180deg)"
+                            : "rotateY(0deg)",
+                }}
+            >
+                <CoinSideFace label="H" tone="heads" />
+                <CoinSideFace label="T" tone="tails" reverse />
+            </div>
+        </div>
+    );
+}
+
+function CoinSideFace({
+    label,
+    tone,
+    reverse = false,
+}: {
+    label: string;
+    tone: CoinSide;
+    reverse?: boolean;
+}) {
+    return (
+        <div
+            className={`absolute inset-0 rounded-full p-[4px] shadow-[0_18px_40px_rgba(245,158,11,0.38)] [backface-visibility:hidden] ${
+                reverse ? "[transform:rotateY(180deg)]" : ""
+            }`}
+            style={{
+                background:
+                    "repeating-conic-gradient(from 0deg, #fff3a8 0deg 5deg, #c77908 5deg 10deg)",
+            }}
+        >
+            <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-amber-100 bg-gradient-to-br from-[#FFF7BD] via-[#F5C84C] to-[#B96A06]">
+                <div className="absolute inset-[9%] rounded-full border-2 border-amber-800/30 shadow-[inset_0_3px_7px_rgba(255,255,255,0.75),inset_0_-8px_14px_rgba(110,57,0,0.3)]" />
+                <div className="absolute -left-1/4 top-0 h-full w-1/2 rotate-12 bg-gradient-to-r from-transparent via-white/75 to-transparent blur-sm" />
+                <div className={`relative flex h-[58%] w-[58%] items-center justify-center rounded-full border font-black shadow-inner ${
+                    tone === "heads"
+                        ? "border-indigo-900/20 bg-indigo-950/10 text-indigo-950"
+                        : "border-pink-900/20 bg-pink-950/10 text-pink-950"
+                }`}>
+                    <span className="text-2xl sm:text-4xl">{label}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function CoinFlipGame({
     eventId,
     eventName,
@@ -513,7 +585,20 @@ export default function CoinFlipGame({
     }, [match]);
 
     return (
-        <main className="min-h-[100dvh] overflow-x-hidden bg-[#F7F5FF] px-4 py-5 text-slate-950 sm:px-6 md:py-8">
+        <main className="relative min-h-[100dvh] overflow-x-hidden bg-gradient-to-b from-[#F6F5FF] via-white to-[#FFF5FB] px-4 py-5 text-slate-950 sm:px-6 md:py-8">
+            <style jsx global>{`
+                @keyframes regigo-real-coin-flip {
+                    0% { transform: rotateY(0deg) rotateX(0deg) translateY(0); }
+                    35% { transform: rotateY(720deg) rotateX(16deg) translateY(-24px); }
+                    75% { transform: rotateY(1260deg) rotateX(-8deg) translateY(-8px); }
+                    100% { transform: rotateY(1440deg) rotateX(0deg) translateY(0); }
+                }
+
+                @keyframes regigo-real-coin-float {
+                    0%, 100% { transform: translateY(0) rotateY(0deg); }
+                    50% { transform: translateY(-8px) rotateY(18deg); }
+                }
+            `}</style>
             <div className="mx-auto w-full max-w-5xl space-y-5 md:space-y-8">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link
@@ -533,7 +618,7 @@ export default function CoinFlipGame({
                     </Link>
                 </div>
 
-                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-7 md:rounded-[2rem] md:p-10">
+                <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-slate-950 via-[#17173A] to-[#6B4212] p-6 text-white shadow-2xl sm:p-8 md:p-11">
                     <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-[#EC4899]/10 blur-3xl md:h-64 md:w-64" />
                     <div className="absolute -bottom-16 right-16 h-44 w-44 rounded-full bg-[#4F46E5]/10 blur-3xl md:h-64 md:w-64" />
 
@@ -545,10 +630,10 @@ export default function CoinFlipGame({
                         <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl md:text-5xl">
                             Coin Flip Battle
                         </h1>
-                        <p className="mt-3 text-sm font-medium leading-6 text-slate-600 sm:text-base sm:leading-7">
+                        <p className="mt-3 text-sm font-medium leading-6 text-white/70 sm:text-base sm:leading-7">
                             You will be randomly paired with another checked-in
                             guest at{" "}
-                            <span className="font-black text-slate-950">
+                            <span className="font-black text-white">
                                 {eventName}
                             </span>
                             . Score the most correct guesses in 20 seconds. The
@@ -685,7 +770,7 @@ export default function CoinFlipGame({
                             />
                         ) : match.match_status === "countdown" ? (
                             <section className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-10 md:rounded-[2rem]">
-                                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#4F46E5]">
+                                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">
                                     Opponent found
                                 </p>
                                 <h2 className="mt-2 text-2xl font-black sm:text-3xl">
@@ -703,7 +788,7 @@ export default function CoinFlipGame({
                                 </p>
                             </section>
                         ) : match.match_status === "active" ? (
-                            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 md:rounded-[2rem] md:p-8">
+                            <section className="rounded-[2rem] border border-white/10 bg-slate-950 p-4 text-white shadow-2xl sm:p-6 md:p-8">
                                 <div className="grid grid-cols-2 gap-3 sm:gap-4">
                                     <ScoreCard
                                         label="You"
@@ -717,7 +802,7 @@ export default function CoinFlipGame({
                                     />
                                 </div>
 
-                                <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white p-5 sm:p-6">
+                                <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/10 p-5 backdrop-blur sm:p-6">
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
                                             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#4F46E5]">
@@ -748,19 +833,33 @@ export default function CoinFlipGame({
                                     </div>
                                 </div>
 
-                                <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-center sm:p-7">
+                                <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/10 p-5 text-center backdrop-blur sm:p-7">
                                     <p className="text-xs font-black uppercase tracking-[0.18em] text-[#4F46E5]">
                                         Guess quickly
                                     </p>
                                     <h2 className="mt-2 text-2xl font-black sm:text-3xl">
                                         Heads or tails?
                                     </h2>
-                                    <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+                                    <p className="mt-2 text-sm font-medium leading-6 text-white/55">
                                         Every correct guess adds one to your match
                                         score. Keep guessing until time runs out.
                                     </p>
 
-                                    <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4">
+                                    <div className="mt-6 flex min-h-[180px] items-center justify-center rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-5 shadow-inner">
+                                        <div className="relative">
+                                            <div className="absolute inset-[-28px] rounded-full bg-amber-300/20 blur-2xl" />
+                                            <RealCoin
+                                                side={
+                                                    latestResult ||
+                                                    latestChoice ||
+                                                    "heads"
+                                                }
+                                                spinning={guessing}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4">
                                         <GuessButton
                                             side="heads"
                                             disabled={guessing}
@@ -773,7 +872,7 @@ export default function CoinFlipGame({
                                         />
                                     </div>
 
-                                    <div className="mt-5 min-h-24 rounded-2xl bg-[#F7F5FF] p-4">
+                                    <div className="mt-5 min-h-24 rounded-2xl border border-white/10 bg-slate-950/70 p-4">
                                         {guessing ? (
                                             <div className="flex h-16 items-center justify-center">
                                                 <Loader2
@@ -786,7 +885,7 @@ export default function CoinFlipGame({
                                                 <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
                                                     You chose {latestChoice}
                                                 </p>
-                                                <p className="mt-2 text-2xl font-black capitalize text-slate-950">
+                                                <p className="mt-2 text-2xl font-black capitalize text-white">
                                                     Result: {latestResult}
                                                 </p>
                                                 <p
@@ -797,12 +896,12 @@ export default function CoinFlipGame({
                                                     }`}
                                                 >
                                                     {latestCorrect
-                                                        ? "Correct — score added!"
-                                                        : "Not this time — guess again!"}
+                                                        ? "Correct. Score added!"
+                                                        : "Not this time. Guess again!"}
                                                 </p>
                                             </>
                                         ) : (
-                                            <p className="flex h-16 items-center justify-center text-sm font-bold text-slate-500">
+                                            <p className="flex h-16 items-center justify-center text-sm font-bold text-white/50">
                                                 Choose a side to start scoring.
                                             </p>
                                         )}
@@ -936,14 +1035,14 @@ function ScoreCard({
     score: number;
 }) {
     return (
-        <div className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-4 text-left sm:p-5">
+        <div className="min-w-0 rounded-[1.5rem] border border-white/10 bg-white/10 p-4 text-left text-white backdrop-blur sm:p-5">
             <p className="text-[10px] font-black uppercase tracking-wide text-[#4F46E5] sm:text-xs">
                 {label}
             </p>
-            <p className="mt-1 truncate text-sm font-black text-slate-700 sm:text-base">
+            <p className="mt-1 truncate text-sm font-black text-white/70 sm:text-base">
                 {name}
             </p>
-            <p className="mt-3 text-4xl font-black text-slate-950 sm:text-5xl">
+            <p className="mt-3 bg-gradient-to-r from-[#FDE68A] to-[#F9A8D4] bg-clip-text text-4xl font-black text-transparent sm:text-5xl">
                 {score}
             </p>
         </div>
@@ -964,19 +1063,15 @@ function GuessButton({
             type="button"
             onClick={onClick}
             disabled={disabled}
-            className={`min-h-28 rounded-[1.5rem] border bg-white p-4 text-center shadow-sm transition active:scale-[0.98] disabled:opacity-60 sm:min-h-36 ${
+            className={`min-h-28 rounded-[1.5rem] border bg-white/10 p-4 text-center text-white shadow-lg backdrop-blur transition active:scale-[0.98] disabled:opacity-60 sm:min-h-36 ${
                 side === "heads"
-                    ? "border-[#4F46E5]/30 hover:border-[#4F46E5] hover:bg-[#F7F5FF]"
-                    : "border-[#EC4899]/30 hover:border-[#EC4899] hover:bg-pink-50"
+                    ? "border-indigo-300/30 hover:border-indigo-300/70 hover:bg-indigo-400/15"
+                    : "border-pink-300/30 hover:border-pink-300/70 hover:bg-pink-400/15"
             }`}
         >
-            <Coins
-                size={34}
-                className={`mx-auto ${
-                    side === "heads" ? "text-[#4F46E5]" : "text-[#EC4899]"
-                }`}
-                aria-hidden="true"
-            />
+            <div className="flex justify-center">
+                <RealCoin side={side} compact />
+            </div>
             <span className="mt-3 block text-xl font-black capitalize sm:text-2xl">
                 {side}
             </span>
@@ -1006,7 +1101,7 @@ function WaitingPanel({
                 Random matchmaking
             </p>
             <h2 className="mt-2 text-2xl font-black sm:text-3xl">
-                Waiting for another checked-in guest…
+                Searching for another checked-in guest
             </h2>
             <p className="mx-auto mt-2 max-w-lg text-sm font-medium leading-6 text-slate-500">
                 {playerName}, keep this page open. The challenge starts

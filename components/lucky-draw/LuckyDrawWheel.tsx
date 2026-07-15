@@ -1871,7 +1871,7 @@ export default function LuckyDrawWheel({
                     <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-700">
                             <Filter size={16} className="text-[#4F46E5]" />
-                            Filter by Registration Answer
+                            Filter by
                         </div>
 
                         <div className="grid gap-3 md:grid-cols-2">
@@ -2093,7 +2093,7 @@ export default function LuckyDrawWheel({
                             onChange={(event) =>
                                 setWinnerHistorySearch(event.target.value)
                             }
-                            placeholder="Search winner name, email, prize or draw round..."
+                            placeholder="Search winner name, email or prize"
                             className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[#4F46E5] focus:bg-white"
                         />
                     </div>
@@ -2104,7 +2104,7 @@ export default function LuckyDrawWheel({
                                 size={16}
                                 className="text-[#4F46E5]"
                             />
-                            Filter by Registration Answer
+                            Filter by
                         </div>
 
                         <div className="grid gap-3 md:grid-cols-2">
