@@ -239,19 +239,40 @@ async function attachQrTickets(supabaseServer: Awaited<ReturnType<typeof createS
 }
 
 async function loadGuests(eventId: string) {
-    const supabaseServer = await createSupabaseServerClient();
+    const supabaseServer =
+        await createSupabaseServerClient();
+    const pageSize = 1000;
+    const guests: any[] = [];
+    let from = 0;
 
-    const { data, error } = await supabaseServer
-        .from("registrations")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("created_at", { ascending: false });
+    while (true) {
+        const { data, error } = await supabaseServer
+            .from("registrations")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("created_at", {
+                ascending: false,
+            })
+            .range(from, from + pageSize - 1);
 
-    if (error) {
-        throw new Error(error.message);
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        const rows = data || [];
+        guests.push(...rows);
+
+        if (rows.length < pageSize) {
+            break;
+        }
+
+        from += pageSize;
     }
 
-    return attachQrTickets(supabaseServer, data || []);
+    return attachQrTickets(
+        supabaseServer,
+        guests
+    );
 }
 
 async function updateRegistration(eventId: string, registrationId: string, body: GuestRequestBody) {

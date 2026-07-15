@@ -53,6 +53,45 @@ type RegistrationField = {
     [key: string]: any;
 };
 
+async function loadAllRegistrations(
+    supabaseServer: any,
+    eventId: string
+) {
+    const pageSize = 1000;
+    const registrations: Guest[] = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await supabaseServer
+            .from("registrations")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("created_at", { ascending: false })
+            .range(from, from + pageSize - 1);
+
+        if (error) {
+            return {
+                data: [] as Guest[],
+                error,
+            };
+        }
+
+        const rows = (data || []) as Guest[];
+        registrations.push(...rows);
+
+        if (rows.length < pageSize) {
+            break;
+        }
+
+        from += pageSize;
+    }
+
+    return {
+        data: registrations,
+        error: null,
+    };
+}
+
 export default async function GuestsPage({
     params,
 }: {
@@ -68,12 +107,10 @@ export default async function GuestsPage({
             .eq("id", eventId)
             .maybeSingle(),
 
-        supabaseServer
-            .from("registrations")
-            .select("*")
-            .eq("event_id", eventId)
-            .order("created_at", { ascending: false })
-            .limit(100),
+        loadAllRegistrations(
+            supabaseServer,
+            eventId
+        ),
 
         supabaseServer
             .from("registration_forms")
@@ -90,6 +127,18 @@ export default async function GuestsPage({
                 <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
                     <p className="font-black text-red-600">
                         Failed to load event: {eventResult.error.message}
+                    </p>
+                </div>
+            </main>
+        );
+    }
+
+    if (guestsResult.error) {
+        return (
+            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
+                <div className="mx-auto max-w-7xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
+                    <p className="font-black text-red-600">
+                        Failed to load guests: {guestsResult.error.message}
                     </p>
                 </div>
             </main>
@@ -175,7 +224,9 @@ export default async function GuestsPage({
                             </p>
 
                             <p className="mt-2 text-sm leading-6 text-slate-500">
-                                Showing latest 100 guests for faster loading.
+                                Showing all {baseGuests.length} registered guest
+                                {baseGuests.length === 1 ? "" : "s"}. Use the
+                                search, check-in filter and page controls below.
                             </p>
                         </div>
 

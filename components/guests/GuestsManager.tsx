@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     CirclePlus,
     Loader2,
     Mail,
@@ -106,6 +108,8 @@ type Props = {
     initialGuests: Guest[];
     fields: RegistrationField[];
 };
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function normalizeKey(value: unknown) {
     return String(value ?? "")
@@ -525,6 +529,8 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
     const [guests, setGuests] = useState<Guest[]>(initialGuests);
     const [query, setQuery] = useState("");
     const [checkInFilter, setCheckInFilter] = useState<CheckInFilter>("all");
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
     const [modalOpen, setModalOpen] = useState(false);
     const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
     const [formValues, setFormValues] = useState<Record<string, AnswerValue>>({});
@@ -577,6 +583,34 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
             notCheckedIn: guests.length - checkedInCount,
         };
     }, [guests]);
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(filteredGuests.length / pageSize)
+    );
+    const currentPage = Math.min(page, totalPages);
+    const firstGuestIndex =
+        (currentPage - 1) * pageSize;
+    const paginatedGuests = filteredGuests.slice(
+        firstGuestIndex,
+        firstGuestIndex + pageSize
+    );
+    const firstVisibleGuest =
+        filteredGuests.length === 0
+            ? 0
+            : firstGuestIndex + 1;
+    const lastVisibleGuest =
+        firstGuestIndex + paginatedGuests.length;
+
+    useEffect(() => {
+        setPage(1);
+    }, [query, checkInFilter, pageSize]);
+
+    useEffect(() => {
+        if (page > totalPages) {
+            setPage(totalPages);
+        }
+    }, [page, totalPages]);
 
     function getFieldFormKey(field: RegistrationField) {
         return fieldKey(field);
@@ -781,7 +815,7 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
                                 </td>
                             </tr>
                         ) : (
-                            filteredGuests.map((guest) => {
+                            paginatedGuests.map((guest) => {
                                 const checkedIn = isCheckedIn(guest);
                                 return (
                                     <tr key={guest.id} className={checkedIn ? "bg-slate-50/70" : "bg-white"}>
@@ -836,6 +870,82 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
                     </tbody>
                 </table>
             </div>
+
+            {filteredGuests.length > 0 && (
+                <div className="flex flex-col gap-4 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <p className="text-sm font-black text-slate-700">
+                            Showing {firstVisibleGuest}–{lastVisibleGuest} of{" "}
+                            {filteredGuests.length} matching guest
+                            {filteredGuests.length === 1 ? "" : "s"}
+                        </p>
+
+                        {filteredGuests.length !== stats.total && (
+                            <p className="mt-1 text-xs font-bold text-slate-500">
+                                {stats.total} total registered guests
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-500">
+                            Rows per page
+                            <select
+                                value={pageSize}
+                                onChange={(event) =>
+                                    setPageSize(
+                                        Number(event.target.value)
+                                    )
+                                }
+                                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none transition focus:border-[#4F46E5]"
+                            >
+                                {PAGE_SIZE_OPTIONS.map((size) => (
+                                    <option key={size} value={size}>
+                                        {size}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setPage((current) =>
+                                        Math.max(1, current - 1)
+                                    )
+                                }
+                                disabled={currentPage <= 1}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-[#4F46E5] hover:text-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <ChevronLeft size={16} />
+                                Previous
+                            </button>
+
+                            <span className="min-w-[92px] text-center text-sm font-black text-slate-600">
+                                Page {currentPage} of {totalPages}
+                            </span>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setPage((current) =>
+                                        Math.min(
+                                            totalPages,
+                                            current + 1
+                                        )
+                                    )
+                                }
+                                disabled={currentPage >= totalPages}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-[#4F46E5] hover:text-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Next
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {modalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-5">
