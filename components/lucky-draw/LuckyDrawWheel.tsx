@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Check,
     CheckCircle2,
+    Download,
     Filter,
     Gift,
     History,
@@ -96,6 +97,94 @@ const HIDDEN_FILTER_KEYS = new Set([
     "checkedinat",
 ]);
 
+function escapeCsvCell(value: unknown) {
+    let text = String(value ?? "");
+
+    // Prevent spreadsheet applications from interpreting user-controlled
+    // values as formulas.
+    if (/^[=+\-@]/.test(text)) {
+        text = `'${text}`;
+    }
+
+    return `"${text.replace(/"/g, '""')}"`;
+}
+
+function makeCsvFileName(value: string) {
+    const cleanName = value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+    return cleanName || "event";
+}
+
+function getLiveDrawLayout(nameCount: number) {
+    if (nameCount <= 1) {
+        return {
+            maxWidthClass: "max-w-5xl",
+            gapClass: "gap-5",
+            cardClass:
+                "min-h-[260px] rounded-[2.5rem] px-10 py-12",
+            nameClass:
+                "text-5xl sm:text-6xl md:text-7xl",
+        };
+    }
+
+    if (nameCount === 2) {
+        return {
+            maxWidthClass: "max-w-7xl",
+            gapClass: "gap-5",
+            cardClass:
+                "min-h-[230px] rounded-[2rem] px-8 py-10",
+            nameClass:
+                "text-4xl sm:text-5xl md:text-6xl",
+        };
+    }
+
+    if (nameCount === 3) {
+        return {
+            maxWidthClass: "max-w-[1500px]",
+            gapClass: "gap-4",
+            cardClass:
+                "min-h-[210px] rounded-[2rem] px-6 py-8",
+            nameClass:
+                "text-3xl sm:text-4xl md:text-5xl",
+        };
+    }
+
+    if (nameCount <= 5) {
+        return {
+            maxWidthClass: "max-w-[1750px]",
+            gapClass: "gap-4",
+            cardClass:
+                "min-h-[180px] rounded-[1.75rem] px-5 py-7",
+            nameClass:
+                "text-2xl sm:text-3xl md:text-4xl",
+        };
+    }
+
+    if (nameCount <= 10) {
+        return {
+            maxWidthClass: "max-w-[1900px]",
+            gapClass: "gap-3",
+            cardClass:
+                "min-h-[130px] rounded-2xl px-3 py-5",
+            nameClass:
+                "text-lg sm:text-xl md:text-2xl",
+        };
+    }
+
+    return {
+        maxWidthClass: "max-w-[1900px]",
+        gapClass: "gap-2",
+        cardClass:
+            "min-h-[92px] rounded-xl px-2 py-3",
+        nameClass:
+            "text-sm sm:text-base md:text-lg",
+    };
+}
+
 export default function LuckyDrawWheel({
     eventId,
     eventName,
@@ -126,6 +215,8 @@ export default function LuckyDrawWheel({
     const [newPrizeName, setNewPrizeName] = useState("");
     const [guestSearch, setGuestSearch] = useState("");
     const [winnerHistorySearch, setWinnerHistorySearch] = useState("");
+    const [winnerFieldFilterKey, setWinnerFieldFilterKey] = useState("");
+    const [winnerFieldFilterValue, setWinnerFieldFilterValue] = useState("");
     const [draftEligibleIds, setDraftEligibleIds] = useState<string[]>(
         initialPrizes[0]?.eligible_registration_ids || []
     );
@@ -363,27 +454,209 @@ export default function LuckyDrawWheel({
         });
     }, [winners]);
 
-    const filteredWinnerHistory = useMemo(() => {
-        const keyword = winnerHistorySearch.trim().toLowerCase();
+    const winnerGuestByRegistrationId = useMemo(() => {
+        return new Map(
+            guests.map((guest) => [guest.id, guest] as const)
+        );
+    }, [guests]);
 
-        if (!keyword) {
-            return latestWinners;
-        }
+    const selectedWinnerFilterField = useMemo(() => {
+        return (
+            availableFilterFields.find(
+                (field) =>
+                    field.field_key === winnerFieldFilterKey
+            ) || null
+        );
+    }, [availableFilterFields, winnerFieldFilterKey]);
+
+    const winnerFieldFilterOptions = useMemo(() => {
+        if (!winnerFieldFilterKey) return [];
+
+        const values = new Set<string>();
+
+        getConfiguredChoices(
+            selectedWinnerFilterField
+        ).forEach((choice) => {
+            if (choice) values.add(choice);
+        });
+
+        latestWinners.forEach((winner) => {
+            const guest =
+                winnerGuestByRegistrationId.get(
+                    winner.registration_id
+                );
+
+            if (!guest) return;
+
+            normaliseAnswerValues(
+                getGuestAnswer(
+                    guest,
+                    winnerFieldFilterKey
+                )
+            ).forEach((value) => {
+                if (value) values.add(value);
+            });
+        });
+
+        return Array.from(values).sort((first, second) =>
+            first.localeCompare(second)
+        );
+    }, [
+        latestWinners,
+        selectedWinnerFilterField,
+        winnerFieldFilterKey,
+        winnerGuestByRegistrationId,
+    ]);
+
+    const hasWinnerHistoryFilters =
+        Boolean(winnerHistorySearch.trim()) ||
+        Boolean(winnerFieldFilterKey) ||
+        Boolean(winnerFieldFilterValue);
+
+    const filteredWinnerHistory = useMemo(() => {
+        const keyword =
+            winnerHistorySearch.trim().toLowerCase();
 
         return latestWinners.filter((winner) => {
+            const guest =
+                winnerGuestByRegistrationId.get(
+                    winner.registration_id
+                );
+
             const searchableText = [
                 winner.winner_name,
                 winner.winner_email,
                 winner.prize_name,
                 winner.draw_round?.toString(),
+                guest?.phone,
+                guest?.department,
+                ...Object.values(
+                    guest?.custom_answers || {}
+                ).flatMap((value) =>
+                    normaliseAnswerValues(value)
+                ),
             ]
                 .filter(Boolean)
                 .join(" ")
                 .toLowerCase();
 
-            return searchableText.includes(keyword);
+            if (
+                keyword &&
+                !searchableText.includes(keyword)
+            ) {
+                return false;
+            }
+
+            if (
+                !winnerFieldFilterKey ||
+                !winnerFieldFilterValue
+            ) {
+                return true;
+            }
+
+            if (!guest) return false;
+
+            const answerValues =
+                normaliseAnswerValues(
+                    getGuestAnswer(
+                        guest,
+                        winnerFieldFilterKey
+                    )
+                );
+
+            if (
+                winnerFieldFilterValue ===
+                HAS_VALUE_FILTER
+            ) {
+                return answerValues.length > 0;
+            }
+
+            return answerValues.some(
+                (value) =>
+                    value.trim().toLowerCase() ===
+                    winnerFieldFilterValue
+                        .trim()
+                        .toLowerCase()
+            );
         });
-    }, [latestWinners, winnerHistorySearch]);
+    }, [
+        latestWinners,
+        winnerHistorySearch,
+        winnerFieldFilterKey,
+        winnerFieldFilterValue,
+        winnerGuestByRegistrationId,
+    ]);
+
+    function exportWinnerHistoryToCsv() {
+        if (filteredWinnerHistory.length === 0) {
+            setMessage("There are no winner records to export.");
+            return;
+        }
+
+        const header = [
+            "Winner Name",
+            "Winner Email",
+            "Prize",
+            "Won At",
+        ];
+
+        const rows = filteredWinnerHistory.map((winner) => {
+            return [
+                winner.winner_name || "",
+                winner.winner_email || "",
+                winner.prize_name || "",
+                winner.created_at
+                    ? new Date(
+                          winner.created_at
+                      ).toLocaleString("en-SG")
+                    : "",
+            ];
+        });
+
+        const csv = [
+            header,
+            ...rows,
+        ]
+            .map((row) =>
+                row.map(escapeCsvCell).join(",")
+            )
+            .join("\r\n");
+
+        const blob = new Blob(
+            ["\uFEFF", csv],
+            {
+                type:
+                    "text/csv;charset=utf-8;",
+            }
+        );
+
+        const downloadUrl =
+            URL.createObjectURL(blob);
+        const anchor =
+            document.createElement("a");
+        const dateStamp = new Date()
+            .toISOString()
+            .slice(0, 10);
+
+        anchor.href = downloadUrl;
+        anchor.download = `${makeCsvFileName(
+            eventName
+        )}-lucky-draw-winners-${dateStamp}.csv`;
+
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        URL.revokeObjectURL(downloadUrl);
+
+        setMessage(
+            `Exported ${filteredWinnerHistory.length} winner record${
+                filteredWinnerHistory.length === 1
+                    ? ""
+                    : "s"
+            } to CSV.`
+        );
+    }
 
     async function addPrize() {
         const cleanPrizeName = newPrizeName.trim();
@@ -432,9 +705,9 @@ export default function LuckyDrawWheel({
             return;
         }
 
-        const nextCount = Math.min(
-            50,
-            Math.max(1, Math.floor(Number(winnerCountDraft) || 1))
+        const nextCount = Math.max(
+            1,
+            Math.floor(Number(winnerCountDraft) || 1)
         );
 
         setSavingWinnerCount(true);
@@ -604,18 +877,6 @@ export default function LuckyDrawWheel({
         );
     }
 
-    function selectAllGuestsForPrize() {
-        if (!selectedPrize) {
-            setMessage("Select or create a prize first.");
-            return;
-        }
-
-        setDraftEligibleIds(guests.map((guest) => guest.id));
-        setMessage(
-            `All ${guests.length} checked-in guests are selected. Press Save Selected Guests to apply this to ${selectedPrize.prize_name}.`
-        );
-    }
-
     function selectFilteredGuestsForPrize() {
         if (!selectedPrize) {
             setMessage("Select or create a prize first.");
@@ -762,13 +1023,10 @@ export default function LuckyDrawWheel({
             return;
         }
 
-        const winnerCount = Math.min(
-            50,
-            Math.max(
-                1,
-                Math.floor(
-                    Number(selectedPrize.winner_count || winnerCountDraft || 1)
-                )
+        const winnerCount = Math.max(
+            1,
+            Math.floor(
+                Number(selectedPrize.winner_count || winnerCountDraft || 1)
             )
         );
 
@@ -814,7 +1072,15 @@ export default function LuckyDrawWheel({
             window.clearTimeout(drawTimeoutRef.current);
         }
 
-        setShufflePreview(pickRandomNames(guestNames, winnerCount));
+        const drawId = `${eventId}-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
+        const initialDisplayNames = pickRandomNames(
+            guestNames,
+            winnerCount
+        );
+
+        setShufflePreview(initialDisplayNames);
         setSpinning(true);
 
         // Give Supabase Realtime a brief moment to finish subscribing.
@@ -831,6 +1097,7 @@ export default function LuckyDrawWheel({
             type: "broadcast",
             event: "draw-start",
             payload: {
+                drawId,
                 prizeId: selectedPrize.id,
                 prizeName: selectedPrize.prize_name,
                 winnerCount,
@@ -838,6 +1105,7 @@ export default function LuckyDrawWheel({
                 durationMs,
                 guestNames,
                 winnerNames,
+                displayNames: initialDisplayNames,
             },
         });
 
@@ -851,7 +1119,21 @@ export default function LuckyDrawWheel({
         }
 
         shuffleIntervalRef.current = window.setInterval(() => {
-            setShufflePreview(pickRandomNames(guestNames, winnerCount));
+            const nextDisplayNames = pickRandomNames(
+                guestNames,
+                winnerCount
+            );
+
+            setShufflePreview(nextDisplayNames);
+
+            void liveDrawChannelRef.current?.send({
+                type: "broadcast",
+                event: "draw-frame",
+                payload: {
+                    drawId,
+                    names: nextDisplayNames,
+                },
+            });
         }, 90);
 
         drawTimeoutRef.current = window.setTimeout(async () => {
@@ -860,16 +1142,40 @@ export default function LuckyDrawWheel({
                 shuffleIntervalRef.current = null;
             }
 
-            setShufflePreview(
-                winningGuests.map(
-                    (winner) => winner.full_name || "Unnamed Guest"
-                )
+            const finalWinnerNames = winningGuests.map(
+                (winner) =>
+                    winner.full_name || "Unnamed Guest"
             );
+
+            setShufflePreview(finalWinnerNames);
+
+            await liveDrawChannelRef.current?.send({
+                type: "broadcast",
+                event: "draw-finish",
+                payload: {
+                    drawId,
+                    names: finalWinnerNames,
+                },
+            });
 
             await saveWinners(winningGuests, drawRound);
             setSpinning(false);
             drawTimeoutRef.current = null;
         }, durationMs);
+    }
+
+    async function reloadWinnerHistory() {
+        const { data, error } = await supabase
+            .from("lucky_draw_winners")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        setWinners((data || []) as Winner[]);
     }
 
     async function addWinnerBack(winner: Winner) {
@@ -919,19 +1225,18 @@ export default function LuckyDrawWheel({
                 );
             }
 
-            // Update every historical record for this registration. A guest
-            // may have won more than once, so changing only one history row
-            // would leave another excluded row blocking them from the draw.
-            setWinners((current) =>
-                current.map((item) =>
-                    item.registration_id === winner.registration_id
-                        ? { ...item, is_excluded: false }
-                        : item
-                )
-            );
+            if (Number(result.updatedCount || 0) === 0) {
+                throw new Error(
+                    "No winner record was updated. Check that this winner belongs to the current event."
+                );
+            }
+
+            // Reload from the database so every historical row for this
+            // registration is confirmed as restored.
+            await reloadWinnerHistory();
 
             setMessage(
-                `${winner.winner_name || "Guest"} has been added back to the draw. All winner history remains saved.`
+                `${winner.winner_name || "Guest"} has been added back to the draw. Winner history remains saved.`
             );
         } catch (error) {
             setMessage(
@@ -1001,12 +1306,15 @@ export default function LuckyDrawWheel({
                 );
             }
 
-            setWinners((current) =>
-                current.map((winner) => ({
-                    ...winner,
-                    is_excluded: false,
-                }))
-            );
+            if (Number(result.updatedCount || 0) === 0) {
+                throw new Error(
+                    "No excluded winner records were found for this event."
+                );
+            }
+
+            // Reload the complete history so the UI reflects the database
+            // state and every past winner becomes eligible again.
+            await reloadWinnerHistory();
 
             setMessage(
                 "All previous winners have been added back to the draw. Their history remains saved."
@@ -1022,28 +1330,35 @@ export default function LuckyDrawWheel({
         }
     }
 
-    async function clearWinners() {
-        const confirmed = window.confirm(
-            "Clear all lucky draw winners for this event? This allows everyone to be drawn again."
-        );
 
-        if (!confirmed) return;
-
-        const { error } = await supabase
-            .from("lucky_draw_winners")
-            .delete()
-            .eq("event_id", eventId);
-
-        if (error) {
-            setMessage(error.message);
-            return;
-        }
-
-        setWinners([]);
-        setSelectedWinners([]);
-        setShufflePreview([]);
-        setMessage("Lucky draw history cleared.");
-    }
+    const liveMachineNames = shufflePreview
+        .map((name) => String(name || "").trim())
+        .filter(Boolean);
+    const liveMachineLayout = getLiveDrawLayout(
+        liveMachineNames.length
+    );
+    const liveMachineColumns = Math.max(
+        1,
+        Math.min(10, liveMachineNames.length)
+    );
+    const liveMachineRemainder =
+        liveMachineNames.length % liveMachineColumns;
+    const liveMachineLastRowStart =
+        liveMachineRemainder === 0
+            ? -1
+            : liveMachineNames.length -
+              liveMachineRemainder;
+    const liveMachineCenteredColumn =
+        liveMachineRemainder === 0
+            ? undefined
+            : Math.floor(
+                  (liveMachineColumns -
+                      liveMachineRemainder) /
+                      2
+              ) + 1;
+    const liveMachineGridStyle = {
+        gridTemplateColumns: `repeat(${liveMachineColumns}, minmax(0, 1fr))`,
+    };
 
     return (
         <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1120,7 +1435,7 @@ export default function LuckyDrawWheel({
                                         Number of winners for this prize
                                     </label>
                                     <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                                        One live draw will reveal this many different names together.
+                                        Enter any quantity. A draw can only proceed when enough eligible guests are available.
                                     </p>
                                 </div>
 
@@ -1129,14 +1444,13 @@ export default function LuckyDrawWheel({
                                         id="winner-count"
                                         type="number"
                                         min={1}
-                                        max={50}
+                                        step={1}
                                         value={winnerCountDraft}
                                         onChange={(event) =>
                                             setWinnerCountDraft(
-                                                Math.min(
-                                                    50,
-                                                    Math.max(
-                                                        1,
+                                                Math.max(
+                                                    1,
+                                                    Math.floor(
                                                         Number(event.target.value) || 1
                                                     )
                                                 )
@@ -1241,54 +1555,51 @@ export default function LuckyDrawWheel({
                             </div>
                         </div>
 
-                        <div
-                            className={`mt-6 grid gap-3 ${
-                                Math.max(
-                                    1,
-                                    Number(selectedPrize?.winner_count || 1)
-                                ) === 1
-                                    ? "grid-cols-1"
-                                    : "grid-cols-1 sm:grid-cols-2"
-                            }`}
-                        >
-                            {Array.from({
-                                length: Math.max(
-                                    1,
-                                    Number(selectedPrize?.winner_count || 1)
-                                ),
-                            }).map((_, index) => {
-                                const previewName =
-                                    shufflePreview[index] ||
-                                    (spinning ? "Selecting..." : "Ready");
+                        <div className="relative mt-6 min-h-[250px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950 px-3 py-5 sm:px-4 md:px-6">
+                            <div className="pointer-events-none absolute left-[-20%] top-[-80%] h-[520px] w-[520px] rounded-full bg-[#4F46E5]/30 blur-3xl" />
+                            <div className="pointer-events-none absolute bottom-[-100%] right-[-20%] h-[580px] w-[580px] rounded-full bg-[#EC4899]/25 blur-3xl" />
 
-                                return (
-                                    <div
-                                        key={index}
-                                        className={`relative overflow-hidden rounded-[1.5rem] border p-5 text-center transition ${
-                                            spinning
-                                                ? "border-[#EC4899]/50 bg-gradient-to-br from-[#4F46E5]/35 to-[#EC4899]/25 shadow-[0_0_35px_rgba(236,72,153,0.18)]"
-                                                : "border-white/10 bg-white/10"
-                                        }`}
-                                    >
-                                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_60%)]" />
-
-                                        <div className="relative z-10">
-                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
-                                                Winner Slot {index + 1}
-                                            </p>
-                                            <p
-                                                className={`mt-3 min-h-10 break-words text-xl font-black text-white sm:text-2xl ${
-                                                    spinning
-                                                        ? "animate-pulse"
-                                                        : ""
-                                                }`}
+                            {liveMachineNames.length > 0 ? (
+                                <div
+                                    className={`relative z-10 mx-auto grid w-full ${liveMachineLayout.maxWidthClass} ${liveMachineLayout.gapClass}`}
+                                    style={liveMachineGridStyle}
+                                >
+                                    {liveMachineNames.map(
+                                        (name, index) => (
+                                            <div
+                                                key={`${name}-${index}`}
+                                                className={`flex items-center justify-center border border-white/15 bg-white/10 text-center shadow-xl backdrop-blur-xl ${liveMachineLayout.cardClass}`}
+                                                style={
+                                                    index ===
+                                                        liveMachineLastRowStart &&
+                                                    liveMachineCenteredColumn
+                                                        ? {
+                                                              gridColumnStart:
+                                                                  liveMachineCenteredColumn,
+                                                          }
+                                                        : undefined
+                                                }
                                             >
-                                                {previewName}
-                                            </p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                                <span
+                                                    className={`break-words font-black leading-tight tracking-tight text-white ${liveMachineLayout.nameClass} ${
+                                                        spinning
+                                                            ? "animate-pulse"
+                                                            : ""
+                                                    }`}
+                                                >
+                                                    {name}
+                                                </span>
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="relative z-10 flex min-h-[220px] items-center justify-center text-center">
+                                    <p className="max-w-md text-sm font-bold leading-6 text-white/40">
+                                        Names will appear here when the live draw starts.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -1480,20 +1791,6 @@ export default function LuckyDrawWheel({
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
                         <button
                             type="button"
-                            onClick={selectAllGuestsForPrize}
-                            disabled={
-                                savingEligibility ||
-                                !selectedPrize ||
-                                guests.length === 0
-                            }
-                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            <Check size={16} />
-                            Select All ({guests.length})
-                        </button>
-
-                        <button
-                            type="button"
                             onClick={useFilteredGuestsOnlyForPrize}
                             disabled={
                                 savingEligibility ||
@@ -1534,7 +1831,7 @@ export default function LuckyDrawWheel({
                             type="button"
                             onClick={() => void saveSelectedGuestsForPrize()}
                             disabled={savingEligibility || !selectedPrize}
-                            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:col-span-2"
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                             <CheckCircle2
                                 size={17}
@@ -1758,6 +2055,19 @@ export default function LuckyDrawWheel({
                             <div className="flex flex-wrap justify-end gap-2">
                                 <button
                                     type="button"
+                                    onClick={exportWinnerHistoryToCsv}
+                                    disabled={
+                                        filteredWinnerHistory.length === 0
+                                    }
+                                    className="inline-flex items-center gap-2 rounded-2xl bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5] transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    <Download size={16} />
+                                    Export CSV (
+                                    {filteredWinnerHistory.length})
+                                </button>
+
+                                <button
+                                    type="button"
                                     onClick={addAllWinnersBack}
                                     disabled={
                                         addingAllWinnersBack ||
@@ -1768,13 +2078,6 @@ export default function LuckyDrawWheel({
                                     {addingAllWinnersBack
                                         ? "Adding Back..."
                                         : `Add All Back (${excludedWinnerRegistrationIds.size})`}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={clearWinners}
-                                    className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 transition hover:bg-red-100"
-                                >
-                                    Clear History
                                 </button>
                             </div>
                         )}
@@ -1795,8 +2098,121 @@ export default function LuckyDrawWheel({
                         />
                     </div>
 
-                    {winnerHistorySearch.trim() && (
-                        <p className="mt-3 text-xs font-bold text-slate-500">
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-700">
+                            <Filter
+                                size={16}
+                                className="text-[#4F46E5]"
+                            />
+                            Filter by Registration Answer
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <select
+                                value={winnerFieldFilterKey}
+                                onChange={(event) => {
+                                    setWinnerFieldFilterKey(
+                                        event.target.value
+                                    );
+                                    setWinnerFieldFilterValue("");
+                                }}
+                                className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
+                            >
+                                <option value="">
+                                    No field filter
+                                </option>
+
+                                {availableFilterFields.map(
+                                    (field) => (
+                                        <option
+                                            key={
+                                                field.id ||
+                                                field.field_key
+                                            }
+                                            value={
+                                                field.field_key
+                                            }
+                                        >
+                                            {
+                                                field.field_label
+                                            }
+                                        </option>
+                                    )
+                                )}
+                            </select>
+
+                            <select
+                                value={winnerFieldFilterValue}
+                                onChange={(event) =>
+                                    setWinnerFieldFilterValue(
+                                        event.target.value
+                                    )
+                                }
+                                disabled={!winnerFieldFilterKey}
+                                className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option value="">
+                                    Select value
+                                </option>
+                                <option value={HAS_VALUE_FILTER}>
+                                    Has any value
+                                </option>
+
+                                {winnerFieldFilterOptions.map(
+                                    (value) => (
+                                        <option
+                                            key={value}
+                                            value={value}
+                                        >
+                                            {value}
+                                        </option>
+                                    )
+                                )}
+                            </select>
+                        </div>
+
+                        {(winnerFieldFilterKey ||
+                            winnerFieldFilterValue) && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-xs font-bold text-slate-500">
+                                    Showing{" "}
+                                    <span className="font-black text-[#4F46E5]">
+                                        {
+                                            filteredWinnerHistory.length
+                                        }
+                                    </span>{" "}
+                                    matching winner record
+                                    {filteredWinnerHistory.length ===
+                                    1
+                                        ? ""
+                                        : "s"}
+                                    .
+                                </p>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setWinnerFieldFilterKey(
+                                            ""
+                                        );
+                                        setWinnerFieldFilterValue(
+                                            ""
+                                        );
+                                    }}
+                                    className="rounded-xl bg-white px-4 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100"
+                                >
+                                    Clear Filter
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <p className="mt-3 text-xs font-bold text-slate-500">
+                        The CSV export uses the current winner filters.
+                    </p>
+
+                    {hasWinnerHistoryFilters && (
+                        <p className="mt-2 text-xs font-bold text-slate-500">
                             Showing{" "}
                             <span className="font-black text-[#4F46E5]">
                                 {filteredWinnerHistory.length}
@@ -1902,7 +2318,7 @@ export default function LuckyDrawWheel({
                         ) : latestWinners.length === 0 ? (
                             <EmptyBox text="No winners drawn yet." />
                         ) : (
-                            <EmptyBox text="No winner history matches your search." />
+                            <EmptyBox text="No winner history matches the selected filters." />
                         )}
                     </div>
                 </div>
@@ -1987,6 +2403,7 @@ function getGuestAnswer(guest: CheckedInGuest, fieldKey: string) {
         normalisedKey === "department" ||
         normalisedKey === "departmentoutlet"
     ) {
+        // Legacy combined values are treated as Department only.
         return guest.department;
     }
 
@@ -2003,9 +2420,20 @@ function getEquivalentAnswerKeys(fieldKey: string) {
         return [
             fieldKey,
             "department",
+            "Department",
             "department_outlet",
             "departmentOutlet",
             "department / outlet",
+        ];
+    }
+
+    if (normalisedKey === "outlet" || normalisedKey === "outletname") {
+        return [
+            fieldKey,
+            "outlet",
+            "outlet_name",
+            "outletName",
+            "Outlet",
         ];
     }
 
@@ -2156,16 +2584,24 @@ function getFilterGroupKey(field: RegistrationField) {
         `${field.field_label || ""} ${field.field_key || ""}`
     );
 
+    if (combined.includes("requiretransport") || combined.includes("transport")) {
+        return "requiretransport";
+    }
+
+    if (combined.includes("departmentoutlet")) {
+        return "department";
+    }
+
     if (combined.includes("department")) {
-        return "departmentoutlet";
+        return "department";
+    }
+
+    if (combined.includes("outlet")) {
+        return "outlet";
     }
 
     if (combined.includes("dietary")) {
         return "dietaryrequirements";
-    }
-
-    if (combined.includes("requiretransport") || combined.includes("transport")) {
-        return "requiretransportfromoutlet";
     }
 
     return (
@@ -2177,16 +2613,20 @@ function getFilterGroupKey(field: RegistrationField) {
 function getFilterDisplayLabel(field: RegistrationField) {
     const groupKey = getFilterGroupKey(field);
 
-    if (groupKey === "departmentoutlet") {
-        return "Department / Outlet";
+    if (groupKey === "department") {
+        return "Department";
+    }
+
+    if (groupKey === "outlet") {
+        return "Outlet";
     }
 
     if (groupKey === "dietaryrequirements") {
         return "Dietary Requirements";
     }
 
-    if (groupKey === "requiretransportfromoutlet") {
-        return "Require Transport from Outlet";
+    if (groupKey === "requiretransport") {
+        return "Transport Required";
     }
 
     return field.field_label;

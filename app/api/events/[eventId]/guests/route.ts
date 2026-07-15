@@ -120,10 +120,17 @@ function buildPersistedAnswers(body: GuestRequestBody) {
 
     const department = readFromBodyAndAnswers(body, answers, [
         "department",
-        "outlet",
         "department_outlet",
         "departmentOutlet",
         "Department / Outlet",
+        "Department",
+    ]);
+
+    const outlet = readFromBodyAndAnswers(body, answers, [
+        "outlet",
+        "outlet_name",
+        "outletName",
+        "Outlet",
     ]);
 
     const dietaryRequest = readFromBodyAndAnswers(body, answers, [
@@ -164,8 +171,12 @@ function buildPersistedAnswers(body: GuestRequestBody) {
     }
     if (department !== null) {
         customAnswers.department = department;
-        customAnswers.department_outlet = department;
-        customAnswers["Department / Outlet"] = department;
+        customAnswers["Department"] = department;
+    }
+    if (outlet !== null) {
+        customAnswers.outlet = outlet;
+        customAnswers.outlet_name = outlet;
+        customAnswers["Outlet"] = outlet;
     }
     if (dietaryRequest !== null) {
         customAnswers.dietary_request = dietaryRequest;
@@ -173,9 +184,13 @@ function buildPersistedAnswers(body: GuestRequestBody) {
         customAnswers["Dietary Requirements"] = dietaryRequest;
     }
     if (requireTransport !== null) {
+        // Read old combined names for compatibility, but save only the
+        // canonical standalone field going forward.
         customAnswers.require_transport = requireTransport;
-        customAnswers.require_transport_from_outlet = requireTransport;
-        customAnswers["Require Transport from Outlet"] = requireTransport;
+        customAnswers["Transport Required"] = requireTransport;
+
+        delete customAnswers.require_transport_from_outlet;
+        delete customAnswers["Require Transport from Outlet"];
     }
 
     return {
@@ -183,6 +198,7 @@ function buildPersistedAnswers(body: GuestRequestBody) {
         email,
         phone,
         department,
+        outlet,
         dietaryRequest,
         requireTransport,
         customAnswers,

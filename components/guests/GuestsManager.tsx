@@ -337,11 +337,12 @@ function getDirectValue(
     if (
         [
             "department",
-            "outlet",
             "department_outlet",
             "departmentoutlet",
         ].includes(key)
     ) {
+        // Legacy Department / Outlet values are treated as Department only.
+        // A separate Outlet field must come from custom_answers.outlet.
         return guest.department ?? "";
     }
 
