@@ -254,7 +254,7 @@ export default function DashboardSidebar() {
                     },
                     {
                         href: `/dashboard/events/${eventId}/games`,
-                        label: "Glitter Games",
+                        label: "Games",
                         icon: Gamepad2,
                         exact: true,
                         roles: adminOnly,

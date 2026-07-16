@@ -320,7 +320,7 @@ export default async function EventOverviewPage({
             },
             {
                 moduleKey: "glitter_games",
-                title: "Glitter Games",
+                title: "Games",
                 description: "Run pre-dinner mini games, points and the live leaderboard.",
                 href: `/dashboard/events/${eventId}/games`,
                 icon: Gamepad2,

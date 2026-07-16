@@ -327,14 +327,24 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const rawSteps = Array.isArray(body.steps)
-            ? body.steps
+        const body: unknown = await request.json();
+        const bodyObject =
+            body && typeof body === "object"
+                ? (body as Record<string, unknown>)
+                : {};
+
+        const rawSteps: unknown[] = Array.isArray(
+            bodyObject.steps
+        )
+            ? bodyObject.steps
             : [];
 
-        const steps = rawSteps
-            .map(String)
-            .filter(isGameKey)
+        const steps: GameKey[] = rawSteps
+            .map((value: unknown) => String(value))
+            .filter(
+                (value: string): value is GameKey =>
+                    isGameKey(value)
+            )
             .slice(0, 12);
 
         if (steps.length === 0) {
@@ -343,11 +353,12 @@ export async function POST(
             );
         }
 
-        const finalGameKey = isFinalGameKey(
-            body.finalGameKey
-        )
-            ? body.finalGameKey
-            : "tap_fast";
+        const finalGameKey: FinalGameKey =
+            isFinalGameKey(
+                bodyObject.finalGameKey
+            )
+                ? bodyObject.finalGameKey
+                : "tap_fast";
 
         const { error: deleteError } =
             await supabaseServer
@@ -368,8 +379,8 @@ export async function POST(
                 .insert(
                     steps.map(
                         (
-                            gameKey,
-                            index
+                            gameKey: GameKey,
+                            index: number
                         ) => ({
                             tournament_id:
                                 tournament.id,

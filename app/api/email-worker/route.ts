@@ -34,10 +34,6 @@ function textToHtml(text: string) {
 }
 
 function getDefaultSubject(emailType: string, eventName: string) {
-    if (emailType === "glitter_games_access") {
-        return `You’re checked in — your Glitter Games pass for ${eventName}`;
-    }
-
     if (emailType === "table_assignment") {
         return `Your table has been assigned for ${eventName}`;
     }
@@ -50,19 +46,6 @@ function getDefaultSubject(emailType: string, eventName: string) {
 }
 
 function getDefaultBody(emailType: string) {
-    if (emailType === "glitter_games_access") {
-        return `Hi {{name}},
-
-You’re successfully checked in for {{event_name}}.
-
-Scan your personal Glitter Games QR code below or open this link:
-{{game_url}}
-
-Each challenge lasts 20 seconds. Winners earn 10 points, and the overall Top 10 qualify for Stage Game #2.
-
-This game pass is unique to your registration. Please do not share it.`;
-    }
-
     if (emailType === "table_assignment") {
         return `Hi {{name}},
 
@@ -137,6 +120,7 @@ async function runEmailWorker(req: Request) {
             .from("email_jobs")
             .select("*")
             .eq("status", "pending")
+            .neq("email_type", "glitter_games_access")
             .lt("attempts", 3)
             .order("created_at", { ascending: true })
             .limit(10);
@@ -209,7 +193,6 @@ async function runEmailWorker(req: Request) {
                 if (eventError) throw new Error(eventError.message);
                 if (!event) throw new Error("Event not found.");
 
-                const isGameAccessEmail = job.email_type === "glitter_games_access";
                 const siteUrl = (
                     process.env.NEXT_PUBLIC_SITE_URL ||
                     process.env.NEXT_PUBLIC_APP_URL ||
@@ -217,39 +200,21 @@ async function runEmailWorker(req: Request) {
                 ).replace(/\/$/, "");
 
                 const passUrl = `${siteUrl}/event/${event.event_slug}/pass?registration=${registration.id}`;
-                const gameAccessToken =
-                    typeof job.game_access_token === "string"
-                        ? job.game_access_token.trim()
-                        : "";
-                const gameUrl = gameAccessToken
-                    ? `${siteUrl}/event/${event.event_slug}/games/access?code=${encodeURIComponent(
-                          gameAccessToken,
-                      )}`
-                    : "";
 
-                if (isGameAccessEmail && !gameUrl) {
-                    throw new Error(
-                        "This Glitter Games email job does not contain a game access token.",
-                    );
+                const ticketResult = await supabaseServer
+                    .from("qr_tickets")
+                    .select("*")
+                    .eq("registration_id", registration.id)
+                    .eq("is_active", true)
+                    .limit(1)
+                    .maybeSingle();
+
+                if (ticketResult.error) {
+                    throw new Error(ticketResult.error.message);
                 }
 
-                let ticket: Record<string, unknown> | null = null;
-
-                if (!isGameAccessEmail) {
-                    const ticketResult = await supabaseServer
-                        .from("qr_tickets")
-                        .select("*")
-                        .eq("registration_id", registration.id)
-                        .eq("is_active", true)
-                        .limit(1)
-                        .maybeSingle();
-
-                    if (ticketResult.error) {
-                        throw new Error(ticketResult.error.message);
-                    }
-
-                    ticket = ticketResult.data;
-                }
+                const ticket =
+                    ticketResult.data as Record<string, unknown> | null;
 
                 let ticketName = "-";
 
@@ -281,10 +246,10 @@ async function runEmailWorker(req: Request) {
                     tableName = table?.table_name || "-";
                 }
 
-                const actionUrl = isGameAccessEmail ? gameUrl : passUrl;
+                const actionUrl = passUrl;
                 let qrBase64: string | null = null;
 
-                if (isGameAccessEmail || ticket) {
+                if (ticket) {
                     const qrDataUrl = await QRCode.toDataURL(actionUrl, {
                         width: 320,
                         margin: 2,
@@ -307,8 +272,8 @@ async function runEmailWorker(req: Request) {
                     table: tableName,
                     pass_url: passUrl,
                     qr_link: actionUrl,
-                    game_url: gameUrl,
-                    games_url: gameUrl,
+                    game_url: "",
+                    games_url: "",
                     qr_code: "Your QR code is displayed below.",
                     qr_image: "Your QR code is displayed below.",
                     company: "RegiGo",
@@ -335,15 +300,11 @@ async function runEmailWorker(req: Request) {
                 const fromAddress =
                     process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || smtpUser;
                 const fromName = process.env.EMAIL_FROM_NAME || "RegiGo";
-                const qrCid = isGameAccessEmail
-                    ? "glittergames@regigo"
-                    : "qrpass@regigo";
+                const qrCid = "qrpass@regigo";
                 const attachments = qrBase64
                     ? [
                           {
-                              filename: isGameAccessEmail
-                                  ? "glitter-games-pass.png"
-                                  : "qr-pass.png",
+                              filename: "qr-pass.png",
                               content: qrBase64,
                               encoding: "base64" as const,
                               cid: qrCid,
@@ -352,23 +313,15 @@ async function runEmailWorker(req: Request) {
                       ]
                     : [];
 
-                const informationCard = isGameAccessEmail
-                    ? `
-                        <div style="background:#F7F5FF;border-radius:20px;padding:20px;margin-top:24px">
-                          <p style="margin:0 0 10px"><b>Challenge time:</b> 20 seconds</p>
-                          <p style="margin:0 0 10px"><b>Points per win:</b> 10</p>
-                          <p style="margin:0"><b>Stage Game #2:</b> Overall Top 10 qualify</p>
-                        </div>
-                      `
-                    : `
-                        <div style="background:#F7F5FF;border-radius:20px;padding:20px;margin-top:24px">
-                          <p><b>Date:</b> ${escapeHtml(event.event_date || "-")}</p>
-                          <p><b>Time:</b> ${escapeHtml(event.event_time || "-")}</p>
-                          <p><b>Venue:</b> ${escapeHtml(event.venue || "-")}</p>
-                          <p><b>Ticket Type:</b> ${escapeHtml(ticketName)}</p>
-                          <p><b>Table:</b> ${escapeHtml(tableName)}</p>
-                        </div>
-                      `;
+                const informationCard = `
+                    <div style="background:#F7F5FF;border-radius:20px;padding:20px;margin-top:24px">
+                      <p><b>Date:</b> ${escapeHtml(event.event_date || "-")}</p>
+                      <p><b>Time:</b> ${escapeHtml(event.event_time || "-")}</p>
+                      <p><b>Venue:</b> ${escapeHtml(event.venue || "-")}</p>
+                      <p><b>Ticket Type:</b> ${escapeHtml(ticketName)}</p>
+                      <p><b>Table:</b> ${escapeHtml(tableName)}</p>
+                    </div>
+                  `;
 
                 await transporter.sendMail({
                     from: `"${fromName}" <${fromAddress}>`,
@@ -394,11 +347,7 @@ async function runEmailWorker(req: Request) {
                                           <div style="text-align:center;margin:28px 0">
                                             <img
                                               src="cid:${qrCid}"
-                                              alt="${
-                                                  isGameAccessEmail
-                                                      ? "Glitter Games QR Code"
-                                                      : "QR Code"
-                                              }"
+                                              alt="QR Code"
                                               width="220"
                                               height="220"
                                               style="display:block;margin:auto;width:220px;height:220px;border:0"
@@ -412,7 +361,7 @@ async function runEmailWorker(req: Request) {
 
                               <div style="text-align:center;margin-top:28px">
                                 <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#4F46E5;color:white;padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:bold">
-                                  ${isGameAccessEmail ? "Open Glitter Games" : "View QR Pass"}
+                                  View QR Pass
                                 </a>
                               </div>
                             </div>
