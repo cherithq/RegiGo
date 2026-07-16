@@ -79,35 +79,6 @@ function parseScannedValue(value: string) {
     };
 }
 
-async function triggerEmailWorker(request: Request) {
-    try {
-        const response = await fetch(new URL("/api/email-worker/trigger", request.url), {
-            method: "POST",
-            cache: "no-store",
-        });
-
-        const text = await response.text();
-        let result: unknown = {};
-
-        try {
-            result = text ? JSON.parse(text) : {};
-        } catch {
-            result = { raw: text };
-        }
-
-        return {
-            success: response.ok,
-            result,
-        };
-    } catch (error) {
-        console.error("Unable to trigger email worker:", error);
-        return {
-            success: false,
-            result: null,
-        };
-    }
-}
-
 export async function POST(
     request: Request,
     context: { params: Promise<{ eventId: string }> },
@@ -272,10 +243,6 @@ export async function POST(
             return jsonNoStore({ error: ticketUpdateError.message }, 400);
         }
 
-        let emailQueued = false;
-        let emailWorkerTriggered = false;
-        let emailMessage = "";
-
         return jsonNoStore({
             success: true,
             duplicate: !createdCheckIn,
@@ -287,9 +254,6 @@ export async function POST(
                 full_name: guest.full_name || "Guest",
                 email: guest.email || null,
             },
-            emailQueued,
-            emailWorkerTriggered,
-            emailMessage,
         });
     } catch (error) {
         console.error("Check-in request failed:", error);
