@@ -1,13 +1,28 @@
 "use client";
 
 import {
+    AlertTriangle,
+    ArrowUpDown,
     Award,
+    Calculator,
+    CircleDollarSign,
     Coins,
     Crown,
+    Eye,
+    Grid2X2,
+    Hash,
+    Info,
+    ListOrdered,
     Loader2,
+    Megaphone,
+    Palette,
+    Pause,
+    PartyPopper,
     QrCode,
     Swords,
     Trophy,
+    UserRoundCheck,
+    UserRoundX,
     Users,
     Zap,
 } from "lucide-react";
@@ -57,13 +72,86 @@ type DisplayState = {
     gameKey?:
         | "tap_fast"
         | "coin_flip"
-        | "tic_tac_toe";
+        | "tic_tac_toe"
+        | "grab_coins"
+        | "match_cards"
+        | "number_rush"
+        | "color_clash"
+        | "odd_one_out"
+        | "quick_math"
+        | "sort_it_out"
+        | "higher_lower";
     gameTitle?: string;
     scoreLabel?: string;
     completedPlayers?: number;
     tttTotalMatches?: number;
     tttCompletedMatches?: number;
     tttMatches?: TicTacToeMatch[];
+    grabDurationSeconds?: number;
+    grabTopScore?: number;
+    matchCardDurationSeconds?: number;
+    matchCardTopScore?: number;
+    matchCardCompletedPlayers?: number;
+    numberRushDurationSeconds?: number;
+    numberRushTopScore?: number;
+    numberRushTopBoards?: number;
+    colorClashDurationSeconds?: number;
+    colorClashTopScore?: number;
+    colorClashTopStreak?: number;
+    oddOneOutDurationSeconds?: number;
+    oddOneOutTopScore?: number;
+    oddOneOutTopStreak?: number;
+    quickMathDurationSeconds?: number;
+    quickMathTopScore?: number;
+    quickMathTopStreak?: number;
+    sortItOutDurationSeconds?: number;
+    sortItOutTopScore?: number;
+    sortItOutTopBoards?: number;
+    higherLowerDurationSeconds?: number;
+    higherLowerTopScore?: number;
+    higherLowerTopStreak?: number;
+    readyTargetRound?: number;
+    readyCount?: number;
+    readyTotal?: number;
+    onlineCount?: number;
+    allReady?: boolean;
+    nextGameKey?: string;
+    nextGameTitle?: string;
+    presentationState?:
+        | "hidden"
+        | "revealed"
+        | "ready";
+    resultsRevealed?: boolean;
+    readyOpen?: boolean;
+    resultRoundNumber?: number | null;
+    resultGameTitle?: string | null;
+    resultIsFinal?: boolean;
+    advancingCount?: number;
+    eliminatedCount?: number;
+    advancingNames?: string[];
+    eliminatedNames?: string[];
+    paused?: boolean;
+    pauseReason?: string | null;
+    pausedAt?: string | null;
+    pausedFromStatus?: string | null;
+    pauseElapsedSeconds?: number;
+    totalPausedSeconds?: number;
+    broadcastActive?: boolean;
+    broadcastId?: string | null;
+    broadcastTitle?: string | null;
+    broadcastMessage?: string | null;
+    broadcastTone?:
+        | "info"
+        | "warning"
+        | "celebration"
+        | null;
+    broadcastDisplayMode?:
+        | "banner"
+        | "takeover"
+        | null;
+    broadcastCreatedAt?: string | null;
+    broadcastExpiresAt?: string | null;
+    broadcastSecondsRemaining?: number | null;
 };
 
 export default function TapTournamentDisplay({
@@ -153,12 +241,156 @@ export default function TapTournamentDisplay({
         Number(state.activePlayers || 0) > 1 &&
         !state.isFinal;
 
+    if (
+        state.broadcastActive &&
+        state.broadcastDisplayMode ===
+            "takeover"
+    ) {
+        const warning =
+            state.broadcastTone === "warning";
+        const celebration =
+            state.broadcastTone ===
+            "celebration";
+
+        return (
+            <main
+                className={`relative flex min-h-screen items-center justify-center overflow-hidden px-8 py-12 text-center ${
+                    warning
+                        ? "bg-gradient-to-br from-amber-950 via-slate-950 to-orange-950 text-white"
+                        : celebration
+                          ? "bg-gradient-to-br from-fuchsia-950 via-slate-950 to-indigo-950 text-white"
+                          : "bg-gradient-to-br from-indigo-950 via-slate-950 to-cyan-950 text-white"
+                }`}
+            >
+                <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,white_1px,transparent_1px)] [background-size:28px_28px]" />
+                <div
+                    className={`pointer-events-none absolute h-[760px] w-[760px] rounded-full blur-3xl ${
+                        warning
+                            ? "bg-amber-500/25"
+                            : celebration
+                              ? "bg-pink-500/25"
+                              : "bg-indigo-500/25"
+                    }`}
+                />
+
+                <section className="relative z-10 mx-auto max-w-6xl">
+                    <span
+                        className={`mx-auto flex h-40 w-40 items-center justify-center rounded-full border backdrop-blur ${
+                            warning
+                                ? "border-amber-300/30 bg-amber-300/15 text-amber-200"
+                                : celebration
+                                  ? "border-pink-300/30 bg-pink-300/15 text-pink-200"
+                                  : "border-indigo-300/30 bg-indigo-300/15 text-indigo-200"
+                        }`}
+                    >
+                        {warning ? (
+                            <AlertTriangle
+                                size={74}
+                            />
+                        ) : celebration ? (
+                            <PartyPopper
+                                size={74}
+                            />
+                        ) : (
+                            <Megaphone
+                                size={74}
+                            />
+                        )}
+                    </span>
+
+                    <p className="mt-9 text-xl font-black uppercase tracking-[0.3em] text-white/55">
+                        Host Announcement
+                    </p>
+                    <h1 className="mt-5 text-6xl font-black leading-[0.95] md:text-9xl">
+                        {state.broadcastTitle}
+                    </h1>
+                    <p className="mx-auto mt-8 max-w-5xl text-2xl font-bold leading-10 text-white/60 md:text-4xl md:leading-[1.35]">
+                        {state.broadcastMessage}
+                    </p>
+
+                    {state.broadcastSecondsRemaining !==
+                        null &&
+                        state.broadcastSecondsRemaining !==
+                            undefined && (
+                            <p className="mt-10 inline-flex rounded-full border border-white/15 bg-white/10 px-7 py-4 text-xl font-black backdrop-blur">
+                                Returning in{" "}
+                                {
+                                    state.broadcastSecondsRemaining
+                                } seconds
+                            </p>
+                        )}
+                </section>
+            </main>
+        );
+    }
+
     return (
         <main className="relative min-h-screen overflow-hidden bg-slate-950 px-6 py-8 text-white md:px-10 md:py-12">
             <div className="pointer-events-none absolute left-[-15%] top-[-35%] h-[720px] w-[720px] rounded-full bg-[#4F46E5]/35 blur-3xl" />
             <div className="pointer-events-none absolute bottom-[-40%] right-[-15%] h-[780px] w-[780px] rounded-full bg-[#EC4899]/25 blur-3xl" />
 
             <div className="relative z-10 mx-auto max-w-[1800px]">
+                {state.broadcastActive &&
+                    state.broadcastDisplayMode ===
+                        "banner" && (
+                        <section
+                            className={`mb-7 rounded-[1.5rem] border px-7 py-5 backdrop-blur-xl ${
+                                state.broadcastTone ===
+                                "warning"
+                                    ? "border-amber-300/30 bg-amber-300/15 text-amber-100"
+                                    : state.broadcastTone ===
+                                        "celebration"
+                                      ? "border-pink-300/30 bg-pink-300/15 text-pink-100"
+                                      : "border-indigo-300/30 bg-indigo-300/15 text-indigo-100"
+                            }`}
+                        >
+                            <div className="flex items-center gap-5">
+                                <span className="shrink-0">
+                                    {state.broadcastTone ===
+                                    "warning" ? (
+                                        <AlertTriangle
+                                            size={32}
+                                        />
+                                    ) : state.broadcastTone ===
+                                      "celebration" ? (
+                                        <PartyPopper
+                                            size={32}
+                                        />
+                                    ) : (
+                                        <Info size={32} />
+                                    )}
+                                </span>
+
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                                        Host Announcement
+                                    </p>
+                                    <h2 className="mt-1 text-2xl font-black">
+                                        {
+                                            state.broadcastTitle
+                                        }
+                                    </h2>
+                                    <p className="mt-1 text-lg font-bold text-white/65">
+                                        {
+                                            state.broadcastMessage
+                                        }
+                                    </p>
+                                </div>
+
+                                {state.broadcastSecondsRemaining !==
+                                    null &&
+                                    state.broadcastSecondsRemaining !==
+                                        undefined && (
+                                        <span className="shrink-0 rounded-full border border-white/10 bg-white/10 px-4 py-3 text-lg font-black">
+                                            {
+                                                state.broadcastSecondsRemaining
+                                            }s
+                                        </span>
+                                    )}
+                            </div>
+                        </section>
+                    )}
+
                 {status === "not_created" ? (
                     <CenteredMessage
                         title="Tap Tournament"
@@ -219,6 +451,221 @@ export default function TapTournamentDisplay({
                             </p>
                         </div>
                     </div>
+                ) : status === "paused" ||
+                  state.paused === true ? (
+                    <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
+                        <style jsx global>{`
+                            @keyframes audience-pause-pulse {
+                                0%,
+                                100% {
+                                    transform: scale(1);
+                                    opacity: 1;
+                                }
+                                50% {
+                                    transform: scale(1.1);
+                                    opacity: 0.72;
+                                }
+                            }
+                        `}</style>
+
+                        <span
+                            className="flex h-40 w-40 items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/15 text-amber-200 backdrop-blur"
+                            style={{
+                                animation:
+                                    "audience-pause-pulse 1.7s ease-in-out infinite",
+                            }}
+                        >
+                            <Pause
+                                size={76}
+                                strokeWidth={3}
+                            />
+                        </span>
+
+                        <p className="mt-8 text-lg font-black uppercase tracking-[0.28em] text-amber-200">
+                            Round Paused
+                        </p>
+                        <h1 className="mt-4 text-6xl font-black md:text-8xl">
+                            Please Stand By
+                        </h1>
+                        <p className="mt-6 max-w-4xl text-2xl font-bold leading-10 text-white/55">
+                            {state.pauseReason ||
+                                "The organiser will resume the tournament shortly. Player time and progress are protected."}
+                        </p>
+                        <p className="mt-6 rounded-full border border-white/10 bg-white/10 px-6 py-3 text-lg font-black text-white/70">
+                            Paused for{" "}
+                            {state.pauseElapsedSeconds || 0} seconds
+                        </p>
+                    </div>
+                ) : status === "round_complete" &&
+                  state.presentationState === "hidden" ? (
+                    <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
+                        <style jsx global>{`
+                            @keyframes results-orbit {
+                                from {
+                                    transform: rotate(0deg);
+                                }
+                                to {
+                                    transform: rotate(360deg);
+                                }
+                            }
+                        `}</style>
+
+                        <div className="relative flex h-40 w-40 items-center justify-center">
+                            <div
+                                className="absolute inset-0 rounded-full border-4 border-white/10 border-t-indigo-300"
+                                style={{
+                                    animation:
+                                        "results-orbit 1.2s linear infinite",
+                                }}
+                            />
+                            <Trophy
+                                size={58}
+                                className="text-indigo-200"
+                            />
+                        </div>
+
+                        <p className="mt-8 text-lg font-black uppercase tracking-[0.28em] text-indigo-200">
+                            Results Locked
+                        </p>
+                        <h1 className="mt-4 text-6xl font-black md:text-8xl">
+                            Round {state.resultRoundNumber || state.roundNumber || 1}
+                        </h1>
+                        <p className="mt-5 max-w-3xl text-2xl font-bold text-white/50">
+                            Scores are being verified. The organiser will reveal who advances.
+                        </p>
+                    </div>
+                ) : status === "round_complete" &&
+                  state.presentationState === "revealed" ? (
+                    <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
+                        <UserRoundCheck
+                            size={74}
+                            className="text-emerald-300"
+                        />
+                        <p className="mt-6 text-lg font-black uppercase tracking-[0.24em] text-emerald-200">
+                            Advancing to the Next Round
+                        </p>
+                        <h1 className="mt-4 text-6xl font-black md:text-8xl">
+                            {state.advancingCount || 0} Players
+                        </h1>
+                        <p className="mt-3 text-xl font-bold text-white/45">
+                            Round {state.resultRoundNumber || state.roundNumber || 1} ·{" "}
+                            {state.resultGameTitle || state.gameTitle || "Tournament Game"}
+                        </p>
+
+                        <div className="mt-10 grid w-full max-w-7xl gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                            {(state.advancingNames || []).map(
+                                (name, index) => (
+                                    <div
+                                        key={`${index}-${name}`}
+                                        className="flex min-h-[130px] items-center justify-center rounded-[1.5rem] border border-emerald-300/25 bg-emerald-300/10 p-5 text-center backdrop-blur"
+                                        style={{
+                                            animationDelay: `${index * 80}ms`,
+                                        }}
+                                    >
+                                        <p className="text-2xl font-black">
+                                            {name}
+                                        </p>
+                                    </div>
+                                )
+                            )}
+                        </div>
+
+                        <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-rose-300/20 bg-rose-300/10 px-6 py-3 text-rose-200">
+                            <UserRoundX size={19} />
+                            <span className="font-black">
+                                {state.eliminatedCount || 0} eliminated this round
+                            </span>
+                        </div>
+                    </div>
+                ) : status === "locked" ||
+                  (status === "round_complete" &&
+                    state.readyOpen === true) ? (
+                    <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
+                        <UserRoundCheck
+                            size={78}
+                            className={
+                                state.allReady
+                                    ? "text-emerald-300"
+                                    : "text-indigo-300"
+                            }
+                        />
+
+                        <p className="mt-6 text-lg font-black uppercase tracking-[0.24em] text-indigo-200">
+                            Ready Check
+                        </p>
+                        <h1 className="mt-4 text-6xl font-black md:text-8xl">
+                            {state.readyCount || 0}
+                            <span className="text-white/30">
+                                /{state.readyTotal || 0}
+                            </span>
+                        </h1>
+                        <p className="mt-4 text-2xl font-black">
+                            Players Ready
+                        </p>
+
+                        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                            <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-7 py-5 backdrop-blur">
+                                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                                    Next Round
+                                </p>
+                                <p className="mt-2 text-3xl font-black">
+                                    {state.readyTargetRound || 1}
+                                </p>
+                            </div>
+
+                            <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-7 py-5 backdrop-blur">
+                                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                                    Next Game
+                                </p>
+                                <p className="mt-2 text-2xl font-black">
+                                    {state.nextGameTitle ||
+                                        "Tap, Tap, Tap"}
+                                </p>
+                            </div>
+
+                            <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-7 py-5 backdrop-blur">
+                                <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                                    Phones Online
+                                </p>
+                                <p className="mt-2 text-3xl font-black">
+                                    {state.onlineCount || 0}
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="mt-8 max-w-3xl text-xl font-bold text-white/50">
+                            Open the tournament page on your phone and press
+                            <span className="text-white">
+                                {" "}I Am Ready
+                            </span>.
+                        </p>
+
+                        {state.allReady && (
+                            <div className="mt-7 rounded-full border border-emerald-300/30 bg-emerald-300/15 px-7 py-4 text-lg font-black text-emerald-200">
+                                Everyone is ready. The organiser may start the round.
+                            </div>
+                        )}
+                    </div>
+                ) : status === "completed" &&
+                  !state.resultsRevealed ? (
+                    <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
+                        <div className="relative flex h-44 w-44 items-center justify-center">
+                            <div className="absolute inset-0 animate-pulse rounded-full bg-amber-300/15 blur-xl" />
+                            <Trophy
+                                size={86}
+                                className="relative text-amber-300"
+                            />
+                        </div>
+                        <p className="mt-7 text-lg font-black uppercase tracking-[0.28em] text-amber-200">
+                            Final Results Locked
+                        </p>
+                        <h1 className="mt-5 text-6xl font-black md:text-8xl">
+                            Champion Reveal
+                        </h1>
+                        <p className="mt-6 text-2xl font-bold text-white/50">
+                            The organiser will reveal the winner shortly.
+                        </p>
+                    </div>
                 ) : status === "completed" ? (
                     <div className="flex min-h-[85vh] flex-col items-center justify-center text-center">
                         <Crown
@@ -277,8 +724,8 @@ export default function TapTournamentDisplay({
                                                 <p className="mt-3 rounded-xl bg-white/10 px-4 py-2 text-xl font-black">
                                                     {entry.score ??
                                                         entry.taps}{" "}
-                                                    {entry.scoreLabel ||
-                                                        state.scoreLabel ||
+                                                    {state.scoreLabel ||
+                                                        entry.scoreLabel ||
                                                         "points"}
                                                 </p>
                                             </div>
@@ -340,7 +787,23 @@ export default function TapTournamentDisplay({
                                 <h1 className="mt-3 text-5xl font-black tracking-tight md:text-7xl">
                                     {state.gameKey === "tic_tac_toe"
                                         ? "Tic-Tac-Toe"
-                                        : state.gameTitle || "Tournament Game"}
+                                        : state.gameKey === "higher_lower"
+                                          ? "Higher or Lower"
+                                          : state.gameKey === "sort_it_out"
+                                            ? "Sort It Out"
+                                            : state.gameKey === "quick_math"
+                                            ? "Quick Maths"
+                                            : state.gameKey === "odd_one_out"
+                                            ? "Odd One Out"
+                                            : state.gameKey === "color_clash"
+                                            ? "Colour Clash"
+                                            : state.gameKey === "number_rush"
+                                            ? "Number Rush"
+                                            : state.gameKey === "match_cards"
+                                            ? "Match the Cards"
+                                            : state.gameKey === "grab_coins"
+                                          ? "Grab the Coins"
+                                          : state.gameTitle || "Tournament Game"}
                                 </h1>
                                 <p className="mt-4 text-xl font-bold text-white/50">
                                     {state.playerCount ||
@@ -378,6 +841,322 @@ export default function TapTournamentDisplay({
                                 </p>
                             </div>
                         </div>
+
+                        {state.gameKey === "higher_lower" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-sky-300/20 bg-sky-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-300 via-cyan-300 to-indigo-400 text-slate-950 shadow-[0_12px_35px_rgba(56,189,248,0.34)]">
+                                        <ArrowUpDown
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-sky-200">
+                                            Live Prediction Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Higher or lower than the current number?
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-sky-200">
+                                            {state.higherLowerTopScore || 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Best Streak
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-cyan-200">
+                                            {state.higherLowerTopStreak || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "sort_it_out" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-lime-300/20 bg-lime-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-lime-300 via-emerald-300 to-cyan-300 text-slate-950 shadow-[0_12px_35px_rgba(132,204,22,0.34)]">
+                                        <ListOrdered
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-lime-200">
+                                            Live Sorting Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Tap smallest to largest
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-lime-200">
+                                            {state.sortItOutTopScore || 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Boards
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-cyan-200">
+                                            {state.sortItOutTopBoards || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "quick_math" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-orange-300/20 bg-orange-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-300 via-amber-300 to-yellow-300 text-slate-950 shadow-[0_12px_35px_rgba(251,146,60,0.34)]">
+                                        <Calculator
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-orange-200">
+                                            Live Arithmetic Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Solve as many questions as possible
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-orange-200">
+                                            {state.quickMathTopScore || 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Best Streak
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-amber-200">
+                                            {state.quickMathTopStreak || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "odd_one_out" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-teal-300/20 bg-teal-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-300 via-cyan-300 to-indigo-400 text-slate-950 shadow-[0_12px_35px_rgba(45,212,191,0.35)]">
+                                        <Eye
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-teal-200">
+                                            Live Visual Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Find the one different symbol
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-teal-200">
+                                            {state.oddOneOutTopScore || 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Best Streak
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-cyan-200">
+                                            {state.oddOneOutTopStreak || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "color_clash" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-fuchsia-300/20 bg-fuchsia-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-400 via-indigo-400 to-cyan-300 text-slate-950 shadow-[0_12px_35px_rgba(217,70,239,0.38)]">
+                                        <Palette
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-fuchsia-200">
+                                            Live Colour Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Tap the text colour · ignore the word
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-fuchsia-200">
+                                            {state.colorClashTopScore || 0}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Best Streak
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-cyan-200">
+                                            {state.colorClashTopStreak || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "number_rush" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-cyan-300/20 bg-cyan-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-300 to-indigo-500 text-slate-950 shadow-[0_12px_35px_rgba(34,211,238,0.36)]">
+                                        <Hash
+                                            size={30}
+                                            strokeWidth={2.6}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-cyan-200">
+                                            Live Number Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Tap 1 through 12 · 30 seconds
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-cyan-200">
+                                            {state.numberRushTopScore || 0}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Boards
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-indigo-200">
+                                            {state.numberRushTopBoards || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "match_cards" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-violet-300/20 bg-violet-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-300 to-pink-500 text-white shadow-[0_12px_35px_rgba(124,58,237,0.42)]">
+                                        <Grid2X2
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-violet-200">
+                                            Live Memory Challenge
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Six matching pairs · 45 seconds
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Top Score
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-violet-200">
+                                            {state.matchCardTopScore || 0}/6
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Completed
+                                        </p>
+                                        <p className="mt-1 text-4xl font-black text-emerald-200">
+                                            {state.matchCardCompletedPlayers || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {state.gameKey === "grab_coins" && (
+                            <div className="mt-8 flex flex-wrap items-center justify-between gap-5 rounded-[2rem] border border-amber-300/20 bg-amber-300/10 px-7 py-5 backdrop-blur">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-200 to-amber-500 text-amber-950 shadow-[0_12px_35px_rgba(245,158,11,0.45)]">
+                                        <CircleDollarSign
+                                            size={30}
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div>
+                                        <p className="text-sm font-black uppercase tracking-[0.18em] text-amber-200">
+                                            Live Coin Hunt
+                                        </p>
+                                        <p className="mt-1 text-2xl font-black">
+                                            Every verified gold coin adds one point
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl bg-white/10 px-5 py-3 text-right">
+                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                        Current Top Score
+                                    </p>
+                                    <p className="mt-1 text-4xl font-black text-amber-200">
+                                        {state.grabTopScore || 0}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {state.gameKey === "tic_tac_toe" ? (
                             <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -451,7 +1230,23 @@ export default function TapTournamentDisplay({
                                         status ===
                                         "locked"
                                             ? "The organiser will start Round 1 shortly."
-                                            : "The leaderboard updates live while everyone taps."
+                                            : state.gameKey === "higher_lower"
+                                              ? "The leaderboard updates live as players predict each hidden number."
+                                              : state.gameKey === "sort_it_out"
+                                                ? "The leaderboard updates live as players sort each number board."
+                                                : state.gameKey === "quick_math"
+                                                ? "The leaderboard updates live as players solve arithmetic questions."
+                                                : state.gameKey === "odd_one_out"
+                                                ? "The leaderboard updates live as players find the different symbol."
+                                                : state.gameKey === "color_clash"
+                                                ? "The leaderboard updates live as players identify the displayed text colour."
+                                                : state.gameKey === "number_rush"
+                                                ? "The leaderboard updates live as players tap the numbers in ascending order."
+                                                : state.gameKey === "match_cards"
+                                                ? "The leaderboard updates live as players find matching pairs."
+                                                : state.gameKey === "grab_coins"
+                                                ? "The leaderboard updates live while every player collects moving gold coins."
+                                                : "The leaderboard updates live while everyone taps."
                                     }
                                 />
                             ) : (
@@ -520,8 +1315,8 @@ export default function TapTournamentDisplay({
                                                             }
                                                         </p>
                                                         <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
-                                                            {entry.scoreLabel ||
-                                                    state.scoreLabel ||
+                                                            {state.scoreLabel ||
+                                                    entry.scoreLabel ||
                                                     "Points"}
                                                         </p>
                                                     </div>

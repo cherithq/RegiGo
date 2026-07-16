@@ -48,7 +48,7 @@ export async function POST(
         }
 
         const { data, error } = await supabaseServer.rpc(
-            "start_tap_tournament_round_v3",
+            "start_tap_tournament_round_v11",
             {
                 p_event_id: String(eventId),
                 p_game_key: gameKey,
@@ -60,11 +60,27 @@ export async function POST(
         }
 
         const message =
-            gameKey === "tic_tac_toe"
-                ? "Tic-Tac-Toe pairings created. Winners advance and draws automatically rematch."
-                : gameKey === "coin_flip"
-                  ? "Coin Flip countdown started. Each player receives three flips."
-                  : "Tap, Tap, Tap countdown started. The round lasts exactly 20 seconds.";
+            gameKey === "higher_lower"
+                ? "Higher or Lower countdown started. Players have 30 seconds to predict whether each hidden number is higher or lower."
+                : gameKey === "sort_it_out"
+                ? "Sort It Out countdown started. Players have 30 seconds to arrange shuffled numbers from smallest to largest."
+                : gameKey === "quick_math"
+                ? "Quick Maths countdown started. Players have 30 seconds to solve as many questions as possible."
+                : gameKey === "odd_one_out"
+                ? "Odd One Out countdown started. Players have 30 seconds to find the different symbol."
+                : gameKey === "color_clash"
+                ? "Colour Clash countdown started. Players have 30 seconds to identify the displayed text colour."
+                : gameKey === "number_rush"
+                ? "Number Rush countdown started. Players have 30 seconds to tap numbers in order."
+                : gameKey === "match_cards"
+                ? "Match the Cards countdown started. Players have 45 seconds to find six pairs."
+                : gameKey === "grab_coins"
+                  ? "Grab the Coins countdown started. The round lasts 30 seconds."
+                  : gameKey === "tic_tac_toe"
+                  ? "Tic-Tac-Toe pairings created. Winners advance and draws automatically rematch."
+                  : gameKey === "coin_flip"
+                    ? "Coin Flip countdown started. Each player receives three flips."
+                    : "Tap, Tap, Tap countdown started. The round lasts exactly 20 seconds.";
 
         return NextResponse.json({
             success: true,

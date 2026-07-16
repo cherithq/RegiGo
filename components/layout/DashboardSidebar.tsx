@@ -261,14 +261,6 @@ export default function DashboardSidebar() {
                         organizerModuleKey: "glitter_games",
                     },
                     {
-                        href: `/dashboard/events/${eventId}/games/qr-codes`,
-                        label: "Game Pass QR Codes",
-                        icon: QrCode,
-                        exact: true,
-                        roles: eventManagers,
-                        organizerModuleKey: "glitter_games_qr_codes",
-                    },
-                    {
                         href: `/dashboard/events/${eventId}/analytics`,
                         label: "Analytics",
                         icon: BarChart3,
@@ -417,19 +409,6 @@ export default function DashboardSidebar() {
             return (
                 profile.role === "admin" &&
                 enabledModules.glitter_games !== false
-            );
-        }
-
-        // Game Pass QR Codes: admins and organisers, controlled separately.
-        if (item.organizerModuleKey === "glitter_games_qr_codes") {
-            const canManageQrCodes =
-                profile.role === "admin" ||
-                profile.role === "organizer" ||
-                profile.role === "organiser";
-
-            return (
-                canManageQrCodes &&
-                enabledModules.glitter_games_qr_codes !== false
             );
         }
 

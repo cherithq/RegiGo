@@ -1,10 +1,17 @@
 "use client";
 
 import {
+    ArrowUpDown,
+    Calculator,
     Download,
+    CircleDollarSign,
     Coins,
     ExternalLink,
+    Eye,
+    Grid2X2,
+    Hash,
     History,
+    ListOrdered,
     Lock,
     Play,
     QrCode,
@@ -20,6 +27,13 @@ import {
     Zap,
 } from "lucide-react";
 import QRCode from "qrcode";
+import TournamentSequencePlanner, {
+    type TournamentGameKey,
+} from "@/components/games/TournamentSequencePlanner";
+import TournamentReadyPanel from "@/components/games/TournamentReadyPanel";
+import TournamentResultsRevealPanel from "@/components/games/TournamentResultsRevealPanel";
+import TournamentSafetyPanel from "@/components/games/TournamentSafetyPanel";
+import TournamentBroadcastPanel from "@/components/games/TournamentBroadcastPanel";
 import {
     type ButtonHTMLAttributes,
     type ReactNode,
@@ -58,7 +72,15 @@ type ManagedRound = {
     gameKey?:
         | "tap_fast"
         | "coin_flip"
-        | "tic_tac_toe";
+        | "tic_tac_toe"
+        | "grab_coins"
+        | "match_cards"
+        | "number_rush"
+        | "color_clash"
+        | "odd_one_out"
+        | "quick_math"
+        | "sort_it_out"
+        | "higher_lower";
     gameTitle?: string;
     scoreLabel?: string;
     status: string;
@@ -95,7 +117,15 @@ type TournamentState = {
     gameKey?:
         | "tap_fast"
         | "coin_flip"
-        | "tic_tac_toe";
+        | "tic_tac_toe"
+        | "grab_coins"
+        | "match_cards"
+        | "number_rush"
+        | "color_clash"
+        | "odd_one_out"
+        | "quick_math"
+        | "sort_it_out"
+        | "higher_lower";
     gameTitle?: string;
     scoreLabel?: string;
     completedPlayers?: number;
@@ -198,11 +228,8 @@ export default function TapTournamentControl({
         useState("all");
     const [managingPlayerId, setManagingPlayerId] =
         useState("");
-    const [nextGameKey, setNextGameKey] = useState<
-        | "tap_fast"
-        | "coin_flip"
-        | "tic_tac_toe"
-    >("tap_fast");
+    const [nextGameKey, setNextGameKey] =
+        useState<TournamentGameKey>("tap_fast");
 
     const playerUrl = useMemo(
         () =>
@@ -592,11 +619,13 @@ export default function TapTournamentControl({
                         </h1>
 
                         <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
-                            Everyone scans the same QR code.
-                            Each round lasts exactly 20 seconds.
-                            The top players advance until ten or
-                            fewer remain, followed by one live
-                            final round.
+                            Everyone scans the same QR code once.
+                            The organiser chooses Tap, Coin Flip,
+                            Tic-Tac-Toe, Grab the Coins, Match the Cards
+                            Number Rush, Colour Clash, Odd One Out, Quick Maths,
+                            Sort It Out or Higher or Lower for each elimination round.
+                            Only Tap lasts
+                            20 seconds.
                         </p>
 
                         <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -693,10 +722,50 @@ export default function TapTournamentControl({
 
                             {canStart && (
                                 <label className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3">
-                                    {nextGameKey === "coin_flip" ? (
+                                    {nextGameKey === "higher_lower" ? (
+                                        <ArrowUpDown
+                                            size={17}
+                                            className="text-sky-600"
+                                        />
+                                    ) : nextGameKey === "sort_it_out" ? (
+                                        <ListOrdered
+                                            size={17}
+                                            className="text-lime-600"
+                                        />
+                                    ) : nextGameKey === "quick_math" ? (
+                                        <Calculator
+                                            size={17}
+                                            className="text-orange-600"
+                                        />
+                                    ) : nextGameKey === "odd_one_out" ? (
+                                        <Eye
+                                            size={17}
+                                            className="text-teal-600"
+                                        />
+                                    ) : nextGameKey === "color_clash" ? (
+                                        <Palette
+                                            size={17}
+                                            className="text-fuchsia-600"
+                                        />
+                                    ) : nextGameKey === "number_rush" ? (
+                                        <Hash
+                                            size={17}
+                                            className="text-cyan-600"
+                                        />
+                                    ) : nextGameKey === "coin_flip" ? (
                                         <Coins
                                             size={17}
                                             className="text-amber-500"
+                                        />
+                                    ) : nextGameKey === "match_cards" ? (
+                                        <Grid2X2
+                                            size={17}
+                                            className="text-violet-600"
+                                        />
+                                    ) : nextGameKey === "grab_coins" ? (
+                                        <CircleDollarSign
+                                            size={17}
+                                            className="text-emerald-600"
                                         />
                                     ) : nextGameKey === "tic_tac_toe" ? (
                                         <Swords
@@ -714,10 +783,8 @@ export default function TapTournamentControl({
                                         value={nextGameKey}
                                         onChange={(event) =>
                                             setNextGameKey(
-                                                event.target.value as
-                                                    | "tap_fast"
-                                                    | "coin_flip"
-                                                    | "tic_tac_toe"
+                                                event.target
+                                                    .value as TournamentGameKey
                                             )
                                         }
                                         className="h-9 bg-transparent text-sm font-black text-slate-700 outline-none"
@@ -727,6 +794,30 @@ export default function TapTournamentControl({
                                         </option>
                                         <option value="coin_flip">
                                             Coin Flip — 3 guesses
+                                        </option>
+                                        <option value="grab_coins">
+                                            Grab the Coins — 30 seconds
+                                        </option>
+                                        <option value="match_cards">
+                                            Match the Cards — 45 seconds
+                                        </option>
+                                        <option value="number_rush">
+                                            Number Rush — 30 seconds
+                                        </option>
+                                        <option value="color_clash">
+                                            Colour Clash — 30 seconds
+                                        </option>
+                                        <option value="odd_one_out">
+                                            Odd One Out — 30 seconds
+                                        </option>
+                                        <option value="quick_math">
+                                            Quick Maths — 30 seconds
+                                        </option>
+                                        <option value="sort_it_out">
+                                            Sort It Out — 30 seconds
+                                        </option>
+                                        <option value="higher_lower">
+                                            Higher or Lower — 30 seconds
                                         </option>
                                         <option
                                             value="tic_tac_toe"
@@ -759,18 +850,50 @@ export default function TapTournamentControl({
                                 >
                                     {nextRoundIsFinal
                                         ? `Start Final: ${
-                                              nextGameKey === "coin_flip"
-                                                  ? "Coin Flip"
-                                                  : "Tap, Tap, Tap"
+                                              nextGameKey === "higher_lower"
+                                                  ? "Higher or Lower"
+                                                  : nextGameKey === "sort_it_out"
+                                                    ? "Sort It Out"
+                                                    : nextGameKey === "quick_math"
+                                                    ? "Quick Maths"
+                                                    : nextGameKey === "odd_one_out"
+                                                    ? "Odd One Out"
+                                                    : nextGameKey === "color_clash"
+                                                    ? "Colour Clash"
+                                                    : nextGameKey === "number_rush"
+                                                    ? "Number Rush"
+                                                    : nextGameKey === "match_cards"
+                                                    ? "Match the Cards"
+                                                    : nextGameKey === "grab_coins"
+                                                    ? "Grab the Coins"
+                                                    : nextGameKey === "coin_flip"
+                                                    ? "Coin Flip"
+                                                    : "Tap, Tap, Tap"
                                           }`
                                         : `${state.currentRound
                                               ? "Start Next"
                                               : "Start Round 1"}: ${
                                               nextGameKey === "tic_tac_toe"
                                                   ? "Tic-Tac-Toe"
-                                                  : nextGameKey === "coin_flip"
-                                                    ? "Coin Flip"
-                                                    : "Tap, Tap, Tap"
+                                                  : nextGameKey === "higher_lower"
+                                                    ? "Higher or Lower"
+                                                    : nextGameKey === "sort_it_out"
+                                                    ? "Sort It Out"
+                                                    : nextGameKey === "quick_math"
+                                                    ? "Quick Maths"
+                                                    : nextGameKey === "odd_one_out"
+                                                    ? "Odd One Out"
+                                                    : nextGameKey === "color_clash"
+                                                    ? "Colour Clash"
+                                                    : nextGameKey === "number_rush"
+                                                    ? "Number Rush"
+                                                    : nextGameKey === "match_cards"
+                                                    ? "Match the Cards"
+                                                    : nextGameKey === "grab_coins"
+                                                    ? "Grab the Coins"
+                                                    : nextGameKey === "coin_flip"
+                                                      ? "Coin Flip"
+                                                      : "Tap, Tap, Tap"
                                           }`}
                                 </ActionButton>
                             )}
@@ -840,6 +963,27 @@ export default function TapTournamentControl({
                     </div>
                 </div>
             </section>
+
+            <TournamentSequencePlanner
+                eventId={eventId}
+                onSuggestedGameChange={setNextGameKey}
+            />
+
+            <TournamentSafetyPanel
+                eventId={eventId}
+            />
+
+            <TournamentBroadcastPanel
+                eventId={eventId}
+            />
+
+            <TournamentResultsRevealPanel
+                eventId={eventId}
+            />
+
+            <TournamentReadyPanel
+                eventId={eventId}
+            />
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex flex-wrap items-end justify-between gap-4">
@@ -992,8 +1136,8 @@ export default function TapTournamentControl({
                                                 }`}
                                             >
                                                 {entry.score ?? entry.taps}{" "}
-                                                {entry.scoreLabel ||
-                                                    state.scoreLabel ||
+                                                {state.scoreLabel ||
+                                                    entry.scoreLabel ||
                                                     "points"}
                                             </span>
                                         </div>
@@ -1313,14 +1457,46 @@ export default function TapTournamentControl({
                                                         ? `Final · ${
                                                               round.gameKey === "tic_tac_toe"
                                                                   ? "Tic-Tac-Toe"
-                                                                  : round.gameTitle || "Game"
+                                                                  : round.gameKey === "higher_lower"
+                                                                    ? "Higher or Lower"
+                                                                    : round.gameKey === "sort_it_out"
+                                                                    ? "Sort It Out"
+                                                                    : round.gameKey === "quick_math"
+                                                                    ? "Quick Maths"
+                                                                    : round.gameKey === "odd_one_out"
+                                                                    ? "Odd One Out"
+                                                                    : round.gameKey === "color_clash"
+                                                                    ? "Colour Clash"
+                                                                    : round.gameKey === "number_rush"
+                                                                    ? "Number Rush"
+                                                                    : round.gameKey === "match_cards"
+                                                                    ? "Match the Cards"
+                                                                    : round.gameKey === "grab_coins"
+                                                                    ? "Grab the Coins"
+                                                                    : round.gameTitle || "Game"
                                                           }`
                                                         : `Round ${
                                                               round.roundNumber
                                                           } · ${
                                                               round.gameKey === "tic_tac_toe"
                                                                   ? "Tic-Tac-Toe"
-                                                                  : round.gameTitle || "Game"
+                                                                  : round.gameKey === "higher_lower"
+                                                                    ? "Higher or Lower"
+                                                                    : round.gameKey === "sort_it_out"
+                                                                    ? "Sort It Out"
+                                                                    : round.gameKey === "quick_math"
+                                                                    ? "Quick Maths"
+                                                                    : round.gameKey === "odd_one_out"
+                                                                    ? "Odd One Out"
+                                                                    : round.gameKey === "color_clash"
+                                                                    ? "Colour Clash"
+                                                                    : round.gameKey === "number_rush"
+                                                                    ? "Number Rush"
+                                                                    : round.gameKey === "match_cards"
+                                                                    ? "Match the Cards"
+                                                                    : round.gameKey === "grab_coins"
+                                                                    ? "Grab the Coins"
+                                                                    : round.gameTitle || "Game"
                                                           }`}
                                                 </p>
                                                 <p className="mt-1 text-xs font-bold capitalize text-slate-400">
@@ -1340,7 +1516,23 @@ export default function TapTournamentControl({
                                                 {round.topScore || 0}{" "}
                                                 {round.gameKey === "tic_tac_toe"
                                                     ? "win"
-                                                    : round.scoreLabel || "points"}
+                                                    : round.gameKey === "higher_lower"
+                                                      ? "correct"
+                                                      : round.gameKey === "sort_it_out"
+                                                      ? "numbers"
+                                                      : round.gameKey === "quick_math"
+                                                      ? "correct"
+                                                      : round.gameKey === "odd_one_out"
+                                                      ? "correct"
+                                                      : round.gameKey === "color_clash"
+                                                      ? "correct"
+                                                      : round.gameKey === "number_rush"
+                                                      ? "numbers"
+                                                      : round.gameKey === "match_cards"
+                                                      ? "pairs"
+                                                      : round.gameKey === "grab_coins"
+                                                      ? "coins"
+                                                      : round.scoreLabel || "points"}
                                             </div>
                                         </div>
                                     )

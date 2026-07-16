@@ -326,17 +326,6 @@ export default async function EventOverviewPage({
                 icon: Gamepad2,
                 allowed: canAccessModule("glitter_games", isAdmin),
             },
-            {
-                moduleKey: "glitter_games_qr_codes",
-                title: "Game Pass QR Codes",
-                description: "Find the unique game QR code for each checked-in guest.",
-                href: `/dashboard/events/${eventId}/games/qr-codes`,
-                icon: QrCode,
-                allowed: canAccessModule(
-                    "glitter_games_qr_codes",
-                    isAdmin || isOrganizer,
-                ),
-            },
         ] satisfies ModuleCardItem[]
     ).filter((item) => item.allowed);
 

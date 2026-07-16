@@ -93,6 +93,176 @@ async function loadState(
         throw new Error(error.message);
     }
 
+    if (data?.gameKey === "higher_lower") {
+        const {
+            data: higherLowerState,
+            error: higherLowerError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_higher_lower_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (higherLowerError) {
+            throw new Error(
+                higherLowerError.message
+            );
+        }
+
+        return {
+            ...(data || {}),
+            ...(higherLowerState || {}),
+        };
+    }
+
+    if (data?.gameKey === "sort_it_out") {
+        const {
+            data: sortState,
+            error: sortError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_sort_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (sortError) {
+            throw new Error(sortError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(sortState || {}),
+        };
+    }
+
+    if (data?.gameKey === "quick_math") {
+        const {
+            data: quickMathState,
+            error: quickMathError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_quick_math_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (quickMathError) {
+            throw new Error(quickMathError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(quickMathState || {}),
+        };
+    }
+
+    if (data?.gameKey === "odd_one_out") {
+        const {
+            data: oddState,
+            error: oddError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_odd_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (oddError) {
+            throw new Error(oddError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(oddState || {}),
+        };
+    }
+
+    if (data?.gameKey === "color_clash") {
+        const {
+            data: colourState,
+            error: colourError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_color_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (colourError) {
+            throw new Error(colourError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(colourState || {}),
+        };
+    }
+
+    if (data?.gameKey === "number_rush") {
+        const {
+            data: numberState,
+            error: numberError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_number_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (numberError) {
+            throw new Error(numberError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(numberState || {}),
+        };
+    }
+
+    if (data?.gameKey === "match_cards") {
+        const {
+            data: matchState,
+            error: matchError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_match_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (matchError) {
+            throw new Error(matchError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(matchState || {}),
+        };
+    }
+
+    if (data?.gameKey === "grab_coins") {
+        const {
+            data: grabState,
+            error: grabError,
+        } = await supabaseServer.rpc(
+            "get_tap_tournament_grab_public_state_v1",
+            {
+                p_event_slug: slug,
+            }
+        );
+
+        if (grabError) {
+            throw new Error(grabError.message);
+        }
+
+        return {
+            ...(data || {}),
+            ...(grabState || {}),
+        };
+    }
+
     if (data?.gameKey === "tic_tac_toe") {
         const {
             data: tttState,

@@ -94,7 +94,7 @@ export async function POST(
         }
 
         const { error } = await supabaseServer.rpc(
-            "finalize_tap_tournament_round_v3",
+            "finalize_tap_tournament_round_v11",
             {
                 p_round_id: round.id,
                 p_force:
@@ -109,11 +109,27 @@ export async function POST(
         return NextResponse.json({
             success: true,
             message:
-                round.game_key === "tic_tac_toe"
-                    ? "Tic-Tac-Toe results confirmed."
-                    : round.game_key === "coin_flip"
-                      ? "Coin Flip round finalized."
-                      : "Tap round refresh requested. It finalizes only after 20 seconds.",
+                round.game_key === "higher_lower"
+                    ? "Higher or Lower result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "sort_it_out"
+                    ? "Sort It Out result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "quick_math"
+                    ? "Quick Maths result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "odd_one_out"
+                    ? "Odd One Out result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "color_clash"
+                    ? "Colour Clash result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "number_rush"
+                    ? "Number Rush result refreshed. It finalizes after the full 30 seconds."
+                    : round.game_key === "match_cards"
+                    ? "Match the Cards result refreshed. It finalizes after 45 seconds or when everyone completes all six pairs."
+                    : round.game_key === "grab_coins"
+                      ? "Grab the Coins result refreshed. It finalizes after the full 30 seconds."
+                      : round.game_key === "tic_tac_toe"
+                      ? "Tic-Tac-Toe results confirmed."
+                      : round.game_key === "coin_flip"
+                        ? "Coin Flip round finalized."
+                        : "Tap round refresh requested. It finalizes only after 20 seconds.",
         });
     } catch (error) {
         return NextResponse.json(

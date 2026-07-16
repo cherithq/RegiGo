@@ -115,12 +115,6 @@ const modules: ModuleConfig[] = [
         icon: <Gamepad2 size={20} />,
     },
     {
-        key: "glitter_games_qr_codes",
-        title: "Game Pass QR Codes",
-        description: "Allow admins and organisers to find checked-in guests’ game QR codes.",
-        icon: <QrCode size={20} />,
-    },
-    {
         key: "analytics",
         title: "Analytics",
         description: "Allow organisers to view event analytics.",
@@ -424,9 +418,7 @@ export default function EventSettingsForm({
                             Event Module Visibility
                         </h2>
                         <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
-                            Choose which event tools are enabled. The Glitter Games dashboard is admin-only,
-                            while Game Pass QR Codes can be used by admins and organisers.
-                        </p>
+                            Choose which event tools are enabled. The Glitter Games dashboard is admin-only.                        </p>
                     </div>
 
                     <div className="mt-6 grid gap-4 md:grid-cols-2">
