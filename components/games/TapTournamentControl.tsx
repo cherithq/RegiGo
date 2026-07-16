@@ -13,6 +13,7 @@ import {
     History,
     ListOrdered,
     Lock,
+    Palette,
     Play,
     QrCode,
     RefreshCw,
