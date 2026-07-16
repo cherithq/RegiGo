@@ -232,15 +232,31 @@ export default function TapTournamentControl({
     const [nextGameKey, setNextGameKey] =
         useState<TournamentGameKey>("tap_fast");
 
-    const playerUrl = useMemo(
+    const publicBaseUrl = useMemo(
         () =>
-            typeof window === "undefined"
-                ? `/event/${slug}/games`
-                : `${window.location.origin}/event/${slug}/games`,
-        [slug]
+            (
+                process.env.NEXT_PUBLIC_SITE_URL ||
+                process.env.NEXT_PUBLIC_APP_URL ||
+                ""
+            ).replace(/\/$/, ""),
+        []
     );
 
-    const displayUrl = `/event/${slug}/games/display`;
+    const playerUrl = useMemo(() => {
+        const path =
+            `/event/${encodeURIComponent(slug)}/games/tournament`;
+
+        if (publicBaseUrl) {
+            return `${publicBaseUrl}${path}`;
+        }
+
+        return typeof window === "undefined"
+            ? path
+            : `${window.location.origin}${path}`;
+    }, [publicBaseUrl, slug]);
+
+    const displayUrl =
+        `/event/${encodeURIComponent(slug)}/games/tournament/display`;
 
     const reload = useCallback(async () => {
         try {
@@ -333,11 +349,30 @@ export default function TapTournamentControl({
     }, [nextGameKey, state.activePlayers]);
 
     useEffect(() => {
+        let active = true;
+
         void QRCode.toDataURL(playerUrl, {
             width: 560,
             margin: 1,
             errorCorrectionLevel: "H",
-        }).then(setQrDataUrl);
+        })
+            .then((dataUrl) => {
+                if (active) {
+                    setQrDataUrl(dataUrl);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setQrDataUrl("");
+                    setMessage(
+                        "Unable to generate the tournament QR code."
+                    );
+                }
+            });
+
+        return () => {
+            active = false;
+        };
     }, [playerUrl]);
 
     async function perform(

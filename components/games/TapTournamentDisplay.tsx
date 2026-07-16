@@ -166,13 +166,28 @@ export default function TapTournamentDisplay({
     const [qrDataUrl, setQrDataUrl] =
         useState("");
 
-    const joinUrl = useMemo(
+    const publicBaseUrl = useMemo(
         () =>
-            typeof window === "undefined"
-                ? `/event/${slug}/games`
-                : `${window.location.origin}/event/${slug}/games`,
-        [slug]
+            (
+                process.env.NEXT_PUBLIC_SITE_URL ||
+                process.env.NEXT_PUBLIC_APP_URL ||
+                ""
+            ).replace(/\/$/, ""),
+        []
     );
+
+    const joinUrl = useMemo(() => {
+        const path =
+            `/event/${encodeURIComponent(slug)}/games/tournament`;
+
+        if (publicBaseUrl) {
+            return `${publicBaseUrl}${path}`;
+        }
+
+        return typeof window === "undefined"
+            ? path
+            : `${window.location.origin}${path}`;
+    }, [publicBaseUrl, slug]);
 
     const reload = useCallback(async () => {
         const response = await fetch(
@@ -205,11 +220,27 @@ export default function TapTournamentDisplay({
     }, [reload]);
 
     useEffect(() => {
+        let active = true;
+
         void QRCode.toDataURL(joinUrl, {
             width: 760,
             margin: 1,
             errorCorrectionLevel: "H",
-        }).then(setQrDataUrl);
+        })
+            .then((dataUrl) => {
+                if (active) {
+                    setQrDataUrl(dataUrl);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setQrDataUrl("");
+                }
+            });
+
+        return () => {
+            active = false;
+        };
     }, [joinUrl]);
 
     if (loading) {
