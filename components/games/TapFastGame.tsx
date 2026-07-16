@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MousePointerClick, Zap } from "lucide-react";
+import { Activity, Gauge, MousePointerClick, Sparkles, Zap } from "lucide-react";
 import {
     asObject,
     CommonDuelState,
@@ -54,6 +54,9 @@ export default function TapFastGame({ eventId, eventName, slug, lobbyHref }: {
     const [joining, setJoining] = useState(false);
     const [leaving, setLeaving] = useState(false);
     const [localTaps, setLocalTaps] = useState(0);
+    const [tapPulseKey, setTapPulseKey] = useState(0);
+    const [tapStreak, setTapStreak] = useState(0);
+    const streakTimerRef = useRef<number | null>(null);
     const pendingRef = useRef(0);
     const flushingRef = useRef(false);
 
@@ -126,6 +129,14 @@ export default function TapFastGame({ eventId, eventName, slug, lobbyHref }: {
         return () => window.clearInterval(timer);
     }, [flushTaps, match?.match_status]);
 
+    useEffect(() => {
+        return () => {
+            if (streakTimerRef.current !== null) {
+                window.clearTimeout(streakTimerRef.current);
+            }
+        };
+    }, []);
+
     async function joinMatch() {
         if (!player || joining) return;
         setJoining(true); setError(""); setLocalTaps(0); pendingRef.current = 0;
@@ -157,14 +168,30 @@ export default function TapFastGame({ eventId, eventName, slug, lobbyHref }: {
 
     function tap() {
         if (match?.match_status !== "active") return;
+
         pendingRef.current += 1;
         setLocalTaps((value) => value + 1);
+        setTapPulseKey((value) => value + 1);
+        setTapStreak((value) => value + 1);
+
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+            navigator.vibrate(12);
+        }
+
+        if (streakTimerRef.current !== null) {
+            window.clearTimeout(streakTimerRef.current);
+        }
+
+        streakTimerRef.current = window.setTimeout(() => {
+            setTapStreak(0);
+            streakTimerRef.current = null;
+        }, 650);
     }
 
     function changePlayer() { clearPlayer(); setMatch(null); setLocalTaps(0); pendingRef.current = 0; }
 
     return (
-        <GameFrame title="Tap, Tap, Tap" subtitle="Tap faster than your opponent for 20 seconds."
+        <GameFrame title="Tap, Tap, Tap" subtitle="The only active tournament game. Every match lasts exactly 20 seconds."
             eventName={eventName} lobbyHref={lobbyHref} slug={slug}
             icon={<MousePointerClick size={25} />} error={playerState.error}>
             <PlayerGate loading={playerState.loadingPlayer} player={player} lookup={playerState.lookup}
@@ -184,14 +211,162 @@ export default function TapFastGame({ eventId, eventName, slug, lobbyHref }: {
                     <DuelScoreboard playerName={player.display_name} opponentName={match.opponent_name}
                         yourScore={localTaps} opponentScore={match.opponent_score} seconds={match.seconds_remaining} label="Taps" />
                     <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 p-5 text-center text-white shadow-2xl sm:p-8">
-                        <p className="text-sm font-bold text-white/55">Use one finger and tap as quickly as you can.</p>
-                        <button type="button" onPointerDown={(event) => { event.preventDefault(); tap(); }}
-                            className="group mx-auto mt-6 flex aspect-square w-full max-w-sm touch-manipulation select-none flex-col items-center justify-center rounded-full border-[10px] border-white/10 bg-gradient-to-br from-[#4F46E5] via-[#7C3AED] to-[#EC4899] text-white shadow-[0_24px_80px_rgba(79,70,229,0.45)] transition active:scale-95">
-                            <Zap size={58} className="transition group-active:scale-90" />
-                            <span className="mt-3 text-3xl font-black uppercase tracking-[0.18em] sm:text-4xl">Tap</span>
-                        </button>
-                        <p className="mt-5 bg-gradient-to-r from-[#A5B4FC] to-[#F9A8D4] bg-clip-text text-6xl font-black text-transparent">{localTaps}</p>
-                        <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">Your live taps</p>
+                        <style jsx global>{`
+                            @keyframes regigo-tap-ring {
+                                0% {
+                                    transform: scale(0.65);
+                                    opacity: 0.9;
+                                }
+                                100% {
+                                    transform: scale(1.55);
+                                    opacity: 0;
+                                }
+                            }
+
+                            @keyframes regigo-tap-spark {
+                                0% {
+                                    transform: translateY(10px) scale(0.6);
+                                    opacity: 0;
+                                }
+                                35% {
+                                    opacity: 1;
+                                }
+                                100% {
+                                    transform: translateY(-42px) scale(1.1);
+                                    opacity: 0;
+                                }
+                            }
+
+                            @keyframes regigo-tap-button-glow {
+                                0%, 100% {
+                                    box-shadow:
+                                        0 24px 80px rgba(79, 70, 229, 0.45),
+                                        inset 0 10px 22px rgba(255, 255, 255, 0.18),
+                                        inset 0 -18px 30px rgba(30, 17, 95, 0.35);
+                                }
+                                50% {
+                                    box-shadow:
+                                        0 30px 95px rgba(236, 72, 153, 0.58),
+                                        inset 0 14px 28px rgba(255, 255, 255, 0.24),
+                                        inset 0 -18px 30px rgba(30, 17, 95, 0.35);
+                                }
+                            }
+
+                            .regigo-tap-ring {
+                                animation: regigo-tap-ring 460ms ease-out forwards;
+                            }
+
+                            .regigo-tap-spark {
+                                animation: regigo-tap-spark 520ms ease-out forwards;
+                            }
+
+                            .regigo-tap-button {
+                                animation: regigo-tap-button-glow 1.8s ease-in-out infinite;
+                            }
+                        `}</style>
+
+                        <div className="pointer-events-none absolute left-[-20%] top-[-30%] h-[420px] w-[420px] rounded-full bg-[#4F46E5]/25 blur-3xl" />
+                        <div className="pointer-events-none absolute bottom-[-45%] right-[-20%] h-[460px] w-[460px] rounded-full bg-[#EC4899]/25 blur-3xl" />
+
+                        <div className="relative z-10">
+                            <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left backdrop-blur">
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-400/15 text-indigo-200">
+                                        <Gauge size={21} />
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                                            Live speed
+                                        </p>
+                                        <p className="mt-1 text-sm font-black text-white">
+                                            Keep tapping without stopping
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl bg-white/10 px-3 py-2 text-right">
+                                    <p className="text-xs font-black uppercase tracking-[0.14em] text-white/45">
+                                        Streak
+                                    </p>
+                                    <p className="mt-1 text-lg font-black text-amber-300">
+                                        {tapStreak}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="relative mx-auto mt-7 flex aspect-square w-full max-w-[430px] items-center justify-center">
+                                <div className="absolute inset-[2%] rounded-full border border-white/10 bg-white/[0.03] shadow-inner" />
+                                <div className="absolute inset-[8%] rounded-full border-[10px] border-slate-800 bg-gradient-to-b from-slate-600 to-slate-950 shadow-[0_20px_45px_rgba(0,0,0,0.55),inset_0_6px_10px_rgba(255,255,255,0.15)]" />
+                                <div className="absolute inset-[14%] rounded-full border-[6px] border-indigo-300/25 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#701A75] shadow-[inset_0_14px_24px_rgba(255,255,255,0.08),inset_0_-18px_30px_rgba(0,0,0,0.32)]" />
+
+                                {tapPulseKey > 0 && (
+                                    <span
+                                        key={`ring-${tapPulseKey}`}
+                                        className="regigo-tap-ring pointer-events-none absolute inset-[20%] rounded-full border-4 border-pink-300/70"
+                                    />
+                                )}
+
+                                {tapPulseKey > 0 && (
+                                    <span
+                                        key={`spark-${tapPulseKey}`}
+                                        className="regigo-tap-spark pointer-events-none absolute left-1/2 top-[19%] -translate-x-1/2 text-amber-200"
+                                    >
+                                        <Sparkles size={28} />
+                                    </span>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onPointerDown={(event) => {
+                                        event.preventDefault();
+                                        tap();
+                                    }}
+                                    className="regigo-tap-button group relative z-10 flex aspect-square w-[58%] touch-manipulation select-none flex-col items-center justify-center rounded-full border-[8px] border-white/15 bg-gradient-to-br from-[#6366F1] via-[#7C3AED] to-[#EC4899] text-white outline-none transition hover:scale-[1.025] focus-visible:ring-4 focus-visible:ring-pink-300/50 active:translate-y-2 active:scale-[0.96] active:shadow-[0_10px_25px_rgba(79,70,229,0.3)]"
+                                >
+                                    <span className="absolute inset-[7%] rounded-full border border-white/20 bg-white/[0.04]" />
+                                    <span className="absolute left-[18%] top-[12%] h-[18%] w-[38%] -rotate-12 rounded-full bg-white/25 blur-md" />
+
+                                    <Zap
+                                        size={62}
+                                        className="relative transition group-active:scale-90"
+                                    />
+                                    <span className="relative mt-3 text-3xl font-black uppercase tracking-[0.18em] sm:text-4xl">
+                                        Tap
+                                    </span>
+                                </button>
+                            </div>
+
+                            <div className="mx-auto mt-5 grid max-w-2xl grid-cols-2 gap-3">
+                                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                    <Activity
+                                        size={19}
+                                        className="mx-auto text-indigo-300"
+                                    />
+                                    <p className="mt-2 bg-gradient-to-r from-[#A5B4FC] to-[#F9A8D4] bg-clip-text text-5xl font-black text-transparent">
+                                        {localTaps}
+                                    </p>
+                                    <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
+                                        Your live taps
+                                    </p>
+                                </div>
+
+                                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                    <MousePointerClick
+                                        size={19}
+                                        className="mx-auto text-pink-300"
+                                    />
+                                    <p className="mt-2 text-5xl font-black text-white">
+                                        {Math.max(
+                                            0,
+                                            Number(match.seconds_remaining || 0)
+                                        )}
+                                    </p>
+                                    <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
+                                        Seconds left
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </section>
                 </>}
             </>}
