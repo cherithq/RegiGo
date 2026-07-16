@@ -110,8 +110,8 @@ const modules: ModuleConfig[] = [
     },
     {
         key: "glitter_games",
-        title: "Glitter Games Dashboard",
-        description: "Enable the admin-only Glitter Games management dashboard.",
+        title: "Games Dashboard",
+        description: "Enable the admin-only Games management dashboard.",
         icon: <Gamepad2 size={20} />,
     },
     {
@@ -418,7 +418,7 @@ export default function EventSettingsForm({
                             Event Module Visibility
                         </h2>
                         <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
-                            Choose which event tools are enabled. The Glitter Games dashboard is admin-only.                        </p>
+                            Choose which event tools are enabled. The Games dashboard is admin-only.                        </p>
                     </div>
 
                     <div className="mt-6 grid gap-4 md:grid-cols-2">

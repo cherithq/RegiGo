@@ -1,429 +1,271 @@
 import { NextResponse } from "next/server";
-import nodemailer from "nodemailer";
-import QRCode from "qrcode";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
 
-type EmailTemplate = {
-    subject: string | null;
-    body: string | null;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type CheckInSource = "camera" | "manual";
+
+type CheckInBody = {
+    scannedValue?: unknown;
+    registrationId?: unknown;
+    qrToken?: unknown;
+    source?: unknown;
 };
 
-type TemplateValues = Record<string, string>;
+type RegistrationRecord = {
+    id: string;
+    event_id: string;
+    full_name?: string | null;
+    email?: string | null;
+    registration_status?: string | null;
+};
 
-function escapeHtml(value: unknown) {
-    return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-}
+type TicketRecord = {
+    id: string;
+    registration_id: string;
+    event_id: string;
+    qr_token?: string | null;
+    is_active?: boolean | null;
+};
 
-function renderTemplate(template: string, values: TemplateValues) {
-    let output = template;
-
-    Object.entries(values).forEach(([key, value]) => {
-        output = output.replaceAll(`{{${key}}}`, value ?? "");
+function jsonNoStore(body: Record<string, unknown>, status = 200) {
+    return NextResponse.json(body, {
+        status,
+        headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            Pragma: "no-cache",
+            Expires: "0",
+        },
     });
-
-    return output;
 }
 
-function textToHtml(text: string) {
-    return escapeHtml(text).replace(/\n/g, "<br />");
+function cleanString(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
 }
 
-function getDefaultSubject(emailType: string, eventName: string) {
-    if (emailType === "table_assignment") {
-        return `Your table has been assigned for ${eventName}`;
-    }
-
-    if (emailType === "event_update") {
-        return `Event update for ${eventName}`;
-    }
-
-    return `Registration confirmed for ${eventName}`;
+function isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+    );
 }
 
-function getDefaultBody(emailType: string) {
-    if (emailType === "table_assignment") {
-        return `Hi {{name}},
+function parseScannedValue(value: string) {
+    const rawValue = value.trim();
+    let registrationId = "";
+    let qrToken = "";
 
-Your table has been assigned for {{event_name}}.
-
-Table: {{table_name}}
-
-Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
-
-You may view your QR pass here:
-{{pass_url}}`;
-    }
-
-    if (emailType === "event_update") {
-        return `Hi {{name}},
-
-There has been an update for {{event_name}}.
-
-Updated Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
-
-Your current table assignment:
-Table: {{table_name}}
-
-You may view your QR pass here:
-{{pass_url}}`;
-    }
-
-    return `Hi {{name}},
-
-Thank you for registering for {{event_name}}.
-
-Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
-Ticket Type: {{ticket_type}}
-Table: {{table_name}}
-
-You may view your QR pass here:
-{{pass_url}}`;
-}
-
-async function runEmailWorker(req: Request) {
     try {
-        const url = new URL(req.url);
-        const secret =
-            req.headers.get("x-worker-secret") || url.searchParams.get("secret");
+        const url = new URL(rawValue);
+        registrationId =
+            url.searchParams.get("registration") ||
+            url.searchParams.get("registration_id") ||
+            url.searchParams.get("registrationId") ||
+            "";
+        qrToken =
+            url.searchParams.get("qr_token") ||
+            url.searchParams.get("qrToken") ||
+            url.searchParams.get("token") ||
+            url.searchParams.get("ticket") ||
+            "";
+    } catch {
+        // The scanner may return a raw registration ID or QR token.
+    }
 
-        if (!process.env.EMAIL_WORKER_SECRET) {
-            return NextResponse.json(
-                {
-                    error:
-                        "Missing EMAIL_WORKER_SECRET. Add it to .env.local and restart npm run dev.",
-                },
-                { status: 500 },
-            );
+    return {
+        rawValue,
+        registrationId,
+        qrToken,
+    };
+}
+
+export async function POST(
+    request: Request,
+    context: { params: Promise<{ eventId: string }> },
+) {
+    try {
+        const { eventId } = await context.params;
+        const { supabaseServer } = await requirePermission("can_scan_qr");
+        const body = (await request.json()) as CheckInBody;
+
+        const source: CheckInSource = body.source === "manual" ? "manual" : "camera";
+        const explicitRegistrationId = cleanString(body.registrationId);
+        const explicitQrToken = cleanString(body.qrToken);
+        const scannedValue = cleanString(body.scannedValue);
+        const parsed = parseScannedValue(scannedValue);
+
+        let registrationId = explicitRegistrationId || parsed.registrationId;
+        let qrToken = explicitQrToken || parsed.qrToken;
+        let ticket: TicketRecord | null = null;
+
+        async function findTicketByRegistration(id: string) {
+            const { data, error } = await supabaseServer
+                .from("qr_tickets")
+                .select("id,registration_id,event_id,qr_token,is_active")
+                .eq("event_id", eventId)
+                .eq("registration_id", id)
+                .limit(1)
+                .maybeSingle();
+
+            if (error) throw new Error(error.message);
+            return (data as TicketRecord | null) || null;
         }
 
-        if (secret !== process.env.EMAIL_WORKER_SECRET) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        async function findTicketByToken(token: string) {
+            const { data, error } = await supabaseServer
+                .from("qr_tickets")
+                .select("id,registration_id,event_id,qr_token,is_active")
+                .eq("event_id", eventId)
+                .eq("qr_token", token)
+                .limit(1)
+                .maybeSingle();
+
+            if (error) throw new Error(error.message);
+            return (data as TicketRecord | null) || null;
         }
 
-        const supabaseServer = await createSupabaseServerClient();
-
-        const { data: jobs, error: jobsError } = await supabaseServer
-            .from("email_jobs")
-            .select("*")
-            .eq("status", "pending")
-            .neq("email_type", "glitter_games_access")
-            .lt("attempts", 3)
-            .order("created_at", { ascending: true })
-            .limit(10);
-
-        if (jobsError) {
-            return NextResponse.json({ error: jobsError.message }, { status: 500 });
+        if (registrationId) {
+            ticket = await findTicketByRegistration(registrationId);
         }
 
-        if (!jobs || jobs.length === 0) {
-            return NextResponse.json({ message: "No pending email jobs." });
+        if (!ticket && qrToken) {
+            ticket = await findTicketByToken(qrToken);
+            registrationId = ticket?.registration_id || registrationId;
         }
 
-        const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
-        const smtpPort = Number(process.env.SMTP_PORT || 587);
-        const smtpUser = (process.env.SMTP_USER || "").trim();
-        const smtpPass = (process.env.SMTP_PASS || "").replace(/\s/g, "");
-        const smtpSecure = process.env.SMTP_SECURE === "true" || smtpPort === 465;
+        // A raw UUID may be either the registration ID or the QR token.
+        if (!ticket && scannedValue && isUuid(scannedValue)) {
+            ticket = await findTicketByRegistration(scannedValue);
 
-        if (!smtpUser || !smtpPass) {
-            return NextResponse.json(
-                {
-                    error:
-                        "Missing SMTP_USER or SMTP_PASS. Check your .env.local file and restart npm run dev.",
-                },
-                { status: 500 },
-            );
-        }
-
-        const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpSecure,
-            auth: {
-                user: smtpUser,
-                pass: smtpPass,
-            },
-        });
-
-        await transporter.verify();
-
-        const results: Array<Record<string, unknown>> = [];
-
-        for (const job of jobs) {
-            try {
-                await supabaseServer
-                    .from("email_jobs")
-                    .update({
-                        status: "processing",
-                        attempts: Number(job.attempts || 0) + 1,
-                        last_error: null,
-                    })
-                    .eq("id", job.id);
-
-                const { data: registration, error: registrationError } =
-                    await supabaseServer
-                        .from("registrations")
-                        .select("*")
-                        .eq("id", job.registration_id)
-                        .maybeSingle();
-
-                if (registrationError) throw new Error(registrationError.message);
-                if (!registration) throw new Error("Registration not found.");
-
-                const { data: event, error: eventError } = await supabaseServer
-                    .from("events")
-                    .select("*")
-                    .eq("id", registration.event_id)
-                    .maybeSingle();
-
-                if (eventError) throw new Error(eventError.message);
-                if (!event) throw new Error("Event not found.");
-
-                const siteUrl = (
-                    process.env.NEXT_PUBLIC_SITE_URL ||
-                    process.env.NEXT_PUBLIC_APP_URL ||
-                    "http://localhost:3000"
-                ).replace(/\/$/, "");
-
-                const passUrl = `${siteUrl}/event/${event.event_slug}/pass?registration=${registration.id}`;
-
-                const ticketResult = await supabaseServer
-                    .from("qr_tickets")
-                    .select("*")
-                    .eq("registration_id", registration.id)
-                    .eq("is_active", true)
-                    .limit(1)
-                    .maybeSingle();
-
-                if (ticketResult.error) {
-                    throw new Error(ticketResult.error.message);
-                }
-
-                const ticket =
-                    ticketResult.data as Record<string, unknown> | null;
-
-                let ticketName = "-";
-
-                if (registration.ticket_type_id) {
-                    const { data: ticketType } = await supabaseServer
-                        .from("ticket_types")
-                        .select("*")
-                        .eq("id", registration.ticket_type_id)
-                        .maybeSingle();
-
-                    ticketName = ticketType?.ticket_name || "-";
-                }
-
-                let tableName = "-";
-
-                const { data: tableAssignment } = await supabaseServer
-                    .from("table_assignments")
-                    .select("*")
-                    .eq("registration_id", registration.id)
-                    .maybeSingle();
-
-                if (tableAssignment?.table_id) {
-                    const { data: table } = await supabaseServer
-                        .from("event_tables")
-                        .select("*")
-                        .eq("id", tableAssignment.table_id)
-                        .maybeSingle();
-
-                    tableName = table?.table_name || "-";
-                }
-
-                const actionUrl = passUrl;
-                let qrBase64: string | null = null;
-
-                if (ticket) {
-                    const qrDataUrl = await QRCode.toDataURL(actionUrl, {
-                        width: 320,
-                        margin: 2,
-                        errorCorrectionLevel: "M",
-                    });
-
-                    qrBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, "");
-                }
-
-                const templateValues: TemplateValues = {
-                    name: registration.full_name || "Guest",
-                    full_name: registration.full_name || "Guest",
-                    email: registration.email || job.recipient_email || "",
-                    event_name: event.event_name || "-",
-                    event_date: event.event_date || "-",
-                    event_time: event.event_time || "-",
-                    venue: event.venue || "-",
-                    ticket_type: ticketName,
-                    table_name: tableName,
-                    table: tableName,
-                    pass_url: passUrl,
-                    qr_link: actionUrl,
-                    game_url: "",
-                    games_url: "",
-                    qr_code: "Your QR code is displayed below.",
-                    qr_image: "Your QR code is displayed below.",
-                    company: "RegiGo",
-                };
-
-                const { data: savedTemplate } = await supabaseServer
-                    .from("email_templates")
-                    .select("subject, body")
-                    .eq("event_id", event.id)
-                    .eq("email_type", job.email_type)
-                    .maybeSingle();
-
-                const template = savedTemplate as EmailTemplate | null;
-                const subject = renderTemplate(
-                    template?.subject ||
-                        getDefaultSubject(job.email_type, event.event_name || "your event"),
-                    templateValues,
-                );
-                const body = renderTemplate(
-                    template?.body || getDefaultBody(job.email_type),
-                    templateValues,
-                );
-
-                const fromAddress =
-                    process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || smtpUser;
-                const fromName = process.env.EMAIL_FROM_NAME || "RegiGo";
-                const qrCid = "qrpass@regigo";
-                const attachments = qrBase64
-                    ? [
-                          {
-                              filename: "qr-pass.png",
-                              content: qrBase64,
-                              encoding: "base64" as const,
-                              cid: qrCid,
-                              contentType: "image/png",
-                          },
-                      ]
-                    : [];
-
-                const informationCard = `
-                    <div style="background:#F7F5FF;border-radius:20px;padding:20px;margin-top:24px">
-                      <p><b>Date:</b> ${escapeHtml(event.event_date || "-")}</p>
-                      <p><b>Time:</b> ${escapeHtml(event.event_time || "-")}</p>
-                      <p><b>Venue:</b> ${escapeHtml(event.venue || "-")}</p>
-                      <p><b>Ticket Type:</b> ${escapeHtml(ticketName)}</p>
-                      <p><b>Table:</b> ${escapeHtml(tableName)}</p>
-                    </div>
-                  `;
-
-                await transporter.sendMail({
-                    from: `"${fromName}" <${fromAddress}>`,
-                    to: job.recipient_email,
-                    subject,
-                    html: `
-                        <div style="font-family:Arial,sans-serif;background:#F7F5FF;padding:32px">
-                          <div style="max-width:640px;margin:auto;background:white;border-radius:28px;overflow:hidden">
-                            <div style="background:linear-gradient(135deg,#4F46E5,#EC4899);padding:32px;color:white">
-                              <p style="font-weight:bold;margin:0;opacity:.85">RegiGo</p>
-                              <h1 style="margin:12px 0 0;font-size:30px">${escapeHtml(subject)}</h1>
-                              <p style="margin:8px 0 0;opacity:.9">${escapeHtml(event.event_name || "")}</p>
-                            </div>
-
-                            <div style="padding:32px">
-                              <div style="font-size:15px;line-height:1.7;color:#334155">
-                                ${textToHtml(body)}
-                              </div>
-
-                              ${
-                                  qrBase64
-                                      ? `
-                                          <div style="text-align:center;margin:28px 0">
-                                            <img
-                                              src="cid:${qrCid}"
-                                              alt="QR Code"
-                                              width="220"
-                                              height="220"
-                                              style="display:block;margin:auto;width:220px;height:220px;border:0"
-                                            />
-                                          </div>
-                                        `
-                                      : ""
-                              }
-
-                              ${informationCard}
-
-                              <div style="text-align:center;margin-top:28px">
-                                <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#4F46E5;color:white;padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:bold">
-                                  View QR Pass
-                                </a>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                    `,
-                    attachments,
-                });
-
-                await supabaseServer
-                    .from("email_jobs")
-                    .update({
-                        status: "sent",
-                        sent_at: new Date().toISOString(),
-                        last_error: null,
-                    })
-                    .eq("id", job.id);
-
-                results.push({
-                    id: job.id,
-                    email: job.recipient_email,
-                    type: job.email_type,
-                    status: "sent",
-                });
-            } catch (error) {
-                const message =
-                    error instanceof Error ? error.message : "Failed to send email";
-
-                await supabaseServer
-                    .from("email_jobs")
-                    .update({
-                        status: "pending",
-                        last_error: message,
-                    })
-                    .eq("id", job.id);
-
-                results.push({
-                    id: job.id,
-                    email: job.recipient_email,
-                    type: job.email_type,
-                    status: "failed",
-                    error: message,
-                });
+            if (ticket) {
+                registrationId = ticket.registration_id;
+            } else {
+                ticket = await findTicketByToken(scannedValue);
+                registrationId = ticket?.registration_id || registrationId;
+                qrToken = scannedValue;
             }
         }
 
-        return NextResponse.json({ processed: results });
+        // A manual check-in can still work for registrations created without a QR ticket.
+        if (!registrationId && ticket?.registration_id) {
+            registrationId = ticket.registration_id;
+        }
+
+        if (!registrationId) {
+            return jsonNoStore(
+                {
+                    error: "This QR code does not match a registration for this event.",
+                },
+                404,
+            );
+        }
+
+        const { data: registration, error: registrationError } =
+            await supabaseServer
+                .from("registrations")
+                .select("id,event_id,full_name,email,registration_status")
+                .eq("id", registrationId)
+                .eq("event_id", eventId)
+                .maybeSingle();
+
+        if (registrationError) {
+            return jsonNoStore({ error: registrationError.message }, 400);
+        }
+
+        if (!registration) {
+            return jsonNoStore(
+                { error: "Guest registration was not found for this event." },
+                404,
+            );
+        }
+
+        const guest = registration as RegistrationRecord;
+
+        const { data: existingCheckIn, error: existingCheckInError } =
+            await supabaseServer
+                .from("check_ins")
+                .select("id")
+                .eq("registration_id", guest.id)
+                .eq("event_id", eventId)
+                .eq("scan_result", "checked_in")
+                .limit(1)
+                .maybeSingle();
+
+        if (existingCheckInError) {
+            return jsonNoStore({ error: existingCheckInError.message }, 400);
+        }
+
+        const statusAlreadyCheckedIn =
+            guest.registration_status === "checked_in" ||
+            guest.registration_status === "attended";
+        const alreadyCheckedIn = Boolean(existingCheckIn) || statusAlreadyCheckedIn;
+        let createdCheckIn = false;
+
+        if (!alreadyCheckedIn) {
+            const { error: insertError } = await supabaseServer
+                .from("check_ins")
+                .insert({
+                    registration_id: guest.id,
+                    event_id: eventId,
+                    qr_ticket_id: ticket?.id || null,
+                    checked_in_by: "Admin",
+                    device_name:
+                        source === "camera"
+                            ? "Web Camera Scanner"
+                            : "Manual Search",
+                    scan_result: "checked_in",
+                });
+
+            if (insertError && insertError.code !== "23505") {
+                return jsonNoStore({ error: insertError.message }, 400);
+            }
+
+            createdCheckIn = !insertError;
+        }
+
+        const { error: registrationUpdateError } = await supabaseServer
+            .from("registrations")
+            .update({ registration_status: "checked_in" })
+            .eq("id", guest.id)
+            .eq("event_id", eventId);
+
+        if (registrationUpdateError) {
+            return jsonNoStore({ error: registrationUpdateError.message }, 400);
+        }
+
+        const { error: ticketUpdateError } = await supabaseServer
+            .from("qr_tickets")
+            .update({ is_active: false })
+            .eq("registration_id", guest.id)
+            .eq("event_id", eventId);
+
+        if (ticketUpdateError) {
+            return jsonNoStore({ error: ticketUpdateError.message }, 400);
+        }
+
+        return jsonNoStore({
+            success: true,
+            duplicate: !createdCheckIn,
+            message: createdCheckIn
+                ? "Checked in successfully."
+                : "Guest already checked in. Check-in status has been synced.",
+            guest: {
+                id: guest.id,
+                full_name: guest.full_name || "Guest",
+                email: guest.email || null,
+            },
+        });
     } catch (error) {
-        return NextResponse.json(
+        console.error("Check-in request failed:", error);
+
+        return jsonNoStore(
             {
                 error:
-                    error instanceof Error ? error.message : "Email worker failed",
+                    error instanceof Error
+                        ? error.message
+                        : "Unable to check in this guest.",
             },
-            { status: 500 },
+            500,
         );
     }
-}
-
-export async function POST(req: Request) {
-    return runEmailWorker(req);
-}
-
-export async function GET(req: Request) {
-    return runEmailWorker(req);
 }

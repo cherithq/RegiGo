@@ -404,14 +404,6 @@ export default function DashboardSidebar() {
 
         if (loadingModules) return false;
 
-        // Glitter Games dashboard: admin-only and must respect its toggle.
-        if (item.organizerModuleKey === "glitter_games") {
-            return (
-                profile.role === "admin" &&
-                enabledModules.glitter_games !== false
-            );
-        }
-
         // Admins retain access to other event modules.
         if (profile.role === "admin") return true;
 
