@@ -759,6 +759,23 @@ export default function TapTournamentPlayer({
 
     async function join(event: FormEvent) {
         event.preventDefault();
+
+        const displayName = lookup
+            .trim()
+            .replace(/\s+/g, " ");
+
+        if (!displayName) {
+            setError("Enter a display name.");
+            return;
+        }
+
+        if (displayName.length > 60) {
+            setError(
+                "Display name must be 60 characters or fewer."
+            );
+            return;
+        }
+
         setJoining(true);
         setError("");
 
@@ -774,7 +791,9 @@ export default function TapTournamentPlayer({
                             "application/json",
                     },
                     body: JSON.stringify({
-                        lookup,
+                        displayName,
+                        // Kept for compatibility with the existing RPC name.
+                        lookup: displayName,
                         existingToken:
                             token || null,
                     }),
@@ -2139,9 +2158,8 @@ export default function TapTournamentPlayer({
                     Join Tournament
                 </h1>
                 <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
-                    Enter the email or exact full
-                    name used for registration. You
-                    must already be checked in.
+                    Enter any display name to join.
+                    Registration and check-in are not required.
                 </p>
 
                 {lobbyOpen ? (
@@ -2156,7 +2174,10 @@ export default function TapTournamentPlayer({
                                     event.target.value
                                 )
                             }
-                            placeholder="Registered email or full name"
+                            placeholder="Your display name"
+                            autoComplete="nickname"
+                            minLength={1}
+                            maxLength={60}
                             className="h-13 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-bold outline-none transition focus:border-[#4F46E5] focus:bg-white"
                             required
                         />
