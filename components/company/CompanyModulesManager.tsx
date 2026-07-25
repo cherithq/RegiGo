@@ -373,7 +373,7 @@ export default function CompanyModulesManager() {
             );
 
             try {
-                let companyResult =
+                const fullCompanyResult =
                     await supabase
                         .from(
                             "companies",
@@ -385,16 +385,31 @@ export default function CompanyModulesManager() {
                             "company_name",
                         );
 
+                let companyRows:
+                    CompanyRow[] =
+                    [];
+
                 if (
-                    companyResult.error &&
-                    String(
-                        companyResult.error
-                            .code ||
-                            "",
-                    ) ===
-                        "42703"
+                    fullCompanyResult.error
                 ) {
-                    companyResult =
+                    const missingOptionalColumns =
+                        String(
+                            fullCompanyResult.error
+                                .code ||
+                                "",
+                        ) ===
+                        "42703";
+
+                    if (
+                        !missingOptionalColumns
+                    ) {
+                        throw new Error(
+                            fullCompanyResult.error
+                                .message,
+                        );
+                    }
+
+                    const basicCompanyResult =
                         await supabase
                             .from(
                                 "companies",
@@ -405,15 +420,46 @@ export default function CompanyModulesManager() {
                             .order(
                                 "company_name",
                             );
-                }
 
-                if (
-                    companyResult.error
-                ) {
-                    throw new Error(
-                        companyResult.error
-                            .message,
-                    );
+                    if (
+                        basicCompanyResult.error
+                    ) {
+                        throw new Error(
+                            basicCompanyResult.error
+                                .message,
+                        );
+                    }
+
+                    companyRows =
+                        (
+                            basicCompanyResult.data ||
+                            []
+                        ).map(
+                            (
+                                company,
+                            ): CompanyRow => ({
+                                id:
+                                    String(
+                                        company.id,
+                                    ),
+                                company_name:
+                                    company.company_name ||
+                                    null,
+                                company_slug:
+                                    null,
+                                status:
+                                    "active",
+                                current_plan_id:
+                                    null,
+                            }),
+                        );
+                } else {
+                    companyRows =
+                        (
+                            fullCompanyResult.data ||
+                            []
+                        ) as unknown as
+                            CompanyRow[];
                 }
 
                 const [
@@ -512,10 +558,7 @@ export default function CompanyModulesManager() {
                 }
 
                 const nextCompanies =
-                    (
-                        companyResult.data ||
-                        []
-                    ).map(
+                    companyRows.map(
                         (
                             company:
                                 CompanyRow,

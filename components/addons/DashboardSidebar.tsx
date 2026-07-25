@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import Logo from "@/components/layout/logo";
-import { useSidebar } from "./SidebarContext";
+import Logo from "@/components/layout/Logo";
+import { useSidebar } from "@/components/layout/SidebarContext";
 import {
     BadgeCheck,
     BarChart3,
