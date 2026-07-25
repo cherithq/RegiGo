@@ -1,397 +1,1397 @@
-import fs from "node:fs";
-import path from "node:path";
-import ts from "typescript";
+import Link from "next/link";
+import {
+    redirect,
+} from "next/navigation";
+import {
+    revalidatePath,
+} from "next/cache";
+import {
+    createClient,
+    type SupabaseClient,
+} from "@supabase/supabase-js";
 
-const relative =
-    "app/event/[slug]/invite/[token]/page.tsx";
-const absolute =
-    path.join(
-        process.cwd(),
-        relative,
-    );
+export const dynamic =
+    "force-dynamic";
+export const revalidate =
+    0;
 
-if (!fs.existsSync(absolute)) {
-    console.error(
-        `Missing ${relative}`,
+type PageProps = {
+    params: Promise<{
+        slug: string;
+        token: string;
+    }>;
+    searchParams?: Promise<{
+        message?:
+            | string
+            | string[];
+        error?:
+            | string
+            | string[];
+    }>;
+};
+
+type EventRow = {
+    id: string;
+    event_name:
+        | string
+        | null;
+    event_slug:
+        | string
+        | null;
+    event_date:
+        | string
+        | null;
+    event_time:
+        | string
+        | null;
+    venue:
+        | string
+        | null;
+    description:
+        | string
+        | null;
+};
+
+type InvitationRow = {
+    id: string;
+    event_id:
+        | string
+        | null;
+    registration_id:
+        | string
+        | null;
+    status?:
+        | string
+        | null;
+    rsvp_status?:
+        | string
+        | null;
+    opened_at?:
+        | string
+        | null;
+};
+
+type RegistrationRow = {
+    id: string;
+    event_id: string;
+    full_name:
+        | string
+        | null;
+    email:
+        | string
+        | null;
+    phone?:
+        | string
+        | null;
+    department?:
+        | string
+        | null;
+    rsvp_status:
+        | string
+        | null;
+    registration_status:
+        | string
+        | null;
+    payment_status:
+        | string
+        | null;
+    selected_ticket_quantity?:
+        | number
+        | null;
+    table_selection_status?:
+        | string
+        | null;
+};
+
+type TableAssignmentRow = {
+    table_id:
+        | string
+        | null;
+};
+
+type EventTableRow = {
+    id: string;
+    table_name:
+        | string
+        | null;
+    selection_label?:
+        | string
+        | null;
+};
+
+type InvitationLookup = {
+    invitation: InvitationRow;
+    table:
+        | "event_invitations"
+        | "guest_invitations";
+    tokenColumn:
+        | "token"
+        | "invitation_token"
+        | "rsvp_token"
+        | "access_token";
+};
+
+function serviceClient() {
+    const url =
+        process.env
+            .NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey =
+        process.env
+            .SUPABASE_SERVICE_ROLE_KEY;
+
+    if (
+        !url ||
+        !serviceRoleKey
+    ) {
+        throw new Error(
+            "Supabase server configuration is incomplete.",
+        );
+    }
+
+    return createClient(
+        url,
+        serviceRoleKey,
+        {
+            auth: {
+                autoRefreshToken:
+                    false,
+                persistSession:
+                    false,
+            },
+        },
     );
-    process.exit(1);
 }
 
-const original =
-    fs.readFileSync(
-        absolute,
-        "utf8",
-    );
-
-const sourceFile =
-    ts.createSourceFile(
-        relative,
-        original,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-    );
-
-function hasModifier(
-    node,
-    kind,
+function isCompatibilityError(
+    error:
+        | {
+              code?: string;
+          }
+        | null,
 ) {
-    return Boolean(
-        node.modifiers?.some(
-            (
-                modifier,
-            ) =>
-                modifier.kind ===
-                kind,
+    return [
+        "42P01",
+        "42703",
+        "PGRST204",
+        "PGRST205",
+    ].includes(
+        String(
+            error?.code ||
+                "",
         ),
     );
 }
 
-const existingDefault =
-    sourceFile.statements.some(
-        (
-            statement,
-        ) =>
-            hasModifier(
-                statement,
-                ts.SyntaxKind.DefaultKeyword,
-            ) ||
-            ts.isExportAssignment(
-                statement,
-            ),
-    );
+async function findInvitation(
+    admin: SupabaseClient,
+    eventId: string,
+    token: string,
+): Promise<InvitationLookup | null> {
+    const tables = [
+        "event_invitations",
+        "guest_invitations",
+    ] as const;
+    const tokenColumns = [
+        "token",
+        "invitation_token",
+        "rsvp_token",
+        "access_token",
+    ] as const;
 
-if (existingDefault) {
-    console.log(
-        "The invite page already has a default export.",
-    );
-    process.exit(0);
-}
-
-const preferredNames = [
-    "InvitePage",
-    "InvitationPage",
-    "EventInvitePage",
-    "InviteTokenPage",
-    "Page",
-];
-
-const functionCandidates =
-    sourceFile.statements.filter(
-        (
-            statement,
-        ) =>
-            ts.isFunctionDeclaration(
-                statement,
-            ) &&
-            statement.name,
-    );
-
-function functionScore(
-    statement,
-) {
-    const name =
-        statement.name?.text ||
-        "";
-    let score =
-        0;
-
-    if (
-        preferredNames.includes(
-            name,
-        )
-    ) {
-        score +=
-            100;
-    }
-
-    if (
-        name.endsWith(
-            "Page",
-        )
-    ) {
-        score +=
-            60;
-    }
-
-    if (
-        hasModifier(
-            statement,
-            ts.SyntaxKind.ExportKeyword,
-        )
-    ) {
-        score +=
-            15;
-    }
-
-    if (
-        hasModifier(
-            statement,
-            ts.SyntaxKind.AsyncKeyword,
-        )
-    ) {
-        score +=
-            10;
-    }
-
-    if (
-        statement.parameters.some(
-            (
-                parameter,
-            ) =>
-                ts.isIdentifier(
-                    parameter.name,
-                ) &&
-                parameter.name.text ===
-                    "params",
-        )
-    ) {
-        score +=
-            30;
-    }
-
-    return score;
-}
-
-const functionCandidate =
-    functionCandidates
-        .map(
-            (
-                statement,
-            ) => ({
-                statement,
-                score:
-                    functionScore(
-                        statement,
-                    ),
-            }),
-        )
-        .sort(
-            (
-                first,
-                second,
-            ) =>
-                second.score -
-                first.score,
-        )[0];
-
-let next =
-    original;
-let chosenName =
-    "";
-
-if (
-    functionCandidate &&
-    functionCandidate.score >
-        0
-) {
-    const statement =
-        functionCandidate.statement;
-    chosenName =
-        statement.name?.text ||
-        "Page";
-    const start =
-        statement.getStart(
-            sourceFile,
-        );
-    const declarationText =
-        original.slice(
-            start,
-            statement.getEnd(),
-        );
-
-    if (
-        hasModifier(
-            statement,
-            ts.SyntaxKind.ExportKeyword,
-        )
-    ) {
-        const exportIndex =
-            declarationText.indexOf(
-                "export",
-            );
-
-        next =
-            original.slice(
-                0,
-                start +
-                    exportIndex,
-            ) +
-            "export default" +
-            original.slice(
-                start +
-                    exportIndex +
-                    "export".length,
-            );
-    } else {
-        next =
-            original.slice(
-                0,
-                start,
-            ) +
-            "export default " +
-            original.slice(
-                start,
-            );
-    }
-} else {
-    const variableCandidates =
-        [];
-
-    for (const statement of
-        sourceFile.statements) {
-        if (
-            !ts.isVariableStatement(
-                statement,
-            )
-        ) {
-            continue;
-        }
-
-        for (const declaration of
-            statement.declarationList
-                .declarations) {
-            if (
-                !ts.isIdentifier(
-                    declaration.name,
-                ) ||
-                !declaration.initializer
-            ) {
-                continue;
-            }
-
-            if (
-                !(
-                    ts.isArrowFunction(
-                        declaration.initializer,
-                    ) ||
-                    ts.isFunctionExpression(
-                        declaration.initializer,
+    for (const table of tables) {
+        for (const tokenColumn of tokenColumns) {
+            const result =
+                await admin
+                    .from(
+                        table,
                     )
-                )
-            ) {
-                continue;
-            }
-
-            const name =
-                declaration.name
-                    .text;
-            let score =
-                0;
-
-            if (
-                preferredNames.includes(
-                    name,
-                )
-            ) {
-                score +=
-                    100;
-            }
+                    .select(
+                        "*",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    )
+                    .eq(
+                        tokenColumn,
+                        token,
+                    )
+                    .maybeSingle();
 
             if (
-                name.endsWith(
-                    "Page",
-                )
+                result.error
             ) {
-                score +=
-                    60;
+                if (
+                    isCompatibilityError(
+                        result.error,
+                    )
+                ) {
+                    continue;
+                }
+
+                throw new Error(
+                    result.error
+                        .message,
+                );
             }
 
             if (
-                hasModifier(
-                    statement,
-                    ts.SyntaxKind.ExportKeyword,
-                )
+                result.data
             ) {
-                score +=
-                    15;
+                return {
+                    invitation:
+                        result.data as InvitationRow,
+                    table,
+                    tokenColumn,
+                };
             }
-
-            variableCandidates.push({
-                name,
-                score,
-            });
         }
     }
 
-    const variableCandidate =
-        variableCandidates.sort(
-            (
-                first,
-                second,
-            ) =>
-                second.score -
-                first.score,
-        )[0];
+    return null;
+}
 
+async function loadRegistration(
+    admin: SupabaseClient,
+    invitation: InvitationRow,
+) {
     if (
-        !variableCandidate ||
-        variableCandidate.score <=
-            0
+        !invitation.registration_id
     ) {
-        console.error(
-            "No likely page component was found.",
-        );
-        console.error(
-            "No file was changed. Upload the page.tsx file for an exact replacement.",
-        );
-        process.exit(1);
+        return null;
     }
 
-    chosenName =
-        variableCandidate.name;
-    next =
-        `${original.trimEnd()}\n\nexport default ${chosenName};\n`;
+    const result =
+        await admin
+            .from(
+                "registrations",
+            )
+            .select(
+                [
+                    "id",
+                    "event_id",
+                    "full_name",
+                    "email",
+                    "phone",
+                    "department",
+                    "rsvp_status",
+                    "registration_status",
+                    "payment_status",
+                    "selected_ticket_quantity",
+                    "table_selection_status",
+                ].join(
+                    ",",
+                ),
+            )
+            .eq(
+                "id",
+                invitation.registration_id,
+            )
+            .maybeSingle();
+
+    if (
+        result.error
+    ) {
+        throw new Error(
+            result.error
+                .message,
+        );
+    }
+
+    return (
+        result.data ||
+        null
+    ) as
+        | RegistrationRow
+        | null;
 }
 
-const verificationFile =
-    ts.createSourceFile(
-        relative,
-        next,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-    );
-const nowHasDefault =
-    verificationFile.statements.some(
-        (
-            statement,
-        ) =>
-            hasModifier(
-                statement,
-                ts.SyntaxKind.DefaultKeyword,
+async function markInvitationOpened(
+    admin: SupabaseClient,
+    lookup: InvitationLookup,
+) {
+    if (
+        lookup.invitation
+            .opened_at
+    ) {
+        return;
+    }
+
+    const result =
+        await admin
+            .from(
+                lookup.table,
+            )
+            .update({
+                opened_at:
+                    new Date()
+                        .toISOString(),
+            })
+            .eq(
+                "id",
+                lookup.invitation
+                    .id,
+            );
+
+    if (
+        result.error &&
+        !isCompatibilityError(
+            result.error,
+        )
+    ) {
+        console.error(
+            "Unable to mark invitation as opened:",
+            result.error
+                .message,
+        );
+    }
+}
+
+async function updateRsvp(
+    formData: FormData,
+) {
+    "use server";
+
+    const slug =
+        String(
+            formData.get(
+                "slug",
             ) ||
-            ts.isExportAssignment(
-                statement,
+                "",
+        ).trim();
+    const token =
+        String(
+            formData.get(
+                "token",
+            ) ||
+                "",
+        ).trim();
+    const response =
+        String(
+            formData.get(
+                "response",
+            ) ||
+                "",
+        )
+            .trim()
+            .toLowerCase();
+
+    if (
+        !slug ||
+        !token ||
+        ![
+            "accepted",
+            "declined",
+        ].includes(
+            response,
+        )
+    ) {
+        redirect(
+            `/event/${encodeURIComponent(
+                slug,
+            )}/invite/${encodeURIComponent(
+                token,
+            )}?error=${encodeURIComponent(
+                "The RSVP response is invalid.",
+            )}`,
+        );
+    }
+
+    const admin =
+        serviceClient();
+    const eventResult =
+        await admin
+            .from(
+                "events",
+            )
+            .select(
+                "id",
+            )
+            .eq(
+                "event_slug",
+                slug,
+            )
+            .maybeSingle();
+
+    if (
+        eventResult.error ||
+        !eventResult.data
+    ) {
+        redirect(
+            `/event/${encodeURIComponent(
+                slug,
+            )}/invite/${encodeURIComponent(
+                token,
+            )}?error=${encodeURIComponent(
+                "The event could not be found.",
+            )}`,
+        );
+    }
+
+    const lookup =
+        await findInvitation(
+            admin,
+            String(
+                eventResult.data
+                    .id,
             ),
+            token,
+        );
+
+    if (
+        !lookup ||
+        !lookup.invitation
+            .registration_id
+    ) {
+        redirect(
+            `/event/${encodeURIComponent(
+                slug,
+            )}/invite/${encodeURIComponent(
+                token,
+            )}?error=${encodeURIComponent(
+                "The invitation is invalid or has expired.",
+            )}`,
+        );
+    }
+
+    const registrationStatus =
+        response ===
+        "accepted"
+            ? "confirmed"
+            : "declined";
+
+    const registrationResult =
+        await admin
+            .from(
+                "registrations",
+            )
+            .update({
+                rsvp_status:
+                    response,
+                registration_status:
+                    registrationStatus,
+            })
+            .eq(
+                "id",
+                lookup.invitation
+                    .registration_id,
+            )
+            .eq(
+                "event_id",
+                eventResult.data
+                    .id,
+            );
+
+    if (
+        registrationResult.error
+    ) {
+        redirect(
+            `/event/${encodeURIComponent(
+                slug,
+            )}/invite/${encodeURIComponent(
+                token,
+            )}?error=${encodeURIComponent(
+                registrationResult
+                    .error
+                    .message,
+            )}`,
+        );
+    }
+
+    const invitationUpdate =
+        await admin
+            .from(
+                lookup.table,
+            )
+            .update({
+                status:
+                    response,
+                rsvp_status:
+                    response,
+                responded_at:
+                    new Date()
+                        .toISOString(),
+            })
+            .eq(
+                "id",
+                lookup.invitation
+                    .id,
+            );
+
+    if (
+        invitationUpdate.error &&
+        !isCompatibilityError(
+            invitationUpdate.error,
+        )
+    ) {
+        console.error(
+            "Unable to update invitation status:",
+            invitationUpdate
+                .error
+                .message,
+        );
+    }
+
+    const path =
+        `/event/${encodeURIComponent(
+            slug,
+        )}/invite/${encodeURIComponent(
+            token,
+        )}`;
+
+    revalidatePath(
+        path,
     );
 
-if (!nowHasDefault) {
-    console.error(
-        "A default export could not be confirmed. No file was changed.",
+    redirect(
+        `${path}?message=${encodeURIComponent(
+            response ===
+            "accepted"
+                ? "Your attendance has been confirmed."
+                : "Your response has been recorded.",
+        )}`,
     );
-    process.exit(1);
 }
 
-const backup =
-    `${absolute}.before-default-export-fix`;
+function formatDate(
+    value:
+        | string
+        | null,
+) {
+    if (
+        !value
+    ) {
+        return "Date to be confirmed";
+    }
 
-if (!fs.existsSync(backup)) {
-    fs.copyFileSync(
-        absolute,
-        backup,
+    const date =
+        new Date(value);
+
+    if (
+        Number.isNaN(
+            date.getTime(),
+        )
+    ) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat(
+        "en-SG",
+        {
+            day:
+                "2-digit",
+            month:
+                "long",
+            year:
+                "numeric",
+        },
+    ).format(
+        date,
     );
 }
 
-fs.writeFileSync(
-    absolute,
-    next,
-    "utf8",
-);
+function firstQueryValue(
+    value:
+        | string
+        | string[]
+        | undefined,
+) {
+    return Array.isArray(
+        value,
+    )
+        ? value[0] ||
+              ""
+        : value ||
+              "";
+}
 
-console.log(
-    `Restored the default export using ${chosenName}.`,
-);
-console.log(
-    "Invitation, RSVP, payment and table-selection logic were not changed.",
-);
+function normaliseStatus(
+    value:
+        | string
+        | null
+        | undefined,
+) {
+    return String(
+        value ||
+            "",
+    )
+        .trim()
+        .toLowerCase();
+}
+
+function StatusBadge({
+    value,
+}: {
+    value: string;
+}) {
+    const accepted =
+        value ===
+        "accepted";
+    const declined =
+        value ===
+        "declined";
+
+    return (
+        <span
+            className={[
+                "inline-flex rounded-full px-3 py-1.5 text-xs font-black",
+                accepted
+                    ? "bg-emerald-100 text-emerald-700"
+                    : declined
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700",
+            ].join(
+                " ",
+            )}
+        >
+            {accepted
+                ? "Attending"
+                : declined
+                  ? "Not attending"
+                  : "Awaiting response"}
+        </span>
+    );
+}
+
+function ErrorState({
+    title,
+    description,
+}: {
+    title: string;
+    description: string;
+}) {
+    return (
+        <main className="min-h-screen bg-[#F7F5FF] px-4 py-10 text-slate-950">
+            <section className="mx-auto max-w-xl rounded-[2rem] border border-red-200 bg-white p-7 text-center shadow-sm sm:p-10">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-2xl">
+                    !
+                </div>
+
+                <h1 className="mt-5 text-2xl font-black text-red-600">
+                    {
+                        title
+                    }
+                </h1>
+
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
+                    {
+                        description
+                    }
+                </p>
+            </section>
+        </main>
+    );
+}
+
+export default async function InvitePage({
+    params,
+    searchParams,
+}: PageProps) {
+    const {
+        slug,
+        token,
+    } =
+        await params;
+    const query =
+        searchParams
+            ? await searchParams
+            : {};
+    const message =
+        firstQueryValue(
+            query.message,
+        );
+    const queryError =
+        firstQueryValue(
+            query.error,
+        );
+
+    const admin =
+        serviceClient();
+
+    const eventResult =
+        await admin
+            .from(
+                "events",
+            )
+            .select(
+                [
+                    "id",
+                    "event_name",
+                    "event_slug",
+                    "event_date",
+                    "event_time",
+                    "venue",
+                    "description",
+                ].join(
+                    ",",
+                ),
+            )
+            .eq(
+                "event_slug",
+                slug,
+            )
+            .maybeSingle();
+
+    if (
+        eventResult.error ||
+        !eventResult.data
+    ) {
+        return (
+            <ErrorState
+                title="Event not found"
+                description="This event link is invalid or the event is no longer available."
+            />
+        );
+    }
+
+    const event =
+        eventResult.data as EventRow;
+    const lookup =
+        await findInvitation(
+            admin,
+            event.id,
+            token,
+        );
+
+    if (
+        !lookup
+    ) {
+        return (
+            <ErrorState
+                title="Invitation not found"
+                description="This invitation link is invalid, expired or no longer available."
+            />
+        );
+    }
+
+    const registration =
+        await loadRegistration(
+            admin,
+            lookup.invitation,
+        );
+
+    if (
+        !registration
+    ) {
+        return (
+            <ErrorState
+                title="Guest record not found"
+                description="The guest registration connected to this invitation could not be found."
+            />
+        );
+    }
+
+    void markInvitationOpened(
+        admin,
+        lookup,
+    );
+
+    const [
+        paymentAddonResult,
+        ticketCountResult,
+        tableSettingsResult,
+        tableCountResult,
+        assignmentResult,
+    ] =
+        await Promise.all([
+            admin
+                .from(
+                    "event_addons",
+                )
+                .select(
+                    "*",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .eq(
+                    "addon_key",
+                    "stripe_payments",
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "ticket_types",
+                )
+                .select(
+                    "id",
+                    {
+                        count:
+                            "exact",
+                        head:
+                            true,
+                    },
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                ),
+
+            admin
+                .from(
+                    "event_table_selection_settings",
+                )
+                .select(
+                    "allow_rsvp_selection, require_paid_ticket, selection_required, instructions",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "event_tables",
+                )
+                .select(
+                    "id",
+                    {
+                        count:
+                            "exact",
+                        head:
+                            true,
+                    },
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .eq(
+                    "guest_selectable",
+                    true,
+                ),
+
+            admin
+                .from(
+                    "table_assignments",
+                )
+                .select(
+                    "table_id",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .eq(
+                    "registration_id",
+                    registration.id,
+                )
+                .maybeSingle(),
+        ]);
+
+    const paymentAddonData =
+        paymentAddonResult.data as
+            | Record<
+                  string,
+                  unknown
+              >
+            | null;
+    const paymentEnabled =
+        paymentAddonData?.enabled ===
+            true ||
+        paymentAddonData?.is_enabled ===
+            true;
+    const ticketCount =
+        ticketCountResult.count ||
+        0;
+    const rsvpStatus =
+        normaliseStatus(
+            registration.rsvp_status ||
+                registration.registration_status,
+        );
+    const paymentStatus =
+        normaliseStatus(
+            registration.payment_status,
+        ) ||
+        "not_required";
+    const accepted =
+        rsvpStatus ===
+            "accepted" ||
+        [
+            "confirmed",
+            "registered",
+            "approved",
+        ].includes(
+            normaliseStatus(
+                registration.registration_status,
+            ),
+        );
+    const declined =
+        rsvpStatus ===
+        "declined";
+    const paymentRequired =
+        paymentEnabled &&
+        ticketCount >
+            0 &&
+        ![
+            "paid",
+            "not_required",
+        ].includes(
+            paymentStatus,
+        );
+
+    const tableSettings =
+        tableSettingsResult.data as
+            | {
+                  allow_rsvp_selection?:
+                      | boolean
+                      | null;
+                  require_paid_ticket?:
+                      | boolean
+                      | null;
+                  selection_required?:
+                      | boolean
+                      | null;
+                  instructions?:
+                      | string
+                      | null;
+              }
+            | null;
+    const tableSelectionAvailable =
+        tableSettings
+            ?.allow_rsvp_selection !==
+            false &&
+        (
+            tableCountResult.count ||
+            0
+        ) >
+            0;
+    const tablePaymentBlocked =
+        tableSettings
+            ?.require_paid_ticket ===
+            true &&
+        ![
+            "paid",
+            "not_required",
+        ].includes(
+            paymentStatus,
+        );
+
+    let assignedTable:
+        | EventTableRow
+        | null =
+        null;
+
+    const assignment =
+        assignmentResult.data as
+            | TableAssignmentRow
+            | null;
+
+    if (
+        assignment?.table_id
+    ) {
+        const assignedTableResult =
+            await admin
+                .from(
+                    "event_tables",
+                )
+                .select(
+                    "id, table_name, selection_label",
+                )
+                .eq(
+                    "id",
+                    assignment
+                        .table_id,
+                )
+                .maybeSingle();
+
+        assignedTable =
+            (
+                assignedTableResult.data ||
+                null
+            ) as
+                | EventTableRow
+                | null;
+    }
+
+    const invitePath =
+        `/event/${encodeURIComponent(
+            slug,
+        )}/invite/${encodeURIComponent(
+            token,
+        )}`;
+    const paymentPath =
+        `${invitePath}/payment`;
+    const tablesPath =
+        `${invitePath}/tables`;
+
+    return (
+        <main className="min-h-screen bg-[#F7F5FF] px-4 py-8 text-slate-950 sm:px-6 sm:py-12">
+            <div className="mx-auto max-w-3xl space-y-6">
+                <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-9">
+                    <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
+                    <div className="pointer-events-none absolute -bottom-20 left-10 h-56 w-56 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+
+                    <div className="relative z-10">
+                        <div className="inline-flex rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                            Personal Invitation
+                        </div>
+
+                        <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-5xl">
+                            {event.event_name ||
+                                "Event Invitation"}
+                        </h1>
+
+                        <p className="mt-3 text-lg font-bold text-slate-600">
+                            Welcome,{" "}
+                            {registration.full_name ||
+                                "Guest"}
+                        </p>
+
+                        {event.description && (
+                            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500 sm:text-base">
+                                {
+                                    event.description
+                                }
+                            </p>
+                        )}
+
+                        <div className="mt-7 grid gap-3 sm:grid-cols-3">
+                            <Info
+                                label="Date"
+                                value={formatDate(
+                                    event.event_date,
+                                )}
+                            />
+                            <Info
+                                label="Time"
+                                value={
+                                    event.event_time ||
+                                    "To be confirmed"
+                                }
+                            />
+                            <Info
+                                label="Venue"
+                                value={
+                                    event.venue ||
+                                    "To be confirmed"
+                                }
+                            />
+                        </div>
+                    </div>
+                </section>
+
+                {message && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-bold text-emerald-700">
+                        {
+                            message
+                        }
+                    </div>
+                )}
+
+                {queryError && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+                        {
+                            queryError
+                        }
+                    </div>
+                )}
+
+                <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+                                RSVP Status
+                            </p>
+                            <h2 className="mt-2 text-2xl font-black">
+                                Will you be attending?
+                            </h2>
+                        </div>
+
+                        <StatusBadge
+                            value={
+                                declined
+                                    ? "declined"
+                                    : accepted
+                                      ? "accepted"
+                                      : "pending"
+                            }
+                        />
+                    </div>
+
+                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                        <form
+                            action={
+                                updateRsvp
+                            }
+                        >
+                            <input
+                                type="hidden"
+                                name="slug"
+                                value={
+                                    slug
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="token"
+                                value={
+                                    token
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="response"
+                                value="accepted"
+                            />
+
+                            <button
+                                type="submit"
+                                className="min-h-12 w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white shadow-lg"
+                            >
+                                Accept Invitation
+                            </button>
+                        </form>
+
+                        <form
+                            action={
+                                updateRsvp
+                            }
+                        >
+                            <input
+                                type="hidden"
+                                name="slug"
+                                value={
+                                    slug
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="token"
+                                value={
+                                    token
+                                }
+                            />
+                            <input
+                                type="hidden"
+                                name="response"
+                                value="declined"
+                            />
+
+                            <button
+                                type="submit"
+                                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 font-black text-slate-600"
+                            >
+                                Decline Invitation
+                            </button>
+                        </form>
+                    </div>
+                </section>
+
+                {accepted && (
+                    <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                        <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4F46E5]">
+                            Next Step
+                        </p>
+
+                        <h2 className="mt-2 text-2xl font-black">
+                            Complete your event setup
+                        </h2>
+
+                        <div className="mt-6 space-y-4">
+                            {paymentRequired && (
+                                <ActionCard
+                                    title="Complete ticket payment"
+                                    description="Your attendance is accepted. Complete payment before continuing."
+                                    href={
+                                        paymentPath
+                                    }
+                                    buttonLabel="Continue to Payment"
+                                />
+                            )}
+
+                            {!paymentRequired &&
+                                tableSelectionAvailable &&
+                                !tablePaymentBlocked && (
+                                    <ActionCard
+                                        title={
+                                            assignedTable
+                                                ? "Your selected table"
+                                                : "Choose your table"
+                                        }
+                                        description={
+                                            assignedTable
+                                                ? `You are assigned to ${
+                                                      assignedTable.selection_label ||
+                                                      assignedTable.table_name ||
+                                                      "your selected table"
+                                                  }.`
+                                                : tableSettings?.instructions ||
+                                                  "Choose an available table for your party."
+                                        }
+                                        href={
+                                            tablesPath
+                                        }
+                                        buttonLabel={
+                                            assignedTable
+                                                ? "View or Change Table"
+                                                : "Choose a Table"
+                                        }
+                                    />
+                                )}
+
+                            {!paymentRequired &&
+                                (
+                                    !tableSelectionAvailable ||
+                                    tablePaymentBlocked
+                                ) && (
+                                    <div className="rounded-2xl bg-emerald-50 p-5">
+                                        <p className="font-black text-emerald-700">
+                                            Your RSVP is complete.
+                                        </p>
+
+                                        <p className="mt-2 text-sm font-semibold leading-6 text-emerald-700/80">
+                                            No further action is required at this time.
+                                        </p>
+                                    </div>
+                                )}
+                        </div>
+                    </section>
+                )}
+
+                <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                    <h2 className="text-lg font-black">
+                        Guest details
+                    </h2>
+
+                    <dl className="mt-4 space-y-3 text-sm">
+                        <Detail
+                            label="Name"
+                            value={
+                                registration.full_name ||
+                                "Not provided"
+                            }
+                        />
+                        <Detail
+                            label="Email"
+                            value={
+                                registration.email ||
+                                "Not provided"
+                            }
+                        />
+                        <Detail
+                            label="Payment"
+                            value={
+                                paymentStatus
+                                    .replace(
+                                        /_/g,
+                                        " ",
+                                    )
+                                    .replace(
+                                        /\b\w/g,
+                                        (
+                                            character,
+                                        ) =>
+                                            character.toUpperCase(),
+                                    )
+                            }
+                        />
+                        {assignedTable && (
+                            <Detail
+                                label="Table"
+                                value={
+                                    assignedTable.selection_label ||
+                                    assignedTable.table_name ||
+                                    "Selected"
+                                }
+                            />
+                        )}
+                    </dl>
+                </section>
+
+                <p className="pb-6 text-center text-xs font-semibold text-slate-400">
+                    Powered by RegiGo
+                </p>
+            </div>
+        </main>
+    );
+}
+
+function Info({
+    label,
+    value,
+}: {
+    label: string;
+    value: string;
+}) {
+    return (
+        <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                {
+                    label
+                }
+            </p>
+
+            <p className="mt-2 font-black text-slate-800">
+                {
+                    value
+                }
+            </p>
+        </div>
+    );
+}
+
+function Detail({
+    label,
+    value,
+}: {
+    label: string;
+    value: string;
+}) {
+    return (
+        <div className="flex flex-col gap-1 rounded-2xl bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <dt className="font-bold text-slate-400">
+                {
+                    label
+                }
+            </dt>
+            <dd className="break-words font-black text-slate-700">
+                {
+                    value
+                }
+            </dd>
+        </div>
+    );
+}
+
+function ActionCard({
+    title,
+    description,
+    href,
+    buttonLabel,
+}: {
+    title: string;
+    description: string;
+    href: string;
+    buttonLabel: string;
+}) {
+    return (
+        <div className="rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-5">
+            <h3 className="text-lg font-black text-slate-900">
+                {
+                    title
+                }
+            </h3>
+
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+                {
+                    description
+                }
+            </p>
+
+            <Link
+                href={
+                    href
+                }
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-[#4F46E5] px-5 py-3 font-black text-white sm:w-auto"
+            >
+                {
+                    buttonLabel
+                }
+            </Link>
+        </div>
+    );
+}
