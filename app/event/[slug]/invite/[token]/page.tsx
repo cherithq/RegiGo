@@ -240,7 +240,7 @@ async function findInvitation(
             ) {
                 return {
                     invitation:
-                        result.data as InvitationRow,
+                        result.data as unknown as InvitationRow,
                     table,
                     tokenColumn,
                 };
@@ -267,21 +267,7 @@ async function loadRegistration(
                 "registrations",
             )
             .select(
-                [
-                    "id",
-                    "event_id",
-                    "full_name",
-                    "email",
-                    "phone",
-                    "department",
-                    "rsvp_status",
-                    "registration_status",
-                    "payment_status",
-                    "selected_ticket_quantity",
-                    "table_selection_status",
-                ].join(
-                    ",",
-                ),
+                "id, event_id, full_name, email, phone, department, rsvp_status, registration_status, payment_status, selected_ticket_quantity, table_selection_status",
             )
             .eq(
                 "id",
@@ -301,7 +287,7 @@ async function loadRegistration(
     return (
         result.data ||
         null
-    ) as
+    ) as unknown as
         | RegistrationRow
         | null;
 }
@@ -714,17 +700,7 @@ export default async function InvitePage({
                 "events",
             )
             .select(
-                [
-                    "id",
-                    "event_name",
-                    "event_slug",
-                    "event_date",
-                    "event_time",
-                    "venue",
-                    "description",
-                ].join(
-                    ",",
-                ),
+                "id, event_name, event_slug, event_date, event_time, venue, description",
             )
             .eq(
                 "event_slug",
@@ -745,7 +721,7 @@ export default async function InvitePage({
     }
 
     const event =
-        eventResult.data as EventRow;
+        eventResult.data as unknown as EventRow;
     const lookup =
         await findInvitation(
             admin,
@@ -883,7 +859,7 @@ export default async function InvitePage({
         ]);
 
     const paymentAddonData =
-        paymentAddonResult.data as
+        paymentAddonResult.data as unknown as
             | Record<
                   string,
                   unknown
@@ -934,7 +910,7 @@ export default async function InvitePage({
         );
 
     const tableSettings =
-        tableSettingsResult.data as
+        tableSettingsResult.data as unknown as
             | {
                   allow_rsvp_selection?:
                       | boolean
@@ -976,7 +952,7 @@ export default async function InvitePage({
         null;
 
     const assignment =
-        assignmentResult.data as
+        assignmentResult.data as unknown as
             | TableAssignmentRow
             | null;
 
@@ -1002,7 +978,7 @@ export default async function InvitePage({
             (
                 assignedTableResult.data ||
                 null
-            ) as
+            ) as unknown as
                 | EventTableRow
                 | null;
     }
