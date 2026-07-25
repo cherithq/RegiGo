@@ -17,8 +17,7 @@ import type {
     SidebarModuleKey,
     SidebarModuleMap,
 } from "@/lib/sidebar-modules";
-import Logo from "./Logo";
-import {
+import Logo from "@/components/layout/Logo";import {
     useSidebar,
 } from "./SidebarContext";
 import {
