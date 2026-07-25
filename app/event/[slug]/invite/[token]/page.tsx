@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
 const relative =
     "app/event/[slug]/invite/[token]/page.tsx";
@@ -22,209 +23,358 @@ const original =
         "utf8",
     );
 
-if (
-    !original.includes(
-        "registration?.payment_status",
-    ) &&
-    !original.includes(
-        "registration.payment_status",
-    )
-) {
-    console.error(
-        "The expected payment_status access was not found.",
+const sourceFile =
+    ts.createSourceFile(
+        relative,
+        original,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
     );
-    process.exit(1);
+
+function hasModifier(
+    node,
+    kind,
+) {
+    return Boolean(
+        node.modifiers?.some(
+            (
+                modifier,
+            ) =>
+                modifier.kind ===
+                kind,
+        ),
+    );
 }
+
+const existingDefault =
+    sourceFile.statements.some(
+        (
+            statement,
+        ) =>
+            hasModifier(
+                statement,
+                ts.SyntaxKind.DefaultKeyword,
+            ) ||
+            ts.isExportAssignment(
+                statement,
+            ),
+    );
+
+if (existingDefault) {
+    console.log(
+        "The invite page already has a default export.",
+    );
+    process.exit(0);
+}
+
+const preferredNames = [
+    "InvitePage",
+    "InvitationPage",
+    "EventInvitePage",
+    "InviteTokenPage",
+    "Page",
+];
+
+const functionCandidates =
+    sourceFile.statements.filter(
+        (
+            statement,
+        ) =>
+            ts.isFunctionDeclaration(
+                statement,
+            ) &&
+            statement.name,
+    );
+
+function functionScore(
+    statement,
+) {
+    const name =
+        statement.name?.text ||
+        "";
+    let score =
+        0;
+
+    if (
+        preferredNames.includes(
+            name,
+        )
+    ) {
+        score +=
+            100;
+    }
+
+    if (
+        name.endsWith(
+            "Page",
+        )
+    ) {
+        score +=
+            60;
+    }
+
+    if (
+        hasModifier(
+            statement,
+            ts.SyntaxKind.ExportKeyword,
+        )
+    ) {
+        score +=
+            15;
+    }
+
+    if (
+        hasModifier(
+            statement,
+            ts.SyntaxKind.AsyncKeyword,
+        )
+    ) {
+        score +=
+            10;
+    }
+
+    if (
+        statement.parameters.some(
+            (
+                parameter,
+            ) =>
+                ts.isIdentifier(
+                    parameter.name,
+                ) &&
+                parameter.name.text ===
+                    "params",
+        )
+    ) {
+        score +=
+            30;
+    }
+
+    return score;
+}
+
+const functionCandidate =
+    functionCandidates
+        .map(
+            (
+                statement,
+            ) => ({
+                statement,
+                score:
+                    functionScore(
+                        statement,
+                    ),
+            }),
+        )
+        .sort(
+            (
+                first,
+                second,
+            ) =>
+                second.score -
+                first.score,
+        )[0];
 
 let next =
     original;
-let changed =
-    false;
+let chosenName =
+    "";
 
-const replacements = [
-    {
-        pattern:
-            /\bid\s*,\s*full_name\s*,\s*email\s*,\s*rsvp_status\b(?!\s*,\s*payment_status\b)/g,
-        replacement:
-            "id, full_name, email, rsvp_status, payment_status",
-    },
-    {
-        pattern:
-            /\bfull_name\s*,\s*email\s*,\s*rsvp_status\b(?!\s*,\s*payment_status\b)/g,
-        replacement:
-            "full_name, email, rsvp_status, payment_status",
-    },
-    {
-        pattern:
-            /(\bregistration\s*:\s*[^(\s,]+\s*\(\s*[^)]*\brsvp_status\b)(?![^)]*\bpayment_status\b)([^)]]*\))/g,
-        replacement:
-            "$1, payment_status$2",
-    },
-    {
-        pattern:
-            /(\bregistration\s*\(\s*[^)]*\brsvp_status\b)(?![^)]*\bpayment_status\b)([^)]]*\))/g,
-        replacement:
-            "$1, payment_status$2",
-    },
-];
-
-for (const entry of replacements) {
-    const before =
-        next;
-
-    next =
-        next.replace(
-            entry.pattern,
-            entry.replacement,
+if (
+    functionCandidate &&
+    functionCandidate.score >
+        0
+) {
+    const statement =
+        functionCandidate.statement;
+    chosenName =
+        statement.name?.text ||
+        "Page";
+    const start =
+        statement.getStart(
+            sourceFile,
         );
-
-    if (next !== before) {
-        changed =
-            true;
-        break;
-    }
-}
-
-/*
- * Fallback for multiline template strings where the exact spacing is
- * different. Add payment_status after the nearest rsvp_status that
- * appears before registration?.payment_status.
- */
-if (!changed) {
-    const accessCandidates = [
-        next.indexOf(
-            "registration?.payment_status",
-        ),
-        next.indexOf(
-            "registration.payment_status",
-        ),
-    ].filter(
-        (
-            index,
-        ) =>
-            index >=
-            0,
-    );
-
-    const accessIndex =
-        Math.min(
-            ...accessCandidates,
-        );
-    const preceding =
-        next.slice(
-            0,
-            accessIndex,
-        );
-    const rsvpIndex =
-        preceding.lastIndexOf(
-            "rsvp_status",
-        );
-
-    if (rsvpIndex >= 0) {
-        const insertAt =
-            rsvpIndex +
-            "rsvp_status".length;
-        const nearby =
-            next.slice(
-                insertAt,
-                Math.min(
-                    accessIndex,
-                    insertAt +
-                        180,
-                ),
-            );
-
-        if (
-            !nearby.includes(
-                "payment_status",
-            )
-        ) {
-            next =
-                next.slice(
-                    0,
-                    insertAt,
-                ) +
-                ", payment_status" +
-                next.slice(
-                    insertAt,
-                );
-            changed =
-                true;
-        }
-    }
-}
-
-if (!changed) {
-    const accessIndex =
-        Math.max(
-            original.indexOf(
-                "registration?.payment_status",
-            ),
-            original.indexOf(
-                "registration.payment_status",
-            ),
-        );
-    const preceding =
+    const declarationText =
         original.slice(
-            0,
-            accessIndex,
+            start,
+            statement.getEnd(),
         );
 
     if (
-        preceding.lastIndexOf(
-            "payment_status",
-        ) >=
-        0
+        hasModifier(
+            statement,
+            ts.SyntaxKind.ExportKeyword,
+        )
     ) {
-        console.log(
-            "payment_status already appears in the registration query.",
-        );
-        process.exit(0);
+        const exportIndex =
+            declarationText.indexOf(
+                "export",
+            );
+
+        next =
+            original.slice(
+                0,
+                start +
+                    exportIndex,
+            ) +
+            "export default" +
+            original.slice(
+                start +
+                    exportIndex +
+                    "export".length,
+            );
+    } else {
+        next =
+            original.slice(
+                0,
+                start,
+            ) +
+            "export default " +
+            original.slice(
+                start,
+            );
+    }
+} else {
+    const variableCandidates =
+        [];
+
+    for (const statement of
+        sourceFile.statements) {
+        if (
+            !ts.isVariableStatement(
+                statement,
+            )
+        ) {
+            continue;
+        }
+
+        for (const declaration of
+            statement.declarationList
+                .declarations) {
+            if (
+                !ts.isIdentifier(
+                    declaration.name,
+                ) ||
+                !declaration.initializer
+            ) {
+                continue;
+            }
+
+            if (
+                !(
+                    ts.isArrowFunction(
+                        declaration.initializer,
+                    ) ||
+                    ts.isFunctionExpression(
+                        declaration.initializer,
+                    )
+                )
+            ) {
+                continue;
+            }
+
+            const name =
+                declaration.name
+                    .text;
+            let score =
+                0;
+
+            if (
+                preferredNames.includes(
+                    name,
+                )
+            ) {
+                score +=
+                    100;
+            }
+
+            if (
+                name.endsWith(
+                    "Page",
+                )
+            ) {
+                score +=
+                    60;
+            }
+
+            if (
+                hasModifier(
+                    statement,
+                    ts.SyntaxKind.ExportKeyword,
+                )
+            ) {
+                score +=
+                    15;
+            }
+
+            variableCandidates.push({
+                name,
+                score,
+            });
+        }
     }
 
-    console.error(
-        "Could not locate the registration selection containing rsvp_status.",
-    );
-    console.error(
-        "No file was changed.",
-    );
-    process.exit(1);
+    const variableCandidate =
+        variableCandidates.sort(
+            (
+                first,
+                second,
+            ) =>
+                second.score -
+                first.score,
+        )[0];
+
+    if (
+        !variableCandidate ||
+        variableCandidate.score <=
+            0
+    ) {
+        console.error(
+            "No likely page component was found.",
+        );
+        console.error(
+            "No file was changed. Upload the page.tsx file for an exact replacement.",
+        );
+        process.exit(1);
+    }
+
+    chosenName =
+        variableCandidate.name;
+    next =
+        `${original.trimEnd()}\n\nexport default ${chosenName};\n`;
 }
 
-const accessCandidates = [
-    next.indexOf(
-        "registration?.payment_status",
-    ),
-    next.indexOf(
-        "registration.payment_status",
-    ),
-].filter(
-    (
-        index,
-    ) =>
-        index >=
-        0,
-);
-const accessIndex =
-    Math.min(
-        ...accessCandidates,
+const verificationFile =
+    ts.createSourceFile(
+        relative,
+        next,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
     );
-const selectedIndex =
-    next.lastIndexOf(
-        "payment_status",
-        accessIndex -
-            1,
+const nowHasDefault =
+    verificationFile.statements.some(
+        (
+            statement,
+        ) =>
+            hasModifier(
+                statement,
+                ts.SyntaxKind.DefaultKeyword,
+            ) ||
+            ts.isExportAssignment(
+                statement,
+            ),
     );
 
-if (selectedIndex < 0) {
+if (!nowHasDefault) {
     console.error(
-        "payment_status was not added to the registration query.",
+        "A default export could not be confirmed. No file was changed.",
     );
     process.exit(1);
 }
 
 const backup =
-    `${absolute}.before-payment-status-select-fix`;
+    `${absolute}.before-default-export-fix`;
 
 if (!fs.existsSync(backup)) {
     fs.copyFileSync(
@@ -240,8 +390,8 @@ fs.writeFileSync(
 );
 
 console.log(
-    "Added payment_status to the invitation-page registration query.",
+    `Restored the default export using ${chosenName}.`,
 );
 console.log(
-    "RSVP, payment and table-selection behaviour were not changed.",
+    "Invitation, RSVP, payment and table-selection logic were not changed.",
 );
