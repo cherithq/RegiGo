@@ -119,8 +119,8 @@ export async function GET(
 
         const registrationIds = (
             items || []
-        ).map((item) =>
-            String(
+).map((item: { registration_id?: string | null }) =>
+                String(
                 item.registration_id,
             ),
         );
