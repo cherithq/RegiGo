@@ -1,488 +1,765 @@
-import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requirePermission } from "@/lib/permissions";
+import {
+    NextResponse,
+} from "next/server";
+import {
+    CompanyModuleError,
+} from "@/lib/company-module-server";
+import {
+    cleanGuestStatus,
+    cleanGuestText,
+    decodeCursor,
+    encodeCursor,
+    positiveInteger,
+    requireLargeEventAccess,
+} from "@/lib/large-event-operations";
 
-export const dynamic = "force-dynamic";
+export const runtime =
+    "nodejs";
+export const dynamic =
+    "force-dynamic";
+export const revalidate = 0;
 
-type GuestRequestBody = {
-    id?: string;
-    registrationId?: string;
-    registration_id?: string;
-    mode?: "create" | "update" | string;
-    answers?: Record<string, unknown>;
-    custom_answers?: Record<string, unknown>;
-    formValues?: Record<string, unknown>;
-    full_name?: unknown;
-    fullName?: unknown;
-    name?: unknown;
-    email?: unknown;
-    email_address?: unknown;
-    phone?: unknown;
-    mobile?: unknown;
-    mobile_number?: unknown;
-    department?: unknown;
-    outlet?: unknown;
-    department_outlet?: unknown;
-    dietary_request?: unknown;
-    dietary_requirements?: unknown;
-    require_transport?: unknown;
-    requireTransport?: unknown;
-    transport?: unknown;
-    registration_status?: unknown;
-};
+type StatusColumn =
+    | "registration_status"
+    | "status";
 
-type QrTicket = {
-    id?: string;
-    registration_id?: string;
-    event_id?: string;
-    qr_token?: string;
-    qr_code_url?: string | null;
-    is_active?: boolean;
-    issued_at?: string;
-    [key: string]: unknown;
-};
+const missingSchemaCodes =
+    new Set([
+        "42703",
+        "42P01",
+        "PGRST200",
+        "PGRST202",
+        "PGRST204",
+        "PGRST205",
+    ]);
 
-function normalizeKey(value: unknown) {
-    return String(value ?? "")
-        .trim()
-        .toLowerCase()
-        .replace(/&/g, "and")
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
-}
-
-function cleanText(value: unknown) {
-    if (value === null || value === undefined) return null;
-    const text = String(value).trim();
-    return text.length > 0 ? text : null;
-}
-
-function getAnswers(body: GuestRequestBody) {
-    return {
-        ...(body.custom_answers && typeof body.custom_answers === "object"
-            ? body.custom_answers
-            : {}),
-        ...(body.formValues && typeof body.formValues === "object" ? body.formValues : {}),
-        ...(body.answers && typeof body.answers === "object" ? body.answers : {}),
-    } as Record<string, unknown>;
-}
-
-function readFromBodyAndAnswers(
-    body: GuestRequestBody,
-    answers: Record<string, unknown>,
-    aliases: string[]
+function reply(
+    body: Record<string, unknown>,
+    status = 200,
 ) {
-    for (const alias of aliases) {
-        const directValue = (body as Record<string, unknown>)[alias];
-        const directText = cleanText(directValue);
-        if (directText !== null) return directText;
-    }
-
-    const normalizedAliases = aliases.map(normalizeKey);
-
-    for (const [key, value] of Object.entries(answers)) {
-        const normalizedKey = normalizeKey(key);
-        if (normalizedAliases.includes(normalizedKey)) {
-            const answerText = cleanText(value);
-            if (answerText !== null) return answerText;
-        }
-    }
-
-    return null;
-}
-
-function buildPersistedAnswers(body: GuestRequestBody) {
-    const answers = getAnswers(body);
-
-    const fullName = readFromBodyAndAnswers(body, answers, [
-        "full_name",
-        "fullName",
-        "fullname",
-        "name",
-        "guest_name",
-        "Full Name",
-    ]);
-
-    const email = readFromBodyAndAnswers(body, answers, [
-        "email",
-        "email_address",
-        "emailAddress",
-        "Email Address",
-    ]);
-
-    const phone = readFromBodyAndAnswers(body, answers, [
-        "phone",
-        "mobile",
-        "mobile_number",
-        "mobileNumber",
-        "Mobile Number",
-    ]);
-
-    const department = readFromBodyAndAnswers(body, answers, [
-        "department",
-        "department_outlet",
-        "departmentOutlet",
-        "Department / Outlet",
-        "Department",
-    ]);
-
-    const outlet = readFromBodyAndAnswers(body, answers, [
-        "outlet",
-        "outlet_name",
-        "outletName",
-        "Outlet",
-    ]);
-
-    const dietaryRequest = readFromBodyAndAnswers(body, answers, [
-        "dietary_request",
-        "dietary_requirements",
-        "dietaryRequirements",
-        "Dietary Requirements",
-    ]);
-
-    const requireTransport = readFromBodyAndAnswers(body, answers, [
-        "require_transport",
-        "requireTransport",
-        "transport",
-        "require_transport_from_outlet",
-        "Require Transport from Outlet",
-    ]);
-
-    const customAnswers: Record<string, unknown> = {
-        ...answers,
-    };
-
-    // Save normalised aliases too. This is what prevents values from disappearing
-    // after a page refresh when the table/modal reads a different key style.
-    if (fullName !== null) {
-        customAnswers.full_name = fullName;
-        customAnswers.fullName = fullName;
-        customAnswers["Full Name"] = fullName;
-    }
-    if (email !== null) {
-        customAnswers.email = email;
-        customAnswers.email_address = email;
-        customAnswers["Email Address"] = email;
-    }
-    if (phone !== null) {
-        customAnswers.phone = phone;
-        customAnswers.mobile_number = phone;
-        customAnswers["Mobile Number"] = phone;
-    }
-    if (department !== null) {
-        customAnswers.department = department;
-        customAnswers["Department"] = department;
-    }
-    if (outlet !== null) {
-        customAnswers.outlet = outlet;
-        customAnswers.outlet_name = outlet;
-        customAnswers["Outlet"] = outlet;
-    }
-    if (dietaryRequest !== null) {
-        customAnswers.dietary_request = dietaryRequest;
-        customAnswers.dietary_requirements = dietaryRequest;
-        customAnswers["Dietary Requirements"] = dietaryRequest;
-    }
-    if (requireTransport !== null) {
-        // Read old combined names for compatibility, but save only the
-        // canonical standalone field going forward.
-        customAnswers.require_transport = requireTransport;
-        customAnswers["Transport Required"] = requireTransport;
-
-        delete customAnswers.require_transport_from_outlet;
-        delete customAnswers["Require Transport from Outlet"];
-    }
-
-    return {
-        fullName,
-        email,
-        phone,
-        department,
-        outlet,
-        dietaryRequest,
-        requireTransport,
-        customAnswers,
-    };
-}
-
-async function attachQrTickets(supabaseServer: Awaited<ReturnType<typeof createSupabaseServerClient>>, guests: any[]) {
-    const registrationIds = guests.map((guest) => guest.id).filter(Boolean);
-
-    if (registrationIds.length === 0) return guests;
-
-    const { data: qrTickets } = await supabaseServer
-        .from("qr_tickets")
-        .select("*")
-        .in("registration_id", registrationIds);
-
-    const qrTicketMap = new Map<string, QrTicket>();
-
-    for (const ticket of (qrTickets || []) as QrTicket[]) {
-        if (!ticket.registration_id) continue;
-
-        const existing = qrTicketMap.get(ticket.registration_id);
-
-        if (!existing) {
-            qrTicketMap.set(ticket.registration_id, ticket);
-            continue;
-        }
-
-        if (ticket.is_active !== false && existing.is_active === false) {
-            qrTicketMap.set(ticket.registration_id, ticket);
-        }
-    }
-
-    return guests.map((guest) => ({
-        ...guest,
-        __qr_ticket: qrTicketMap.get(guest.id) || null,
-    }));
-}
-
-async function loadGuests(eventId: string) {
-    const supabaseServer =
-        await createSupabaseServerClient();
-    const pageSize = 1000;
-    const guests: any[] = [];
-    let from = 0;
-
-    while (true) {
-        const { data, error } = await supabaseServer
-            .from("registrations")
-            .select("*")
-            .eq("event_id", eventId)
-            .order("created_at", {
-                ascending: false,
-            })
-            .range(from, from + pageSize - 1);
-
-        if (error) {
-            throw new Error(error.message);
-        }
-
-        const rows = data || [];
-        guests.push(...rows);
-
-        if (rows.length < pageSize) {
-            break;
-        }
-
-        from += pageSize;
-    }
-
-    return attachQrTickets(
-        supabaseServer,
-        guests
+    return NextResponse.json(
+        body,
+        {
+            status,
+            headers: {
+                "Cache-Control":
+                    "no-store, no-cache, must-revalidate, max-age=0",
+            },
+        },
     );
 }
 
-async function updateRegistration(eventId: string, registrationId: string, body: GuestRequestBody) {
-    const supabaseServer = await createSupabaseServerClient();
-    const persisted = buildPersistedAnswers(body);
-
-    if (!persisted.fullName) {
-        return NextResponse.json(
-            { error: "Full Name is required." },
-            { status: 400 }
-        );
-    }
-
-    const fullPayload: Record<string, unknown> = {
-        full_name: persisted.fullName,
-        email: persisted.email,
-        phone: persisted.phone,
-        department: persisted.department,
-        dietary_request: persisted.dietaryRequest,
-        require_transport: persisted.requireTransport,
-        custom_answers: persisted.customAnswers,
-        updated_at: new Date().toISOString(),
-    };
-
-    const safePayload: Record<string, unknown> = {
-        full_name: persisted.fullName,
-        email: persisted.email,
-        phone: persisted.phone,
-        custom_answers: persisted.customAnswers,
-        updated_at: new Date().toISOString(),
-    };
-
-    let result = await supabaseServer
-        .from("registrations")
-        .update(fullPayload)
-        .eq("id", registrationId)
-        .eq("event_id", eventId)
-        .select("*")
-        .maybeSingle();
-
-    if (result.error) {
-        result = await supabaseServer
-            .from("registrations")
-            .update(safePayload)
-            .eq("id", registrationId)
-            .eq("event_id", eventId)
-            .select("*")
-            .maybeSingle();
-    }
-
-    if (result.error) {
-        // Last fallback for older schemas that do not have updated_at.
-        const { updated_at, ...withoutUpdatedAt } = safePayload;
-        result = await supabaseServer
-            .from("registrations")
-            .update(withoutUpdatedAt)
-            .eq("id", registrationId)
-            .eq("event_id", eventId)
-            .select("*")
-            .maybeSingle();
-    }
-
-    if (result.error) {
-        return NextResponse.json({ error: result.error.message }, { status: 400 });
-    }
-
-    if (!result.data) {
-        return NextResponse.json(
-            { error: "No registration row was updated. Check that the guest ID belongs to this event." },
-            { status: 404 }
-        );
-    }
-
-    const guests = await loadGuests(eventId);
-
-    return NextResponse.json({ guest: result.data, guests });
+function fail(
+    error: unknown,
+) {
+    return reply(
+        {
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Unable to manage guests.",
+        },
+        error instanceof
+        CompanyModuleError
+            ? error.status
+            : 500,
+    );
 }
 
-async function createRegistration(eventId: string, body: GuestRequestBody) {
-    const supabaseServer = await createSupabaseServerClient();
-    const persisted = buildPersistedAnswers(body);
+function isMissingSchema(
+    error:
+        | {
+              code?: string | null;
+              message?: string | null;
+          }
+        | null
+        | undefined,
+) {
+    if (
+        missingSchemaCodes.has(
+            String(error?.code || ""),
+        )
+    ) {
+        return true;
+    }
 
-    if (!persisted.fullName) {
-        return NextResponse.json(
-            { error: "Full Name is required." },
-            { status: 400 }
+    const message =
+        String(
+            error?.message || "",
+        ).toLowerCase();
+
+    return (
+        message.includes(
+            "does not exist",
+        ) ||
+        message.includes(
+            "schema cache",
+        ) ||
+        message.includes(
+            "could not find",
+        )
+    );
+}
+
+async function queryGuests({
+    admin,
+    eventId,
+    statusColumn,
+    limit,
+    search,
+    selectedStatus,
+    cursor,
+}: {
+    admin: any;
+    eventId: string;
+    statusColumn: StatusColumn;
+    limit: number;
+    search: string;
+    selectedStatus: string;
+    cursor: ReturnType<
+        typeof decodeCursor
+    >;
+}) {
+    let query =
+        admin
+            .from(
+                "registrations",
+            )
+            .select(
+                [
+                    "id",
+                    "event_id",
+                    "full_name",
+                    "email",
+                    "phone",
+                    "department",
+                    statusColumn,
+                    "selected_ticket_quantity",
+                    "ticket_type_id",
+                    "created_at",
+                    "updated_at",
+                ].join(", "),
+            )
+            .eq(
+                "event_id",
+                eventId,
+            )
+            .order(
+                "created_at",
+                {
+                    ascending:
+                        false,
+                },
+            )
+            .order(
+                "id",
+                {
+                    ascending:
+                        false,
+                },
+            )
+            .limit(
+                limit + 1,
+            );
+
+    if (search) {
+        query = query.or(
+            [
+                `full_name.ilike.%${search}%`,
+                `email.ilike.%${search}%`,
+                `phone.ilike.%${search}%`,
+                `department.ilike.%${search}%`,
+            ].join(","),
         );
     }
 
-    const fullPayload: Record<string, unknown> = {
-        event_id: eventId,
-        full_name: persisted.fullName,
-        email: persisted.email,
-        phone: persisted.phone,
-        department: persisted.department,
-        dietary_request: persisted.dietaryRequest,
-        require_transport: persisted.requireTransport,
-        custom_answers: persisted.customAnswers,
-        registration_status: cleanText(body.registration_status) || "registered",
-        email_verified: true,
-    };
-
-    const safePayload: Record<string, unknown> = {
-        event_id: eventId,
-        full_name: persisted.fullName,
-        email: persisted.email,
-        phone: persisted.phone,
-        custom_answers: persisted.customAnswers,
-        registration_status: cleanText(body.registration_status) || "registered",
-        email_verified: true,
-    };
-
-    let result = await supabaseServer
-        .from("registrations")
-        .insert(fullPayload)
-        .select("*")
-        .single();
-
-    if (result.error) {
-        result = await supabaseServer
-            .from("registrations")
-            .insert(safePayload)
-            .select("*")
-            .single();
+    if (
+        selectedStatus &&
+        selectedStatus !==
+            "all"
+    ) {
+        query = query.eq(
+            statusColumn,
+            selectedStatus,
+        );
     }
 
-    if (result.error) {
-        return NextResponse.json({ error: result.error.message }, { status: 400 });
+    if (cursor) {
+        query = query.or(
+            `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+        );
     }
 
-    const guests = await loadGuests(eventId);
+    return query;
+}
 
-    return NextResponse.json({ guest: result.data, guests }, { status: 201 });
+async function loadCounters({
+    admin,
+    eventId,
+    statusColumn,
+}: {
+    admin: any;
+    eventId: string;
+    statusColumn: StatusColumn;
+}) {
+    const counterResult =
+        await admin
+            .from(
+                "event_guest_counters",
+            )
+            .select(
+                "registered_quantity, checked_in_quantity, updated_at",
+            )
+            .eq(
+                "event_id",
+                eventId,
+            )
+            .maybeSingle();
+
+    if (
+        !counterResult.error &&
+        counterResult.data
+    ) {
+        return {
+            registered:
+                Number(
+                    counterResult
+                        .data
+                        .registered_quantity ||
+                        0,
+                ),
+            checkedIn:
+                Number(
+                    counterResult
+                        .data
+                        .checked_in_quantity ||
+                        0,
+                ),
+        };
+    }
+
+    const registrationCountQuery =
+        admin
+            .from(
+                "registrations",
+            )
+            .select(
+                "id",
+                {
+                    count:
+                        "exact",
+                    head: true,
+                },
+            )
+            .eq(
+                "event_id",
+                eventId,
+            )
+            .not(
+                statusColumn,
+                "in",
+                "(cancelled,declined)",
+            );
+
+    const checkInCountQuery =
+        admin
+            .from(
+                "check_ins",
+            )
+            .select(
+                "id",
+                {
+                    count:
+                        "exact",
+                    head: true,
+                },
+            )
+            .eq(
+                "event_id",
+                eventId,
+            );
+
+    const [
+        registrationCount,
+        checkInCount,
+    ] = await Promise.all([
+        registrationCountQuery,
+        checkInCountQuery,
+    ]);
+
+    return {
+        registered:
+            Number(
+                registrationCount
+                    .count ||
+                    0,
+            ),
+        checkedIn:
+            Number(
+                checkInCount
+                    .count ||
+                    0,
+            ),
+    };
 }
 
 export async function GET(
-    _request: Request,
-    context: { params: Promise<{ eventId: string }> }
+    request: Request,
+    {
+        params,
+    }: {
+        params: Promise<{
+            eventId: string;
+        }>;
+    },
 ) {
     try {
-        const { eventId } = await context.params;
-        await requirePermission("can_manage_guests");
+        const {
+            eventId,
+        } = await params;
+        const context =
+            await requireLargeEventAccess(
+                {
+                    eventId,
+                },
+            );
+        const url =
+            new URL(
+                request.url,
+            );
+        const limit =
+            positiveInteger(
+                url.searchParams.get(
+                    "limit",
+                ),
+                100,
+                200,
+            );
+        const search =
+            cleanGuestText(
+                url.searchParams.get(
+                    "search",
+                ),
+                120,
+            ).replace(
+                /[%_,()]/g,
+                " ",
+            );
+        const selectedStatus =
+            cleanGuestText(
+                url.searchParams.get(
+                    "status",
+                ),
+                40,
+            ).toLowerCase();
+        const cursor =
+            decodeCursor(
+                url.searchParams.get(
+                    "cursor",
+                ),
+            );
 
-        const guests = await loadGuests(eventId);
-        return NextResponse.json({ guests });
+        let statusColumn:
+            StatusColumn =
+            "registration_status";
+        let guestResult =
+            await queryGuests({
+                admin:
+                    context.actor
+                        .admin,
+                eventId,
+                statusColumn,
+                limit,
+                search,
+                selectedStatus,
+                cursor,
+            });
+
+        if (
+            guestResult.error &&
+            isMissingSchema(
+                guestResult.error,
+            )
+        ) {
+            statusColumn =
+                "status";
+            guestResult =
+                await queryGuests({
+                    admin:
+                        context.actor
+                            .admin,
+                    eventId,
+                    statusColumn,
+                    limit,
+                    search,
+                    selectedStatus,
+                    cursor,
+                });
+        }
+
+        if (
+            guestResult.error
+        ) {
+            throw new CompanyModuleError(
+                guestResult.error
+                    .message,
+            );
+        }
+
+        const rawRows =
+            guestResult.data ||
+            [];
+        const hasMore =
+            rawRows.length >
+            limit;
+        const visibleRows =
+            hasMore
+                ? rawRows.slice(
+                      0,
+                      limit,
+                  )
+                : rawRows;
+        const guests =
+            visibleRows.map(
+                (
+                    row: Record<
+                        string,
+                        unknown
+                    >,
+                ) => {
+                    const normalizedStatus =
+                        cleanGuestStatus(
+                            row[
+                                statusColumn
+                            ],
+                        );
+
+                    return {
+                        ...row,
+                        status:
+                            normalizedStatus,
+                        registration_status:
+                            normalizedStatus,
+                    };
+                },
+            );
+        const last =
+            guests[
+                guests.length -
+                    1
+            ];
+        const counters =
+            await loadCounters({
+                admin:
+                    context.actor
+                        .admin,
+                eventId,
+                statusColumn,
+            });
+
+        return reply({
+            success: true,
+            event:
+                context.event,
+            guests,
+            pagination: {
+                limit,
+                hasMore,
+                nextCursor:
+                    hasMore &&
+                    last
+                        ? encodeCursor(
+                              {
+                                  createdAt:
+                                      String(
+                                          last.created_at,
+                                      ),
+                                  id:
+                                      String(
+                                          last.id,
+                                      ),
+                              },
+                          )
+                        : null,
+            },
+            counters: {
+                registered:
+                    counters.registered,
+                checkedIn:
+                    counters.checkedIn,
+                capacity:
+                    context.event
+                        .maxGuests,
+            },
+            schema: {
+                statusColumn,
+            },
+            access: {
+                canWrite:
+                    context.actor
+                        .isPlatformAdmin ||
+                    context.actor
+                        .role ===
+                        "admin" ||
+                    context.actor
+                        .role ===
+                        "organizer",
+            },
+        });
     } catch (error) {
-        console.error("GET guests failed:", error);
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to load guests." },
-            { status: 500 }
+        return fail(
+            error,
         );
     }
 }
 
 export async function POST(
     request: Request,
-    context: { params: Promise<{ eventId: string }> }
+    {
+        params,
+    }: {
+        params: Promise<{
+            eventId: string;
+        }>;
+    },
 ) {
     try {
-        const { eventId } = await context.params;
-        await requirePermission("can_manage_guests");
+        const {
+            eventId,
+        } = await params;
+        const context =
+            await requireLargeEventAccess(
+                {
+                    eventId,
+                    write: true,
+                },
+            );
+        const body =
+            (await request.json()) as Record<
+                string,
+                unknown
+            >;
+        const fullName =
+            cleanGuestText(
+                body.fullName,
+                180,
+            );
+        const email =
+            cleanGuestText(
+                body.email,
+                320,
+            ).toLowerCase();
+        const guestQuantity =
+            positiveInteger(
+                body.quantity,
+                1,
+                100,
+            );
+        const registrationStatus =
+            cleanGuestStatus(
+                body.status ??
+                    body.registrationStatus,
+            );
 
-        const body = (await request.json()) as GuestRequestBody;
-        const registrationId = cleanText(body.registrationId || body.registration_id || body.id);
-
-        if (registrationId || body.mode === "update") {
-            if (!registrationId) {
-                return NextResponse.json({ error: "Registration ID is required for edit." }, { status: 400 });
-            }
-            return updateRegistration(eventId, registrationId, body);
+        if (
+            fullName.length <
+            2
+        ) {
+            throw new CompanyModuleError(
+                "Enter the guest's full name.",
+            );
         }
 
-        return createRegistration(eventId, body);
-    } catch (error) {
-        console.error("POST guest failed:", error);
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to save guest." },
-            { status: 500 }
-        );
-    }
-}
+        const {
+            data,
+            error,
+        } =
+            await context.actor.admin.rpc(
+                "regigo_register_guest_large_event_v2",
+                {
+                    p_event_id:
+                        eventId,
+                    p_full_name:
+                        fullName,
+                    p_email:
+                        email ||
+                        null,
+                    p_phone:
+                        cleanGuestText(
+                            body.phone,
+                            60,
+                        ) ||
+                        null,
+                    p_department:
+                        cleanGuestText(
+                            body.department,
+                            160,
+                        ) ||
+                        null,
+                    p_ticket_type_id:
+                        cleanGuestText(
+                            body.ticketTypeId,
+                            80,
+                        ) ||
+                        null,
+                    p_quantity:
+                        guestQuantity,
+                    p_registration_status:
+                        registrationStatus,
+                    p_created_by:
+                        context.actor
+                            .user.id,
+                },
+            );
 
-export async function PUT(
-    request: Request,
-    context: { params: Promise<{ eventId: string }> }
-) {
-    try {
-        const { eventId } = await context.params;
-        await requirePermission("can_manage_guests");
-
-        const body = (await request.json()) as GuestRequestBody;
-        const registrationId = cleanText(body.registrationId || body.registration_id || body.id);
-
-        if (!registrationId) {
-            return NextResponse.json({ error: "Registration ID is required for edit." }, { status: 400 });
+        if (
+            error &&
+            !isMissingSchema(
+                error,
+            )
+        ) {
+            throw new CompanyModuleError(
+                error.message,
+                error.code ===
+                    "P0001"
+                    ? 409
+                    : 400,
+            );
         }
 
-        return updateRegistration(eventId, registrationId, body);
+        if (!error) {
+            return reply(
+                {
+                    success: true,
+                    registrationId:
+                        data,
+                    message:
+                        "Guest registered.",
+                },
+                201,
+            );
+        }
+
+        // Compatibility fallback before the migration/RPC is installed.
+        const countResult =
+            await context.actor.admin
+                .from(
+                    "registrations",
+                )
+                .select(
+                    "id",
+                    {
+                        count:
+                            "exact",
+                        head: true,
+                    },
+                )
+                .eq(
+                    "event_id",
+                    eventId,
+                )
+                .not(
+                    "registration_status",
+                    "in",
+                    "(cancelled,declined)",
+                );
+
+        if (
+            countResult.error
+        ) {
+            throw new CompanyModuleError(
+                `${countResult.error.message}. Run the Guest List registration-status migration.`,
+                500,
+            );
+        }
+
+        if (
+            Number(
+                countResult.count ||
+                    0,
+            ) +
+                guestQuantity >
+            context.event
+                .maxGuests
+        ) {
+            throw new CompanyModuleError(
+                `This event has reached its maximum capacity of ${context.event.maxGuests.toLocaleString()} guests.`,
+                409,
+            );
+        }
+
+        const {
+            data:
+                insertedRegistration,
+            error:
+                insertError,
+        } =
+            await context.actor.admin
+                .from(
+                    "registrations",
+                )
+                .insert({
+                    event_id:
+                        eventId,
+                    full_name:
+                        fullName,
+                    email:
+                        email ||
+                        null,
+                    phone:
+                        cleanGuestText(
+                            body.phone,
+                            60,
+                        ) ||
+                        null,
+                    department:
+                        cleanGuestText(
+                            body.department,
+                            160,
+                        ) ||
+                        null,
+                    ticket_type_id:
+                        cleanGuestText(
+                            body.ticketTypeId,
+                            80,
+                        ) ||
+                        null,
+                    selected_ticket_quantity:
+                        guestQuantity,
+                    registration_status:
+                        registrationStatus,
+                    created_by:
+                        context.actor
+                            .user.id,
+                })
+                .select("id")
+                .single();
+
+        if (
+            insertError ||
+            !insertedRegistration
+        ) {
+            throw new CompanyModuleError(
+                insertError
+                    ?.message ||
+                    "Unable to register the guest.",
+                400,
+            );
+        }
+
+        return reply(
+            {
+                success: true,
+                registrationId:
+                    insertedRegistration.id,
+                message:
+                    "Guest registered.",
+            },
+            201,
+        );
     } catch (error) {
-        console.error("PUT guest failed:", error);
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to update guest." },
-            { status: 500 }
+        return fail(
+            error,
         );
     }
-}
-
-export async function PATCH(
-    request: Request,
-    context: { params: Promise<{ eventId: string }> }
-) {
-    return PUT(request, context);
 }

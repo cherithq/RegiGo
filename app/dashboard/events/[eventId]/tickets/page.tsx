@@ -1,85 +1,113 @@
 import Link from "next/link";
-import { ArrowLeft, Ticket } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
-import TicketTypesManager from "@/components/forms/TicketTypesManager";
+import {
+    ArrowLeft,
+    WalletCards,
+} from "lucide-react";
+import {
+    createSupabaseServerClient,
+} from "@/lib/supabase-server";
+import TicketPaymentsManager from "@/components/payments/TicketPaymentsManager";
 
-export default async function TicketsPage({
+export const dynamic =
+    "force-dynamic";
+export const revalidate =
+    0;
+
+export default async function TicketsAndPaymentsPage({
     params,
 }: {
-    params: Promise<{ eventId: string }>;
+    params: Promise<{
+        eventId: string;
+    }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
-    const { eventId } = await params;
+    const {
+        eventId,
+    } = await params;
+    const supabaseServer =
+        await createSupabaseServerClient();
+    const {
+        data: event,
+        error,
+    } = await supabaseServer
+        .from(
+            "events",
+        )
+        .select(
+            "id, event_name",
+        )
+        .eq(
+            "id",
+            eventId,
+        )
+        .maybeSingle();
 
-    const [eventResult, ticketsResult] = await Promise.all([
-        supabaseServer
-            .from("events")
-            .select("*")
-            .eq("id", eventId)
-            .maybeSingle(),
-
-        supabaseServer
-            .from("ticket_types")
-            .select("*")
-            .eq("event_id", eventId)
-            .order("display_order", { ascending: true }),
-    ]);
-
-    const event = eventResult.data;
-
-    if (!event) {
+    if (
+        error ||
+        !event
+    ) {
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
-                <div className="mx-auto max-w-6xl rounded-[1.5rem] bg-white p-6 shadow-sm md:rounded-[2rem] md:p-8">
-                    <p className="font-black text-red-600">Event not found.</p>
-                </div>
+            <main className="min-h-screen bg-[#F7F5FF] p-4 text-slate-950 sm:p-6 lg:p-8">
+                <section className="mx-auto max-w-3xl rounded-[2rem] border border-red-200 bg-white p-6 shadow-sm sm:p-8">
+                    <h1 className="text-2xl font-black text-red-600">
+                        Event not found
+                    </h1>
+
+                    <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
+                        {error?.message ||
+                            "The event could not be found."}
+                    </p>
+                </section>
             </main>
         );
     }
 
-    const eventName = event.event_name || event.title || event.name || "Event";
-
     return (
-        <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
-            <div className="mx-auto max-w-6xl space-y-5 md:space-y-8">
+        <main className="min-h-screen bg-[#F7F5FF] p-4 text-slate-950 sm:p-6 lg:p-8">
+            <div className="mx-auto max-w-7xl space-y-6">
                 <Link
                     href={`/dashboard/events/${eventId}`}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm"
                 >
-                    <ArrowLeft size={16} />
+                    <ArrowLeft
+                        size={
+                            17
+                        }
+                    />
                     Back to Event
                 </Link>
 
-                <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
-                    <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />
-                    <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:right-32 md:h-56 md:w-56" />
-
+                <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
+                    <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
                     <div className="relative z-10">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
-                            <Ticket size={15} />
-                            Ticket Setup
+                        <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                            <WalletCards
+                                size={
+                                    16
+                                }
+                            />
+                            Tickets & Payments
                         </div>
 
-                        <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
-                            Ticket Types
+                        <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+                            Tickets & Payments
                         </h1>
 
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">
-                            Manage ticket categories, limits, and display order for{" "}
-                            <span className="font-black text-slate-950">
-                                {eventName}
-                            </span>
-                            .
+                        <p className="mt-3 text-lg font-bold text-slate-500">
+                            {event.event_name ||
+                                "Event"}
+                        </p>
+
+                        <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+                            Create free or paid tickets in one place. Payment setup appears only when a paid ticket is used.
                         </p>
                     </div>
                 </section>
 
-                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
-                    <TicketTypesManager
-                        eventId={eventId}
-                        initialTickets={ticketsResult.data || []}
-                    />
-                </section>
+                <TicketPaymentsManager
+                    eventId={
+                        eventId
+                    }
+                />
             </div>
         </main>
     );

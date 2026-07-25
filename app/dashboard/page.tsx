@@ -2,21 +2,34 @@ import Link from "next/link";
 import {
     ArrowRight,
     BarChart3,
+    Building2,
     CalendarDays,
     CheckCircle2,
     Clock3,
+    CreditCard,
     FileText,
     Globe2,
     PlusCircle,
     Settings,
-    ShieldCheck,
     Sparkles,
     Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { createSupabaseServerClient } from "../../lib/supabase-server";
+import {
+    evaluateEventCreation,
+    getCurrentCompanyContext,
+    hasAllCompanyEvents,
+    isPlatformAdminContext,
+    type CompanyContext,
+} from "@/lib/company-access";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-type UserRole = "admin" | "organizer" | "organiser" | "viewer" | "scanner";
+type UserRole =
+    | "admin"
+    | "organizer"
+    | "organiser"
+    | "viewer"
+    | "scanner";
 
 type EventItem = {
     id: string;
@@ -28,99 +41,162 @@ type EventItem = {
     created_at: string | null;
 };
 
-export default async function DashboardPage() {
-    const supabaseServer = await createSupabaseServerClient();
 
+export const dynamic = "force-dynamic";
+
+function scopeEventQuery(
+    query: any,
+    context: CompanyContext,
+) {
+    if (isPlatformAdminContext(context)) {
+        return query;
+    }
+
+    let scoped = query.eq(
+        "company_id",
+        context.company.id,
+    );
+
+    if (!hasAllCompanyEvents(context)) {
+        const ids =
+            context.accessibleEventIds.length > 0
+                ? context.accessibleEventIds
+                : [
+                      "00000000-0000-0000-0000-000000000000",
+                  ];
+
+        scoped = scoped.in("id", ids);
+    }
+
+    return scoped;
+}
+
+export default async function DashboardPage() {
+    const context = await getCurrentCompanyContext();
+    const permission = evaluateEventCreation(context);
+    const supabaseServer = await createSupabaseServerClient();
+    const db = supabaseServer as any;
     const today = new Date().toISOString().slice(0, 10);
 
-    const {
-        data: { user },
-    } = await supabaseServer.auth.getUser();
+    const [
+        totalEventsResult,
+        publishedEventsResult,
+        draftEventsResult,
+        upcomingEventsResult,
+        recentEventsResult,
+        upcomingListResult,
+    ] = await Promise.all([
+        scopeEventQuery(
+            db
+                .from("events")
+                .select("id", { count: "exact", head: true }),
+            context,
+        ),
 
-    const [profileResult, eventsResult] = await Promise.all([
-        user
-            ? supabaseServer
-                  .from("profiles")
-                  .select("id, full_name, email, role")
-                  .eq("id", user.id)
-                  .maybeSingle()
-            : Promise.resolve({ data: null, error: null }),
+        scopeEventQuery(
+            db
+                .from("events")
+                .select("id", { count: "exact", head: true }),
+            context,
+        ).eq("status", "published"),
 
-        supabaseServer
-            .from("events")
-            .select("id, event_name, event_date, event_time, venue, status, created_at")
+        scopeEventQuery(
+            db
+                .from("events")
+                .select("id", { count: "exact", head: true }),
+            context,
+        ).eq("status", "draft"),
+
+        scopeEventQuery(
+            db
+                .from("events")
+                .select("id", { count: "exact", head: true }),
+            context,
+        ).gte("event_date", today),
+
+        scopeEventQuery(
+            db
+                .from("events")
+                .select(
+                    "id, event_name, event_date, event_time, venue, status, created_at",
+                ),
+            context,
+        )
             .order("created_at", { ascending: false })
-            .limit(100),
+            .limit(5),
+
+        scopeEventQuery(
+            db
+                .from("events")
+                .select(
+                    "id, event_name, event_date, event_time, venue, status, created_at",
+                ),
+            context,
+        )
+            .gte("event_date", today)
+            .order("event_date", { ascending: true })
+            .limit(5),
     ]);
 
-    const profile = profileResult.data;
-    const role = (profile?.role || "organizer") as UserRole;
-    const displayName = profile?.full_name || user?.email?.split("@")[0] || "there";
+    const role = (context.profile.role || "organizer") as UserRole;
+    const displayName =
+        context.profile.full_name ||
+        context.profile.email?.split("@")[0] ||
+        "there";
 
-    const events = (eventsResult.data || []) as EventItem[];
-
-    const totalEvents = events.length;
-    const publishedEvents = events.filter(
-        (event) => event.status === "published"
-    ).length;
-    const draftEvents = events.filter((event) => event.status === "draft").length;
-    const upcomingEvents = events.filter(
-        (event) => event.event_date && event.event_date >= today
-    ).length;
-
-    const recentEvents = events.slice(0, 5);
-
-    const upcomingList = events
-        .filter((event) => event.event_date && event.event_date >= today)
-        .sort((a, b) => {
-            const dateA = a.event_date || "";
-            const dateB = b.event_date || "";
-            return dateA.localeCompare(dateB);
-        })
-        .slice(0, 5);
-
+    const totalEvents = totalEventsResult.count || 0;
+    const publishedEvents = publishedEventsResult.count || 0;
+    const draftEvents = draftEventsResult.count || 0;
+    const upcomingEvents = upcomingEventsResult.count || 0;
+    const recentEvents = (recentEventsResult.data || []) as EventItem[];
+    const upcomingList = (upcomingListResult.data || []) as EventItem[];
     const completionRate =
-        totalEvents > 0 ? Math.round((publishedEvents / totalEvents) * 100) : 0;
+        totalEvents > 0
+            ? Math.round((publishedEvents / totalEvents) * 100)
+            : 0;
 
-    const quickActions = getQuickActions(role);
+    const quickActions = getQuickActions(role, permission.allowed);
 
     return (
-        <div className="space-y-5 md:space-y-8">
-            <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
-                <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />
-                <div className="absolute bottom-0 right-20 h-40 w-40 rounded-full bg-[#4F46E5]/10 blur-3xl md:h-56 md:w-56" />
+        <div className="space-y-8">
+            <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
+                <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-[#EC4899]/10 blur-3xl" />
+                <div className="absolute bottom-0 right-32 h-56 w-56 rounded-full bg-[#4F46E5]/10 blur-3xl" />
 
-                <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-3 py-2 text-xs font-black text-[#4F46E5] md:px-4 md:text-sm">
-                            <Sparkles size={15} />
-                            RegiGo Workspace
+                <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                            <Sparkles size={16} />
+                            {context.company.company_name}
                         </div>
 
-                        <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
+                        <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
                             Welcome back, {displayName}
                         </h1>
 
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:mt-4 md:text-lg md:leading-7">
-                            Monitor event performance, manage registrations, and prepare your
-                            event workspace from one central dashboard.
+                        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
+                            Monitor event performance, manage registrations,
+                            and prepare your event workspaces from one central
+                            dashboard.
                         </p>
 
-                        <div className="mt-4 flex flex-wrap items-center gap-2 md:mt-5 md:gap-3">
-                            <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-bold capitalize text-slate-700 md:px-4 md:text-sm">
+                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold capitalize text-slate-700">
                                 Role: {role}
                             </span>
-
-                            <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 md:px-4 md:text-sm">
+                            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
                                 {upcomingEvents} upcoming
+                            </span>
+                            <span className="rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-bold text-[#4F46E5]">
+                                {context.plan?.plan_name || "No rental plan"}
                             </span>
                         </div>
                     </div>
 
-                    <div className="grid gap-3 sm:flex sm:flex-row">
+                    <div className="flex flex-col gap-3 sm:flex-row">
                         <Link
                             href="/dashboard/events"
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50 sm:w-auto md:px-6 md:py-4 md:text-base"
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-4 font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
                         >
                             View Events
                             <ArrowRight size={18} />
@@ -128,39 +204,46 @@ export default async function DashboardPage() {
 
                         {role === "admin" && (
                             <Link
-                                href="/dashboard/events/new"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90 sm:w-auto md:px-6 md:py-4 md:text-base"
+                                href={
+                                    permission.allowed
+                                        ? "/dashboard/events/new"
+                                        : "/dashboard/rental-plan"
+                                }
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
                             >
-                                <PlusCircle size={19} />
-                                Create Event
+                                {permission.allowed ? (
+                                    <PlusCircle size={19} />
+                                ) : (
+                                    <CreditCard size={19} />
+                                )}
+                                {permission.allowed
+                                    ? "Create Event"
+                                    : "View Rental Plan"}
                             </Link>
                         )}
                     </div>
                 </div>
             </section>
 
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     title="Total Events"
                     value={totalEvents}
-                    subtitle="Events loaded in your dashboard"
+                    subtitle="Events belonging to your company"
                     icon={CalendarDays}
                 />
-
                 <StatCard
                     title="Published"
                     value={publishedEvents}
                     subtitle="Live and accessible events"
                     icon={Globe2}
                 />
-
                 <StatCard
                     title="Drafts"
                     value={draftEvents}
                     subtitle="Events still being prepared"
                     icon={FileText}
                 />
-
                 <StatCard
                     title="Upcoming"
                     value={upcomingEvents}
@@ -169,8 +252,8 @@ export default async function DashboardPage() {
                 />
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr] xl:gap-6">
-                <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+            <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+                <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
                     <SectionHeader
                         title="Recent Events"
                         text="Continue working on your latest event workspaces."
@@ -178,7 +261,7 @@ export default async function DashboardPage() {
                         linkText="View all"
                     />
 
-                    <div className="mt-5 space-y-3 md:mt-6">
+                    <div className="mt-6 space-y-3">
                         {recentEvents.length > 0 ? (
                             recentEvents.map((event) => (
                                 <EventRow key={event.id} event={event} />
@@ -192,54 +275,83 @@ export default async function DashboardPage() {
                                         ? "Create your first event to start using RegiGo."
                                         : "No event has been assigned to this account yet."
                                 }
-                                href={role === "admin" ? "/dashboard/events/new" : undefined}
-                                action={role === "admin" ? "Create Event" : undefined}
+                                href={
+                                    role === "admin"
+                                        ? permission.allowed
+                                            ? "/dashboard/events/new"
+                                            : "/dashboard/rental-plan"
+                                        : undefined
+                                }
+                                action={
+                                    role === "admin"
+                                        ? permission.allowed
+                                            ? "Create Event"
+                                            : "View Rental Plan"
+                                        : undefined
+                                }
                             />
                         )}
                     </div>
                 </div>
 
-                <div className="space-y-5 md:space-y-6">
-                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+                <div className="space-y-6">
+                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
                         <div className="flex items-start justify-between gap-4">
                             <div>
-                                <h2 className="text-lg font-black text-slate-950 md:text-xl">
-                                    Publishing Progress
+                                <h2 className="text-xl font-black text-slate-950">
+                                    Rental Usage
                                 </h2>
                                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                                    Percentage of loaded events currently marked as published.
+                                    {context.isPlatformAdmin
+                                        ? "Unrestricted platform access."
+                                        : "Current company plan and usage."}
                                 </p>
                             </div>
-
-                            <div className="shrink-0 rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
-                                <BarChart3 size={22} />
+                            <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
+                                <Building2 size={22} />
                             </div>
                         </div>
 
-                        <div className="mt-6 md:mt-7">
-                            <p className="text-4xl font-black text-slate-950 md:text-5xl">
-                                {completionRate}%
-                            </p>
+                        <p className="mt-7 text-2xl font-black text-slate-950">
+                            {context.plan?.plan_name || "No plan"}
+                        </p>
 
-                            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 md:mt-5">
-                                <div
-                                    className="h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#EC4899]"
-                                    style={{ width: `${completionRate}%` }}
-                                />
-                            </div>
-
-                            <p className="mt-3 text-sm leading-6 text-slate-500 md:mt-4">
-                                {publishedEvents} out of {totalEvents} loaded events are
-                                published.
-                            </p>
+                        <div className="mt-5 space-y-3">
+                            <UsageRow
+                                label="Events"
+                                value={
+                                    context.plan?.event_limit == null
+                                        ? String(context.eventCount)
+                                        : `${context.eventCount} / ${context.plan.event_limit}`
+                                }
+                            />
+                            <UsageRow
+                                label="Team members"
+                                value={
+                                    context.plan?.team_member_limit == null
+                                        ? String(context.teamMemberCount)
+                                        : `${context.teamMemberCount} / ${context.plan.team_member_limit}`
+                                }
+                            />
+                            <UsageRow
+                                label="Available licences"
+                                value={String(
+                                    context.availableEventLicenses,
+                                )}
+                            />
                         </div>
+
+                        {!permission.allowed && role === "admin" && (
+                            <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                                {permission.reason}
+                            </p>
+                        )}
                     </div>
 
-                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
-                        <h2 className="text-lg font-black text-slate-950 md:text-xl">
+                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+                        <h2 className="text-xl font-black text-slate-950">
                             Upcoming Events
                         </h2>
-
                         <p className="mt-1 text-sm leading-6 text-slate-500">
                             Events scheduled from today onwards.
                         </p>
@@ -247,7 +359,10 @@ export default async function DashboardPage() {
                         <div className="mt-5 space-y-3">
                             {upcomingList.length > 0 ? (
                                 upcomingList.map((event) => (
-                                    <EventMini key={event.id} event={event} />
+                                    <EventMini
+                                        key={event.id}
+                                        event={event}
+                                    />
                                 ))
                             ) : (
                                 <EmptyState
@@ -261,13 +376,45 @@ export default async function DashboardPage() {
                 </div>
             </section>
 
-            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 className="text-xl font-black text-slate-950">
+                            Publishing Progress
+                        </h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                            Percentage of company events currently published.
+                        </p>
+                    </div>
+                    <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
+                        <BarChart3 size={22} />
+                    </div>
+                </div>
+
+                <div className="mt-7">
+                    <p className="text-5xl font-black text-slate-950">
+                        {completionRate}%
+                    </p>
+                    <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#4F46E5] to-[#EC4899]"
+                            style={{ width: `${completionRate}%` }}
+                        />
+                    </div>
+                    <p className="mt-4 text-sm text-slate-500">
+                        {publishedEvents} out of {totalEvents} events are
+                        published.
+                    </p>
+                </div>
+            </section>
+
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
                 <SectionHeader
                     title="Quick Actions"
                     text="Jump into the areas you use most often."
                 />
 
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 md:mt-6">
+                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     {quickActions.map((action) => (
                         <ChecklistCard
                             key={action.href + action.title}
@@ -283,32 +430,39 @@ export default async function DashboardPage() {
     );
 }
 
-function getQuickActions(role: UserRole) {
+function getQuickActions(
+    role: UserRole,
+    canCreate: boolean,
+) {
     if (role === "admin") {
         return [
             {
                 href: "/dashboard/events",
                 icon: CalendarDays,
                 title: "Manage Events",
-                text: "View all events and open event workspaces.",
+                text: "View all company events and open event workspaces.",
             },
             {
-                href: "/dashboard/events/new",
-                icon: PlusCircle,
-                title: "Create Event",
-                text: "Create a new event and configure event details.",
+                href: canCreate
+                    ? "/dashboard/events/new"
+                    : "/dashboard/rental-plan",
+                icon: canCreate ? PlusCircle : CreditCard,
+                title: canCreate ? "Create Event" : "Rental Plan",
+                text: canCreate
+                    ? "Create a new event using the current rental allowance."
+                    : "Review the current event limit and subscription.",
             },
             {
-                href: "/dashboard/users",
+                href: "/dashboard/team",
                 icon: Users,
-                title: "Users & Permissions",
-                text: "Create accounts and assign users to events.",
+                title: "Team Access",
+                text: "Review people who belong to this event company.",
             },
             {
-                href: "/dashboard/roles",
-                icon: ShieldCheck,
-                title: "Roles",
-                text: "Review role permissions and access levels.",
+                href: "/dashboard/rental-plan",
+                icon: CreditCard,
+                title: "Rental Plan",
+                text: "Review event limits, team limits and enabled features.",
             },
         ];
     }
@@ -381,18 +535,19 @@ function SectionHeader({
     linkText?: string;
 }) {
     return (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <h2 className="text-xl font-black text-slate-950 md:text-2xl">
+                <h2 className="text-2xl font-black text-slate-950">
                     {title}
                 </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">{text}</p>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                    {text}
+                </p>
             </div>
-
             {href && linkText && (
                 <Link
                     href={href}
-                    className="inline-flex w-fit items-center gap-2 text-sm font-black text-[#4F46E5] hover:text-[#EC4899]"
+                    className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] hover:text-[#EC4899]"
                 >
                     {linkText}
                     <ArrowRight size={16} />
@@ -414,24 +569,41 @@ function StatCard({
     icon: LucideIcon;
 }) {
     return (
-        <div className="group rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg md:rounded-[2rem] md:p-6">
+        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
             <div className="flex items-start justify-between gap-4">
                 <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                    <Icon size={22} />
+                    <Icon size={24} />
                 </div>
-
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 md:text-xs">
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
                     Active
                 </span>
             </div>
-
-            <p className="mt-5 text-sm font-bold text-slate-500 md:mt-6">{title}</p>
-            <p className="mt-2 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
+            <p className="mt-6 text-sm font-bold text-slate-500">
+                {title}
+            </p>
+            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
                 {value}
             </p>
-            <p className="mt-2 text-sm leading-6 text-slate-500 md:mt-3">
+            <p className="mt-3 text-sm leading-6 text-slate-500">
                 {subtitle}
             </p>
+        </div>
+    );
+}
+
+function UsageRow({
+    label,
+    value,
+}: {
+    label: string;
+    value: string;
+}) {
+    return (
+        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+            <span className="text-sm font-bold text-slate-500">
+                {label}
+            </span>
+            <span className="font-black text-slate-900">{value}</span>
         </div>
     );
 }
@@ -440,37 +612,26 @@ function EventRow({ event }: { event: EventItem }) {
     return (
         <Link
             href={`/dashboard/events/${event.id}`}
-            className="block rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:border-indigo-100 hover:bg-[#F7F5FF] md:rounded-3xl md:p-5"
+            className="block rounded-3xl border border-slate-100 bg-slate-50 p-5 transition hover:border-indigo-100 hover:bg-[#F7F5FF]"
         >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
-                <div className="flex min-w-0 items-start gap-3 md:gap-4">
-                    <div className="shrink-0 rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
-                        <CalendarDays size={20} />
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-4">
+                    <div className="rounded-2xl bg-white p-3 text-[#4F46E5] shadow-sm">
+                        <CalendarDays size={22} />
                     </div>
-
-                    <div className="min-w-0">
-                        <p className="truncate text-base font-black text-slate-950 md:text-lg">
+                    <div>
+                        <p className="text-lg font-black text-slate-950">
                             {event.event_name}
                         </p>
-
                         <p className="mt-1 text-sm leading-6 text-slate-500">
-                            {formatDate(event.event_date)}
-                            <span className="hidden sm:inline">
-                                {" "}
-                                · {event.event_time || "No time"} ·{" "}
-                                {event.venue || "No venue"}
-                            </span>
-                        </p>
-
-                        <p className="mt-1 text-xs font-semibold text-slate-400 sm:hidden">
-                            {event.event_time || "No time"} · {event.venue || "No venue"}
+                            {formatDate(event.event_date)} ·{" "}
+                            {event.event_time || "No time"} ·{" "}
+                            {event.venue || "No venue"}
                         </p>
                     </div>
                 </div>
-
-                <div className="flex items-center justify-between gap-3 md:justify-end">
+                <div className="flex items-center gap-3">
                     <StatusBadge status={event.status || "draft"} />
-
                     <div className="rounded-full bg-white p-2 text-slate-400">
                         <ArrowRight size={16} />
                     </div>
@@ -487,17 +648,19 @@ function EventMini({ event }: { event: EventItem }) {
             className="block rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:border-indigo-100 hover:bg-[#F7F5FF]"
         >
             <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <p className="truncate font-black text-slate-950">
+                <div>
+                    <p className="font-black text-slate-950">
                         {event.event_name}
                     </p>
-
                     <p className="mt-1 text-sm leading-6 text-slate-500">
-                        {formatDate(event.event_date)} · {event.event_time || "No time"}
+                        {formatDate(event.event_date)} ·{" "}
+                        {event.event_time || "No time"}
                     </p>
                 </div>
-
-                <StatusBadge status={event.status || "draft"} compact />
+                <StatusBadge
+                    status={event.status || "draft"}
+                    compact
+                />
             </div>
         </Link>
     );
@@ -517,16 +680,14 @@ function ChecklistCard({
     return (
         <Link
             href={href}
-            className="group rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:-translate-y-1 hover:border-indigo-100 hover:bg-[#F7F5FF] hover:shadow-md md:rounded-3xl md:p-6"
+            className="group rounded-3xl border border-slate-200 bg-slate-50 p-6 transition hover:-translate-y-1 hover:border-indigo-100 hover:bg-[#F7F5FF] hover:shadow-md"
         >
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm transition group-hover:bg-[#4F46E5] group-hover:text-white md:h-12 md:w-12">
-                <Icon size={22} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm transition group-hover:bg-[#4F46E5] group-hover:text-white">
+                <Icon size={23} />
             </div>
-
-            <p className="mt-4 font-black text-slate-950 md:mt-5">{title}</p>
+            <p className="mt-5 font-black text-slate-950">{title}</p>
             <p className="mt-2 text-sm leading-6 text-slate-500">{text}</p>
-
-            <div className="mt-4 inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] md:mt-5">
+            <div className="mt-5 inline-flex items-center gap-2 text-sm font-black text-[#4F46E5]">
                 Open
                 <ArrowRight size={15} />
             </div>
@@ -548,16 +709,14 @@ function EmptyState({
     action?: string;
 }) {
     return (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center md:rounded-3xl md:p-8">
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-[#4F46E5] shadow-sm">
                 <Icon size={26} />
             </div>
-
             <p className="mt-4 font-black text-slate-950">{title}</p>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
                 {text}
             </p>
-
             {href && action && (
                 <Link
                     href={href}
@@ -578,30 +737,26 @@ function StatusBadge({
     status: string;
     compact?: boolean;
 }) {
-    const cleanStatus = status || "draft";
-
     const styles =
-        cleanStatus === "published"
+        status === "published"
             ? "bg-emerald-50 text-emerald-700"
-            : cleanStatus === "draft"
+            : status === "draft"
               ? "bg-amber-50 text-amber-700"
               : "bg-slate-100 text-slate-700";
 
     return (
         <span
-            className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black uppercase md:text-xs ${styles} ${
+            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${styles} ${
                 compact ? "hidden sm:inline-flex" : "inline-flex"
             }`}
         >
-            {cleanStatus}
+            {status}
         </span>
     );
 }
 
 function formatDate(date: string | null) {
-    if (!date) {
-        return "No date";
-    }
+    if (!date) return "No date";
 
     return new Intl.DateTimeFormat("en-SG", {
         day: "2-digit",

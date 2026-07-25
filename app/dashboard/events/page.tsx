@@ -1,22 +1,27 @@
 import Link from "next/link";
+import DeleteEventButton from "@/components/events/DeleteEventButton";
 import {
     ArrowRight,
     CalendarDays,
     Clock3,
-    Globe2,
-    LayoutGrid,
     MapPin,
     PlusCircle,
     Search,
     Sparkles,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { createSupabaseServerClient } from "../../../lib/supabase-server";
+import {
+    evaluateEventCreation,
+    getCurrentCompanyContext,
+    hasAllCompanyEvents,
+    isPlatformAdminContext,
+} from "@/lib/company-access";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-type UserRole = "admin" | "organizer" | "viewer" | "scanner";
+export const dynamic = "force-dynamic";
 
 type EventItem = {
     id: string;
+    company_id: string | null;
     event_name: string;
     event_slug: string;
     event_date: string | null;
@@ -29,296 +34,308 @@ type EventItem = {
     created_at: string | null;
 };
 
-export default async function EventsPage() {
+export default async function EventsPage({
+    searchParams,
+}: {
+    searchParams: Promise<{
+        q?: string;
+        status?: string;
+    }>;
+}) {
+    const context = await getCurrentCompanyContext();
+    const permission = evaluateEventCreation(context);
     const supabaseServer = await createSupabaseServerClient();
+    const db = supabaseServer as any;
+    const query = await searchParams;
 
-    const {
-        data: { user },
-    } = await supabaseServer.auth.getUser();
-
-    const { data: profile } = user
-        ? await supabaseServer
-              .from("profiles")
-              .select("id, full_name, email, role")
-              .eq("id", user.id)
-              .single()
-        : { data: null };
-
-    const role = (profile?.role || "organizer") as UserRole;
-    const canCreateEvent = role === "admin";
-
-    const { data: events, error } = await supabaseServer
+    let eventQuery = db
         .from("events")
         .select(
-            "id, event_name, event_slug, event_date, event_time, venue, description, status, max_guests, registration_open, created_at"
-        )
-        .order("created_at", { ascending: false });
+            "id, company_id, event_name, event_slug, event_date, event_time, venue, description, status, max_guests, registration_open, created_at",
+        );
 
-    const eventList = (events || []) as EventItem[];
+    if (!isPlatformAdminContext(context)) {
+        eventQuery = eventQuery.eq(
+            "company_id",
+            context.company.id,
+        );
+    }
 
-    const publishedCount = eventList.filter(
-        (event) => event.status === "published"
+    if (
+        !isPlatformAdminContext(context) &&
+        !hasAllCompanyEvents(context)
+    ) {
+        const ids =
+            context.accessibleEventIds.length > 0
+                ? context.accessibleEventIds
+                : [
+                      "00000000-0000-0000-0000-000000000000",
+                  ];
+
+        eventQuery = eventQuery.in("id", ids);
+    }
+
+    const { data, error } = await eventQuery.order(
+        "created_at",
+        { ascending: false },
+    );
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    const keyword = (query.q || "").trim().toLowerCase();
+    const statusFilter = (query.status || "all").trim().toLowerCase();
+
+    const events = ((data || []) as EventItem[]).filter((event) => {
+        const matchesKeyword =
+            !keyword ||
+            [
+                event.event_name,
+                event.event_slug,
+                event.venue,
+                event.description,
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase()
+                .includes(keyword);
+
+        const matchesStatus =
+            statusFilter === "all" ||
+            (event.status || "draft").toLowerCase() === statusFilter;
+
+        return matchesKeyword && matchesStatus;
+    });
+
+    const published = events.filter(
+        (event) => event.status === "published",
     ).length;
-
-    const draftCount = eventList.filter(
-        (event) => !event.status || event.status === "draft"
-    ).length;
-
-    const openRegistrationCount = eventList.filter(
-        (event) => event.registration_open
+    const drafts = events.filter(
+        (event) => (event.status || "draft") === "draft",
     ).length;
 
     return (
-        <div className="space-y-8">
-            <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
-                <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                <div className="absolute bottom-0 right-32 h-56 w-56 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+        <div className="space-y-7">
+            <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm md:p-10">
+                <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
+                <div className="absolute bottom-0 right-32 h-64 w-64 rounded-full bg-[#4F46E5]/10 blur-3xl" />
 
-                <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+                <div className="relative z-10 flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                             <Sparkles size={16} />
-                            Event Workspace
+                            {context.company.company_name}
                         </div>
 
-                        <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">
-                            My Events
+                        <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">
+                            {context.isPlatformAdmin
+                                ? "All Events"
+                                : "My Events"}
                         </h1>
 
-                        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
-                            View, manage, and monitor your event registration pages,
-                            guest lists, QR check-in, emails, lucky draw, and event settings.
+                        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+                            {context.isPlatformAdmin
+                                ? "Manage events across the RegiGo platform without customer rental-plan limits."
+                                : "Create and manage multiple event workspaces while keeping all existing RegiGo modules inside each event."}
                         </p>
 
-                        <div className="mt-5 flex flex-wrap items-center gap-3">
-                            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold capitalize text-slate-700">
-                                Role: {role}
+                        <div className="mt-5 flex flex-wrap gap-3">
+                            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-black text-slate-700">
+                                {context.eventCount} total
                             </span>
-
-                            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
-                                {eventList.length} event{eventList.length === 1 ? "" : "s"}
+                            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700">
+                                {published} published
+                            </span>
+                            <span className="rounded-full bg-amber-50 px-4 py-2 text-sm font-black text-amber-700">
+                                {drafts} drafts
+                            </span>
+                            <span className="rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                                {context.plan?.plan_name || "No rental plan"}
                             </span>
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    {context.profile.role === "admin" && (
                         <Link
-                            href="/dashboard"
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-4 font-black text-slate-800 shadow-sm transition hover:bg-slate-50"
+                            href={
+                                permission.allowed
+                                    ? "/dashboard/events/new"
+                                    : "/dashboard/rental-plan"
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
                         >
-                            Dashboard
-                            <ArrowRight size={18} />
-                        </Link>
-
-                        {canCreateEvent && (
-                            <Link
-                                href="/dashboard/events/new"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90"
-                            >
-                                <PlusCircle size={19} />
-                                New Event
-                            </Link>
-                        )}
-                    </div>
-                </div>
-            </section>
-
-            <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                <SummaryCard
-                    title="Total Events"
-                    value={eventList.length}
-                    text="Events visible to your account"
-                    icon={LayoutGrid}
-                />
-
-                <SummaryCard
-                    title="Published"
-                    value={publishedCount}
-                    text="Live public event pages"
-                    icon={Globe2}
-                />
-
-                <SummaryCard
-                    title="Drafts"
-                    value={draftCount}
-                    text="Events still being prepared"
-                    icon={CalendarDays}
-                />
-
-                <SummaryCard
-                    title="Registration Open"
-                    value={openRegistrationCount}
-                    text="Events accepting registrations"
-                    icon={Search}
-                />
-            </section>
-
-            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
-                        <h2 className="text-2xl font-black text-slate-950">
-                            Event List
-                        </h2>
-                        <p className="mt-1 text-sm leading-6 text-slate-500">
-                            Open an event to manage registration, guests, QR check-in,
-                            tables, speakers, email templates, lucky draw, and settings.
-                        </p>
-                    </div>
-
-                    {canCreateEvent && eventList.length > 0 && (
-                        <Link
-                            href="/dashboard/events/new"
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800"
-                        >
-                            <PlusCircle size={17} />
-                            Create Event
+                            <PlusCircle size={19} />
+                            {permission.allowed
+                                ? "Create Event"
+                                : "View Rental Plan"}
                         </Link>
                     )}
                 </div>
+            </section>
 
-                {error && (
-                    <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-5 text-sm font-semibold text-red-700">
-                        Failed to load events: {error.message}
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+                <form className="grid gap-3 md:grid-cols-[1fr_210px_auto]">
+                    <label className="relative">
+                        <Search
+                            size={18}
+                            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                            name="q"
+                            defaultValue={query.q || ""}
+                            placeholder="Search event name, venue or description"
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold outline-none transition focus:border-[#4F46E5] focus:bg-white"
+                        />
+                    </label>
+
+                    <select
+                        name="status"
+                        defaultValue={statusFilter}
+                        className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
+                    >
+                        <option value="all">All statuses</option>
+                        <option value="published">Published</option>
+                        <option value="draft">Draft</option>
+                    </select>
+
+                    <button
+                        type="submit"
+                        className="h-12 rounded-2xl bg-[#4F46E5] px-6 text-sm font-black text-white transition hover:bg-[#4338CA]"
+                    >
+                        Apply
+                    </button>
+                </form>
+            </section>
+
+            {!permission.allowed &&
+                context.profile.role === "admin" && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
+                        {permission.reason}
                     </div>
                 )}
 
-                <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                    {eventList.length > 0 ? (
-                        eventList.map((event) => (
-                            <EventCard key={event.id} event={event} role={role} />
-                        ))
-                    ) : (
-                        <div className="col-span-full">
-                            <EmptyState canCreateEvent={canCreateEvent} />
-                        </div>
-                    )}
-                </div>
-            </section>
-        </div>
-    );
-}
-
-function SummaryCard({
-    title,
-    value,
-    text,
-    icon: Icon,
-}: {
-    title: string;
-    value: number;
-    text: string;
-    icon: LucideIcon;
-}) {
-    return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
-            <div className="flex items-start justify-between">
-                <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
-                    <Icon size={24} />
-                </div>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
-                    Event
-                </span>
-            </div>
-
-            <p className="mt-6 text-sm font-bold text-slate-500">{title}</p>
-
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">
-                {value}
-            </p>
-
-            <p className="mt-3 text-sm leading-6 text-slate-500">{text}</p>
+            {events.length === 0 ? (
+                <section className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-12 text-center shadow-sm">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#F7F5FF] text-[#4F46E5]">
+                        <CalendarDays size={29} />
+                    </div>
+                    <h2 className="mt-5 text-2xl font-black">
+                        No matching events
+                    </h2>
+                    <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
+                        Clear the filters, or create a new event when the
+                        company rental plan has an available event slot.
+                    </p>
+                </section>
+            ) : (
+                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    {events.map((event) => (
+                        <EventCard
+                            key={event.id}
+                            event={event}
+                            canDelete={
+                                context.isPlatformAdmin ||
+                                context.profile.role ===
+                                    "admin"
+                            }
+                        />
+                    ))}
+                </section>
+            )}
         </div>
     );
 }
 
 function EventCard({
     event,
-    role,
+    canDelete,
 }: {
     event: EventItem;
-    role: UserRole;
+    canDelete: boolean;
 }) {
-    const status = event.status || "draft";
-
     return (
-        <div className="group overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-            <div className="h-2 bg-gradient-to-r from-[#4F46E5] to-[#EC4899]" />
+        <article className="group relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:border-indigo-100 hover:shadow-lg">
+            <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-[#EC4899]/10 blur-3xl" />
 
-            <div className="p-6">
+            <Link
+                href={`/dashboard/events/${event.id}`}
+                className="relative z-10 block p-6"
+            >
                 <div className="flex items-start justify-between gap-4">
-                    <StatusBadge status={status} />
-
-                    {event.registration_open ? (
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                            OPEN
-                        </span>
-                    ) : (
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
-                            CLOSED
-                        </span>
-                    )}
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5]">
+                        <CalendarDays size={23} />
+                    </div>
+                    <StatusBadge status={event.status || "draft"} />
                 </div>
 
-                <h2 className="mt-5 line-clamp-2 text-2xl font-black leading-tight text-slate-950">
+                <h2 className="mt-6 text-2xl font-black tracking-tight text-slate-950">
                     {event.event_name}
                 </h2>
 
-                <p className="mt-3 line-clamp-2 min-h-[48px] text-sm leading-6 text-slate-500">
-                    {event.description || "No description added for this event yet."}
+                <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-slate-500">
+                    {event.description ||
+                        "Open the event workspace to configure guests, registration, seating, emails and event-day tools."}
                 </p>
 
-                <div className="mt-5 space-y-3 rounded-2xl bg-slate-50 p-4">
-                    <InfoRow
-                        icon={CalendarDays}
-                        label={formatDate(event.event_date)}
-                    />
-
-                    <InfoRow
-                        icon={Clock3}
-                        label={event.event_time || "No time added"}
-                    />
-
-                    <InfoRow
-                        icon={MapPin}
-                        label={event.venue || "No venue added"}
-                    />
+                <div className="mt-5 space-y-3 text-sm font-bold text-slate-600">
+                    <p className="flex items-center gap-3">
+                        <CalendarDays
+                            size={17}
+                            className="text-[#4F46E5]"
+                        />
+                        {formatDate(event.event_date)}
+                    </p>
+                    <p className="flex items-center gap-3">
+                        <Clock3
+                            size={17}
+                            className="text-[#4F46E5]"
+                        />
+                        {event.event_time || "Time not set"}
+                    </p>
+                    <p className="flex items-center gap-3">
+                        <MapPin
+                            size={17}
+                            className="text-[#4F46E5]"
+                        />
+                        {event.venue || "Venue not set"}
+                    </p>
                 </div>
 
-                <div className="mt-6 grid gap-3">
-                    <Link
-                        href={`/dashboard/events/${event.id}`}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-center font-black text-white transition hover:bg-slate-800"
+                <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
+                    <span
+                        className={`rounded-full px-3 py-1 text-xs font-black ${
+                            event.registration_open
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-slate-100 text-slate-600"
+                        }`}
                     >
-                        {role === "viewer" ? "View Event" : "Manage Event"}
-                        <ArrowRight size={17} />
-                    </Link>
+                        Registration{" "}
+                        {event.registration_open ? "open" : "closed"}
+                    </span>
 
-                    <Link
-                        href={`/event/${event.event_slug}`}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-center font-black text-slate-700 transition hover:bg-[#F7F5FF] hover:text-[#4F46E5]"
-                    >
-                        View Public Page
-                        <Globe2 size={17} />
-                    </Link>
+                    <span className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5]">
+                        Open
+                        <ArrowRight
+                            size={16}
+                            className="transition group-hover:translate-x-1"
+                        />
+                    </span>
                 </div>
-            </div>
-        </div>
-    );
-}
+            </Link>
 
-function InfoRow({
-    icon: Icon,
-    label,
-}: {
-    icon: LucideIcon;
-    label: string;
-}) {
-    return (
-        <div className="flex items-center gap-3 text-sm text-slate-600">
-            <Icon size={17} className="text-[#4F46E5]" />
-            <span className="line-clamp-1 font-semibold">{label}</span>
-        </div>
+            {canDelete && (
+                <div className="relative z-20 flex justify-end border-t border-slate-100 bg-white px-5 py-4">
+                    <DeleteEventButton
+                        eventId={event.id}
+                        eventName={
+                            event.event_name
+                        }
+                        compact
+                    />
+                </div>
+            )}
+        </article>
     );
 }
 
@@ -339,40 +356,8 @@ function StatusBadge({ status }: { status: string }) {
     );
 }
 
-function EmptyState({ canCreateEvent }: { canCreateEvent: boolean }) {
-    return (
-        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-[#4F46E5] shadow-sm">
-                <CalendarDays size={30} />
-            </div>
-
-            <h2 className="mt-5 text-2xl font-black text-slate-950">
-                No events found
-            </h2>
-
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                {canCreateEvent
-                    ? "Create your first event and start building your registration experience."
-                    : "No event has been assigned to your account yet. Please contact your admin if you need access."}
-            </p>
-
-            {canCreateEvent && (
-                <Link
-                    href="/dashboard/events/new"
-                    className="mt-6 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-3 font-black text-white shadow-lg transition hover:opacity-90"
-                >
-                    <PlusCircle size={18} />
-                    Create Event
-                </Link>
-            )}
-        </div>
-    );
-}
-
 function formatDate(date: string | null) {
-    if (!date) {
-        return "No date added";
-    }
+    if (!date) return "Date not set";
 
     return new Intl.DateTimeFormat("en-SG", {
         day: "2-digit",
