@@ -187,7 +187,13 @@ export async function getPublicTableSelectionContext({
             admin,
             invitation,
             event,
-            registration,
+            registration: {
+                ...registration,
+                payment_status:
+                    registrationDetails.payment_status,
+                selected_ticket_quantity:
+                    registrationDetails.selected_ticket_quantity,
+            },
             settings,
             partySize: Math.max(
                 Number(

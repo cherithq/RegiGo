@@ -1,194 +1,245 @@
-import fs from "node:fs";
-import path from "node:path";
+import { NextResponse } from "next/server";
+import {
+    TableSelectionError,
+    getTableSelectionSnapshot,
+} from "@/lib/table-selection";
 
-const relative =
-    "app/api/public/events/[slug]/invite/[token]/tables/route.ts";
-const absolute =
-    path.join(
-        process.cwd(),
-        relative,
-    );
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-if (!fs.existsSync(absolute)) {
-    console.error(
-        `Missing ${relative}`,
-    );
-    process.exit(1);
+function json(body: Record<string, unknown>, status = 200) {
+    return NextResponse.json(body, {
+        status,
+        headers: {
+            "Cache-Control":
+                "no-store, no-cache, must-revalidate, max-age=0",
+        },
+    });
 }
 
-const original =
-    fs.readFileSync(
-        absolute,
-        "utf8",
+function handle(error: unknown) {
+    return json(
+        {
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Unable to manage table selection.",
+        },
+        error instanceof TableSelectionError
+            ? error.status
+            : 500,
     );
+}
 
-if (
-    !original.includes(
-        "snapshot.registration.payment_status",
-    )
+function snapshotResponse(
+    snapshot: Awaited<
+        ReturnType<typeof getTableSelectionSnapshot>
+    >,
 ) {
-    console.error(
-        "The expected payment_status access was not found.",
-    );
-    process.exit(1);
+    const currentTable =
+        snapshot.tables.find(
+            (table) =>
+                String(table.id) ===
+                String(
+                    snapshot.currentAssignment?.table_id ||
+                        "",
+                ),
+        ) || null;
+
+    const heldTable =
+        snapshot.tables.find(
+            (table) =>
+                String(table.id) ===
+                String(snapshot.currentHold?.table_id || ""),
+        ) || null;
+
+    return {
+        success: true,
+        event: {
+            id: snapshot.event.id,
+            event_name: snapshot.event.event_name,
+            event_date: snapshot.event.event_date,
+            event_time: snapshot.event.event_time,
+            venue: snapshot.event.venue,
+        },
+        guest: {
+            id: snapshot.registration.id,
+            full_name: snapshot.registration.full_name,
+            partySize: snapshot.partySize,
+            paymentStatus:
+                snapshot.registration.payment_status,
+        },
+        settings: snapshot.settings,
+        tables: snapshot.tables,
+        currentAssignment: snapshot.currentAssignment
+            ? {
+                  ...snapshot.currentAssignment,
+                  table: currentTable,
+              }
+            : null,
+        currentHold: snapshot.currentHold
+            ? {
+                  ...snapshot.currentHold,
+                  table: heldTable,
+              }
+            : null,
+    };
 }
 
-let next =
-    original;
-let changed =
-    false;
+export async function GET(
+    _request: Request,
+    {
+        params,
+    }: {
+        params: Promise<{
+            slug: string;
+            token: string;
+        }>;
+    },
+) {
+    try {
+        const { slug, token } = await params;
+        const snapshot =
+            await getTableSelectionSnapshot({
+                slug,
+                token,
+            });
 
-/*
- * Fix common Supabase select forms:
- *
- * registration:id(...)
- * registration(...)
- * .select("..., id, full_name, email, rsvp_status, ...")
- *
- * Only add payment_status beside rsvp_status when it is not already
- * selected in that same registration field list.
- */
-const patterns = [
-    /(\bregistration\s*:\s*[^(\s,]+\s*\(\s*[^)]*\brsvp_status\b)(?![^)]*\bpayment_status\b)([^)]*\))/g,
-    /(\bregistration\s*\(\s*[^)]*\brsvp_status\b)(?![^)]*\bpayment_status\b)([^)]*\))/g,
-    /(\bid\s*,\s*full_name\s*,\s*email\s*,\s*rsvp_status\b)(?!\s*,\s*payment_status\b)/g,
-    /(\bfull_name\s*,\s*email\s*,\s*rsvp_status\b)(?!\s*,\s*payment_status\b)/g,
-];
-
-for (const pattern of patterns) {
-    const before =
-        next;
-
-    next =
-        next.replace(
-            pattern,
-            (
-                match,
-                first,
-                second = "",
-            ) => {
-                changed =
-                    true;
-
-                if (second) {
-                    return `${first}, payment_status${second}`;
-                }
-
-                return `${first}, payment_status`;
-            },
-        );
-
-    if (
-        next !== before
-    ) {
-        break;
+        return json(snapshotResponse(snapshot));
+    } catch (error) {
+        return handle(error);
     }
 }
 
-/*
- * Last-resort targeted insertion: find the closest rsvp_status before
- * snapshot.registration.payment_status and add payment_status there.
- */
-if (!changed) {
-    const accessIndex =
-        next.indexOf(
-            "snapshot.registration.payment_status",
-        );
-    const preceding =
-        next.slice(
-            0,
-            accessIndex,
-        );
-    const statusIndex =
-        preceding.lastIndexOf(
-            "rsvp_status",
-        );
+export async function POST(
+    request: Request,
+    {
+        params,
+    }: {
+        params: Promise<{
+            slug: string;
+            token: string;
+        }>;
+    },
+) {
+    try {
+        const { slug, token } = await params;
+        const body = (await request.json()) as {
+            action?: unknown;
+            tableId?: unknown;
+        };
+        const action =
+            typeof body.action === "string"
+                ? body.action.trim()
+                : "";
 
-    if (statusIndex >= 0) {
-        const afterStatus =
-            statusIndex +
-            "rsvp_status".length;
-        const localWindow =
-            next.slice(
-                afterStatus,
-                Math.min(
-                    accessIndex,
-                    afterStatus + 180,
-                ),
+        const snapshot =
+            await getTableSelectionSnapshot({
+                slug,
+                token,
+            });
+
+        if (action === "hold") {
+            const tableId =
+                typeof body.tableId === "string"
+                    ? body.tableId.trim()
+                    : "";
+
+            if (!tableId) {
+                throw new TableSelectionError(
+                    "Choose a table.",
+                );
+            }
+
+            const selectedTable = snapshot.tables.find(
+                (table) => String(table.id) === tableId,
             );
 
-        if (
-            !localWindow.includes(
-                "payment_status",
-            )
-        ) {
-            next =
-                next.slice(
-                    0,
-                    afterStatus,
-                ) +
-                ", payment_status" +
-                next.slice(
-                    afterStatus,
+            if (!selectedTable) {
+                throw new TableSelectionError(
+                    "The selected table is not available.",
+                    409,
                 );
-            changed =
-                true;
+            }
+
+            if (
+                Number(selectedTable.availableSeats) <
+                snapshot.partySize
+            ) {
+                throw new TableSelectionError(
+                    "The selected table does not have enough seats for your party.",
+                    409,
+                );
+            }
+
+            const { error } = await snapshot.admin.rpc(
+                "regigo_hold_event_table_v1",
+                {
+                    p_event_id: snapshot.event.id,
+                    p_registration_id:
+                        snapshot.registration.id,
+                    p_table_id: tableId,
+                },
+            );
+
+            if (error) {
+                throw new TableSelectionError(
+                    error.message,
+                    409,
+                );
+            }
+        } else if (action === "confirm") {
+            const { error } = await snapshot.admin.rpc(
+                "regigo_confirm_event_table_v1",
+                {
+                    p_event_id: snapshot.event.id,
+                    p_registration_id:
+                        snapshot.registration.id,
+                },
+            );
+
+            if (error) {
+                throw new TableSelectionError(
+                    error.message,
+                    409,
+                );
+            }
+        } else if (action === "release") {
+            const { error } = await snapshot.admin.rpc(
+                "regigo_release_event_table_hold_v1",
+                {
+                    p_event_id: snapshot.event.id,
+                    p_registration_id:
+                        snapshot.registration.id,
+                },
+            );
+
+            if (error) {
+                throw new TableSelectionError(error.message);
+            }
+        } else {
+            throw new TableSelectionError(
+                "Choose a valid table-selection action.",
+            );
         }
+
+        const refreshed =
+            await getTableSelectionSnapshot({
+                slug,
+                token,
+            });
+
+        return json({
+            ...snapshotResponse(refreshed),
+            message:
+                action === "confirm"
+                    ? "Your table has been confirmed."
+                    : action === "hold"
+                      ? "The table is temporarily held for your party."
+                      : "The temporary table hold was released.",
+        });
+    } catch (error) {
+        return handle(error);
     }
 }
-
-if (!changed) {
-    console.error(
-        "Could not locate the registration select list that contains rsvp_status.",
-    );
-    console.error(
-        "No file was changed.",
-    );
-    process.exit(1);
-}
-
-/*
- * Ensure the selected field appears before the later property access.
- */
-const accessIndex =
-    next.indexOf(
-        "snapshot.registration.payment_status",
-    );
-const selectedIndex =
-    next.lastIndexOf(
-        "payment_status",
-        accessIndex - 1,
-    );
-
-if (
-    selectedIndex <
-    0
-) {
-    console.error(
-        "payment_status was not added to the preceding registration query.",
-    );
-    process.exit(1);
-}
-
-const backup =
-    `${absolute}.before-payment-status-select-fix`;
-
-if (!fs.existsSync(backup)) {
-    fs.copyFileSync(
-        absolute,
-        backup,
-    );
-}
-
-fs.writeFileSync(
-    absolute,
-    next,
-    "utf8",
-);
-
-console.log(
-    "Added payment_status to the invitation registration selection.",
-);
-console.log(
-    "Guest table-selection behaviour was not changed.",
-);
