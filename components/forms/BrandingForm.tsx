@@ -72,12 +72,15 @@ export default function BrandingForm({
 
             const { error } = await supabase
                 .from("event_branding")
-                .update({
-                    ...form,
-                    banner_background_url: bannerUrl || null,
-                    page_background_url: pageBgUrl || null,
-                })
-                .eq("event_id", eventId);
+                .upsert(
+                    {
+                        event_id: eventId,
+                        ...form,
+                        banner_background_url: bannerUrl || null,
+                        page_background_url: pageBgUrl || null,
+                    },
+                    { onConflict: "event_id" },
+                );
 
             if (error) throw error;
 

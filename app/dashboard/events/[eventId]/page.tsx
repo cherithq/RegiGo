@@ -26,7 +26,6 @@ import {
     ShieldCheck,
     Sparkles,
     TableProperties,
-    Ticket,
     Trophy,
     UserRoundCheck,
     Users,
@@ -340,22 +339,6 @@ export default async function EventOverviewPage({
                 allowed:
                     canAccessModule(
                         "invitations",
-                        canManageEvent,
-                    ),
-            },
-            {
-                moduleKey:
-                    "tickets",
-                title:
-                    "Ticket Types",
-                description:
-                    "Set up ticket categories, limits and pricing rules.",
-                href:
-                    `/dashboard/events/${eventId}/tickets`,
-                icon: Ticket,
-                allowed:
-                    canAccessModule(
-                        "tickets",
                         canManageEvent,
                     ),
             },

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
     ArrowLeft,
     ArrowRight,
@@ -13,24 +14,27 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requirePermission } from "@/lib/permissions";
 
 export default async function DashboardSettingsPage() {
     const supabaseServer = await createSupabaseServerClient();
-
-    await requirePermission("can_manage_settings");
 
     const {
         data: { user },
     } = await supabaseServer.auth.getUser();
 
-    const { data: profile } = user
-        ? await supabaseServer
-            .from("profiles")
-            .select("id, full_name, email, role")
-            .eq("id", user.id)
-            .single()
-        : { data: null };
+    if (!user) {
+        redirect("/auth/login");
+    }
+
+    const { data: profile } = await supabaseServer
+        .from("profiles")
+        .select("id, full_name, email, role, platform_role")
+        .eq("id", user.id)
+        .single();
+
+    if (profile?.platform_role !== "super_admin") {
+        redirect("/dashboard/unauthorized");
+    }
 
     const { count: totalEvents } = await supabaseServer
         .from("events")
@@ -95,10 +99,10 @@ export default async function DashboardSettingsPage() {
                             </div>
 
                             <div>
-                                <p className="font-black text-slate-950">Admin-only area</p>
+                                <p className="font-black text-slate-950">RegiGo admin-only area</p>
                                 <p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">
-                                    Settings are restricted to accounts with system management
-                                    permission.
+                                    Settings are restricted to RegiGo platform
+                                    administrators.
                                 </p>
                             </div>
                         </div>
