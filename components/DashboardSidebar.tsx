@@ -6,7 +6,6 @@ import {
     useEffect,
     useMemo,
     useState,
-    type ReactNode,
 } from "react";
 import {
     usePathname,
@@ -14,18 +13,24 @@ import {
 import {
     supabase,
 } from "@/lib/supabase";
-import Logo from "./Logo";
+import type {
+    SidebarModuleKey,
+    SidebarModuleMap,
+} from "@/lib/sidebar-modules";
+import Logo from "@/components/layout/logo";
 import {
     useSidebar,
-} from "./SidebarContext";
+} from "@/components/layout/SidebarContext";
 import {
     BadgeCheck,
     BarChart3,
+    Building2,
     CalendarDays,
     ChevronLeft,
     ChevronRight,
     ClipboardList,
     CreditCard,
+    Gamepad2,
     Gift,
     Globe2,
     Home,
@@ -54,53 +59,65 @@ import {
 import type {
     LucideIcon,
 } from "lucide-react";
-import {
-    cleanOrganizerEnabledModules,
-    defaultOrganizerEnabledModules,
-} from "@/lib/event-modules";
 
-type UserRole =
-    | "admin"
-    | "organizer"
-    | "viewer"
-    | "scanner";
+type PermissionKey =
+    | "canCreateEvent"
+    | "canManageUsers"
+    | "canManageRoles"
+    | "canManageStripe"
+    | "canManageWorkspace"
+    | "canManageEvent"
+    | "canScan"
+    | "canViewReports";
 
-type RawProfile = {
-    id: string;
-    full_name:
-        | string
+type SidebarContextPayload = {
+    profile: {
+        id: string;
+        fullName:
+            | string
+            | null;
+        email:
+            | string
+            | null;
+        role:
+            | "admin"
+            | "organizer"
+            | "viewer"
+            | "scanner";
+        platformRole:
+            | string
+            | null;
+        isPlatformAdmin:
+            boolean;
+    };
+    company:
+        | {
+              id: string;
+              name: string;
+              slug:
+                  | string
+                  | null;
+          }
         | null;
-    email:
-        | string
+    event:
+        | {
+              id: string;
+              name: string;
+              companyId:
+                  | string
+                  | null;
+              companyName:
+                  | string
+                  | null;
+          }
         | null;
-    role:
-        | string
+    modules:
+        | SidebarModuleMap
         | null;
-    platform_role?:
-        | string
-        | null;
-    company_id?:
-        | string
-        | null;
-};
-
-type Profile = {
-    id: string;
-    full_name:
-        | string
-        | null;
-    email:
-        | string
-        | null;
-    role: UserRole;
-    platform_role:
-        | string
-        | null;
-    company_id:
-        | string
-        | null;
-    is_platform_admin:
-        boolean;
+    permissions: Record<
+        PermissionKey,
+        boolean
+    >;
 };
 
 type NavItem = {
@@ -108,13 +125,15 @@ type NavItem = {
     label: string;
     icon: LucideIcon;
     exact?: boolean;
-    roles: UserRole[];
-    moduleKey?: string;
-    moduleKeys?: string[];
+    permission?: PermissionKey;
+    moduleKeys?:
+        SidebarModuleKey[];
     moduleMode?:
         | "all"
         | "any";
-    alwaysVisibleForAdmin?:
+    alwaysVisibleForManagers?:
+        boolean;
+    platformAdminOnly?:
         boolean;
 };
 
@@ -123,250 +142,70 @@ type NavGroup = {
     items: NavItem[];
 };
 
-const allRoles: UserRole[] = [
-    "admin",
-    "organizer",
-    "viewer",
-    "scanner",
-];
-
-const adminOnly: UserRole[] = [
-    "admin",
-];
-
-const eventManagers: UserRole[] = [
-    "admin",
-    "organizer",
-];
-
-const scanners: UserRole[] = [
-    "admin",
-    "organizer",
-    "scanner",
-];
-
-const reportViewers: UserRole[] = [
-    "admin",
-    "organizer",
-    "viewer",
-];
-
-const addonToModule: Record<
-    string,
-    string
-> = {
-    guest_invitations:
-        "invitations",
-    stripe_payments:
-        "payments",
-    guest_table_selection:
-        "table_selection",
-    badge_designer:
-        "badges",
-    direct_printing:
-        "direct_printing",
-};
-
-const sidebarDefaults: Record<
-    string,
-    boolean
-> = {
-    ...(defaultOrganizerEnabledModules as Record<
-        string,
-        boolean
-    >),
-    overview: true,
-    guests: true,
-    invitations: true,
-    tickets: true,
-    payments: true,
-    tables: true,
-    table_selection: true,
-    floor_plan: true,
-    speakers: true,
-    agenda: true,
-    scanner: true,
-    checkin_printing: true,
-    lucky_draw: true,
-    tournament: true,
-    analytics: true,
-    registration: true,
-    website: true,
-    branding: true,
-    emails: true,
-    badges: true,
-    direct_printing: true,
-    settings: true,
-    addons: true,
-    lucky_draw_settings: true,
-};
-
-function canonicalRole(
-    profileRole: unknown,
-    platformRole: unknown,
-    companyRole: unknown,
-): UserRole {
-    const platform =
-        String(
-            platformRole ||
-                "",
-        )
-            .trim()
-            .toLowerCase();
-
-    if (
-        platform ===
-            "super_admin" ||
-        platform ===
-            "super-admin" ||
-        platform ===
-            "platform_admin" ||
-        platform ===
-            "platform-admin"
-    ) {
-        return "admin";
-    }
-
-    const values = [
-        companyRole,
-        profileRole,
-    ].map((value) =>
-        String(value || "")
-            .trim()
-            .toLowerCase(),
-    );
-
-    if (
-        values.some(
-            (value) =>
-                value ===
-                    "admin" ||
-                value ===
-                    "administrator" ||
-                value ===
-                    "company_admin" ||
-                value ===
-                    "company-admin" ||
-                value ===
-                    "owner" ||
-                value ===
-                    "super_admin" ||
-                value ===
-                    "super-admin",
-        )
-    ) {
-        return "admin";
-    }
-
-    if (
-        values.some(
-            (value) =>
-                value ===
-                    "organizer" ||
-                value ===
-                    "organiser" ||
-                value ===
-                    "manager" ||
-                value ===
-                    "event_manager" ||
-                value ===
-                    "event-manager",
-        )
-    ) {
-        return "organizer";
-    }
-
-    if (
-        values.some(
-            (value) =>
-                value ===
-                    "scanner" ||
-                value ===
-                    "checkin" ||
-                value ===
-                    "check_in" ||
-                value ===
-                    "check-in",
-        )
-    ) {
-        return "scanner";
-    }
-
-    return "viewer";
-}
-
-function parseModuleMap(
-    value: unknown,
+async function readJson(
+    response: Response,
 ) {
-    let source: Record<
-        string,
-        unknown
-    > = {};
+    const raw =
+        await response.text();
+
+    if (!raw.trim()) {
+        return {};
+    }
+
+    const contentType =
+        response.headers.get(
+            "content-type",
+        ) || "";
 
     if (
-        value &&
-        typeof value ===
-            "object" &&
-        !Array.isArray(value)
-    ) {
-        source =
-            value as Record<
-                string,
-                unknown
-            >;
-    } else if (
-        typeof value ===
-        "string"
+        contentType.includes(
+            "application/json",
+        )
     ) {
         try {
-            const parsed =
-                JSON.parse(value);
-
-            if (
-                parsed &&
-                typeof parsed ===
-                    "object" &&
-                !Array.isArray(
-                    parsed,
-                )
-            ) {
-                source =
-                    parsed;
-            }
+            return JSON.parse(raw);
         } catch {
-            source = {};
+            return {
+                error:
+                    "The sidebar API returned invalid JSON.",
+            };
         }
     }
 
-    const legacy =
-        cleanOrganizerEnabledModules(
-            value,
-        ) as Record<
-            string,
-            boolean
-        >;
-
-    const output = {
-        ...sidebarDefaults,
-        ...legacy,
-    };
-
-    for (const [
-        key,
-        enabled,
-    ] of Object.entries(
-        source,
-    )) {
-        if (
-            typeof enabled ===
-            "boolean"
-        ) {
-            output[key] =
-                enabled;
-        }
+    if (
+        contentType.includes(
+            "text/html",
+        ) ||
+        /^\s*<!doctype html/i.test(
+            raw,
+        ) ||
+        raw.includes(
+            "/_next/static/",
+        )
+    ) {
+        return {
+            error:
+                response.status ===
+                404
+                    ? "The sidebar context API is missing. Copy app/api/sidebar/context/route.ts and restart Next.js."
+                    : `The sidebar server returned an HTML error page (HTTP ${response.status}).`,
+        };
     }
 
-    return output;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return {
+            error:
+                raw.length > 400
+                    ? `${raw.slice(
+                          0,
+                          400,
+                      )}…`
+                    : raw ||
+                      "Unable to read the sidebar response.",
+        };
+    }
 }
 
 function eventIdFromPath(
@@ -376,21 +215,21 @@ function eventIdFromPath(
         pathname.match(
             /^\/dashboard\/events\/([^/]+)/,
         );
-    const eventId =
+    const id =
         match?.[1];
 
     if (
-        !eventId ||
-        eventId === "new" ||
-        eventId === "create"
+        !id ||
+        id === "new" ||
+        id === "create"
     ) {
         return null;
     }
 
-    return eventId;
+    return id;
 }
 
-function isActive(
+function itemIsActive(
     pathname: string,
     item: NavItem,
 ) {
@@ -429,363 +268,68 @@ export default function DashboardSidebar() {
             [pathname],
         );
 
-    const [profile, setProfile] =
-        useState<Profile | null>(
+    const [context, setContext] =
+        useState<SidebarContextPayload | null>(
             null,
         );
-    const [
-        loadingProfile,
-        setLoadingProfile,
-    ] = useState(true);
-    const [
-        enabledModules,
-        setEnabledModules,
-    ] = useState<
-        Record<
-            string,
-            boolean
-        >
-    >(sidebarDefaults);
-    const [
-        loadingModules,
-        setLoadingModules,
-    ] = useState(false);
-    const [menuError, setMenuError] =
+    const [loading, setLoading] =
+        useState(true);
+    const [error, setError] =
         useState("");
-    const [
-        loggingOut,
-        setLoggingOut,
-    ] = useState(false);
+    const [loggingOut, setLoggingOut] =
+        useState(false);
 
-    const loadProfile =
+    const loadContext =
         useCallback(async () => {
-            setLoadingProfile(
-                true,
-            );
-            setMenuError("");
+            setLoading(true);
+            setError("");
 
             try {
-                const {
-                    data: {
-                        user,
-                    },
-                    error:
-                        userError,
-                } =
-                    await supabase.auth
-                        .getUser();
-
-                if (
-                    userError ||
-                    !user
-                ) {
-                    setProfile(
-                        null,
-                    );
-                    return;
-                }
-
-                let profileResult =
-                    await supabase
-                        .from(
-                            "profiles",
-                        )
-                        .select(
-                            "id, full_name, email, role, platform_role, company_id",
-                        )
-                        .eq(
-                            "id",
-                            user.id,
-                        )
-                        .maybeSingle();
-
-                if (
-                    profileResult.error
-                ) {
-                    profileResult =
-                        await supabase
-                            .from(
-                                "profiles",
-                            )
-                            .select(
-                                "id, full_name, email, role",
-                            )
-                            .eq(
-                                "id",
-                                user.id,
-                            )
-                            .maybeSingle();
-                }
-
-                const rawProfile =
-                    (
-                        profileResult.data ||
+                const query =
+                    eventId
+                        ? `?eventId=${encodeURIComponent(
+                              eventId,
+                          )}`
+                        : "";
+                const response =
+                    await fetch(
+                        `/api/sidebar/context${query}`,
                         {
-                            id:
-                                user.id,
-                            full_name:
-                                null,
-                            email:
-                                user.email ||
-                                null,
-                            role:
-                                "viewer",
-                        }
-                    ) as RawProfile;
-
-                let companyRole:
-                    | string
-                    | null =
-                    null;
-
-                const membershipResult =
-                    await supabase
-                        .from(
-                            "company_members",
-                        )
-                        .select(
-                            "company_role, status",
-                        )
-                        .eq(
-                            "user_id",
-                            user.id,
-                        )
-                        .in(
-                            "status",
-                            [
-                                "active",
-                                "invited",
-                            ],
-                        )
-                        .order(
-                            "created_at",
-                            {
-                                ascending:
-                                    false,
-                            },
-                        )
-                        .limit(1)
-                        .maybeSingle();
-
-                if (
-                    !membershipResult.error
-                ) {
-                    companyRole =
-                        membershipResult
-                            .data
-                            ?.company_role ||
-                        null;
-                }
-
-                const role =
-                    canonicalRole(
-                        rawProfile.role,
-                        rawProfile
-                            .platform_role,
-                        companyRole,
+                            cache:
+                                "no-store",
+                        },
                     );
-                const platformRole =
-                    rawProfile
-                        .platform_role ||
-                    null;
+                const result =
+                    await readJson(
+                        response,
+                    );
 
-                setProfile({
-                    id:
-                        rawProfile.id ||
-                        user.id,
-                    full_name:
-                        rawProfile
-                            .full_name ||
-                        null,
-                    email:
-                        rawProfile
-                            .email ||
-                        user.email ||
-                        null,
-                    role,
-                    platform_role:
-                        platformRole,
-                    company_id:
-                        rawProfile
-                            .company_id ||
-                        null,
-                    is_platform_admin:
-                        [
-                            "super_admin",
-                            "super-admin",
-                            "platform_admin",
-                            "platform-admin",
-                        ].includes(
-                            String(
-                                platformRole ||
-                                    "",
-                            ).toLowerCase(),
-                        ),
-                });
-            } catch (error) {
-                setProfile(null);
-                setMenuError(
-                    error instanceof
-                        Error
-                        ? error.message
-                        : "Unable to load the sidebar profile.",
-                );
-            } finally {
-                setLoadingProfile(
-                    false,
-                );
-            }
-        }, []);
-
-    useEffect(() => {
-        void loadProfile();
-
-        const {
-            data: {
-                subscription,
-            },
-        } =
-            supabase.auth.onAuthStateChange(
-                () => {
-                    void loadProfile();
-                },
-            );
-
-        return () => {
-            subscription.unsubscribe();
-        };
-    }, [loadProfile]);
-
-    const loadEventModules =
-        useCallback(async () => {
-            if (!eventId) {
-                setEnabledModules(
-                    sidebarDefaults,
-                );
-                setLoadingModules(
-                    false,
-                );
-                return;
-            }
-
-            setLoadingModules(
-                true,
-            );
-
-            try {
-                const [
-                    settingsResult,
-                    addonsResult,
-                ] =
-                    await Promise.all([
-                        supabase
-                            .from(
-                                "event_settings",
-                            )
-                            .select(
-                                "enabled_modules",
-                            )
-                            .eq(
-                                "event_id",
-                                eventId,
-                            )
-                            .maybeSingle(),
-
-                        supabase
-                            .from(
-                                "event_addons",
-                            )
-                            .select(
-                                "addon_key, enabled",
-                            )
-                            .eq(
-                                "event_id",
-                                eventId,
-                            ),
-                    ]);
-
-                let modules =
-                    settingsResult.error
-                        ? {
-                              ...sidebarDefaults,
-                          }
-                        : parseModuleMap(
-                              settingsResult
-                                  .data
-                                  ?.enabled_modules,
-                          );
-
-                if (
-                    !addonsResult.error
-                ) {
-                    for (const addon of
-                        addonsResult.data ||
-                        []) {
-                        const moduleKey =
-                            addonToModule[
-                                String(
-                                    addon.addon_key,
-                                )
-                            ];
-
-                        if (
-                            moduleKey
-                        ) {
-                            modules[
-                                moduleKey
-                            ] =
-                                Boolean(
-                                    addon.enabled,
-                                );
-                        }
-                    }
+                if (!response.ok) {
+                    throw new Error(
+                        result.error ||
+                            "Unable to load the sidebar.",
+                    );
                 }
 
-                setEnabledModules(
-                    modules,
+                setContext(
+                    result as SidebarContextPayload,
                 );
-            } catch {
-                setEnabledModules(
-                    sidebarDefaults,
+            } catch (loadError) {
+                setContext(null);
+                setError(
+                    loadError instanceof
+                        Error
+                        ? loadError.message
+                        : "Unable to load the sidebar.",
                 );
             } finally {
-                setLoadingModules(
-                    false,
-                );
+                setLoading(false);
             }
         }, [eventId]);
 
     useEffect(() => {
-        void loadEventModules();
-
-        const reload = () => {
-            void loadEventModules();
-            void loadProfile();
-        };
-
-        window.addEventListener(
-            "regigo:modules-changed",
-            reload,
-        );
-        window.addEventListener(
-            "regigo:company-changed",
-            reload,
-        );
-
-        return () => {
-            window.removeEventListener(
-                "regigo:modules-changed",
-                reload,
-            );
-            window.removeEventListener(
-                "regigo:company-changed",
-                reload,
-            );
-        };
-    }, [
-        loadEventModules,
-        loadProfile,
-    ]);
+        void loadContext();
+    }, [loadContext]);
 
     useEffect(() => {
         setMobileOpen(false);
@@ -799,15 +343,15 @@ export default function DashboardSidebar() {
             return;
         }
 
-        const previous =
+        const previousOverflow =
             document.body.style
                 .overflow;
         document.body.style.overflow =
             "hidden";
 
-        const closeOnEscape = (
+        function closeOnEscape(
             event: KeyboardEvent,
-        ) => {
+        ) {
             if (
                 event.key ===
                 "Escape"
@@ -816,7 +360,7 @@ export default function DashboardSidebar() {
                     false,
                 );
             }
-        };
+        }
 
         window.addEventListener(
             "keydown",
@@ -825,7 +369,7 @@ export default function DashboardSidebar() {
 
         return () => {
             document.body.style.overflow =
-                previous;
+                previousOverflow;
             window.removeEventListener(
                 "keydown",
                 closeOnEscape,
@@ -835,6 +379,52 @@ export default function DashboardSidebar() {
         mobileOpen,
         setMobileOpen,
     ]);
+
+    useEffect(() => {
+        const reload = () => {
+            void loadContext();
+        };
+
+        window.addEventListener(
+            "regigo:modules-changed",
+            reload,
+        );
+        window.addEventListener(
+            "regigo:events-changed",
+            reload,
+        );
+        window.addEventListener(
+            "regigo:company-changed",
+            reload,
+        );
+
+        const {
+            data: {
+                subscription,
+            },
+        } =
+            supabase.auth.onAuthStateChange(
+                () => {
+                    void loadContext();
+                },
+            );
+
+        return () => {
+            window.removeEventListener(
+                "regigo:modules-changed",
+                reload,
+            );
+            window.removeEventListener(
+                "regigo:events-changed",
+                reload,
+            );
+            window.removeEventListener(
+                "regigo:company-changed",
+                reload,
+            );
+            subscription.unsubscribe();
+        };
+    }, [loadContext]);
 
     async function logout() {
         if (loggingOut) {
@@ -853,520 +443,551 @@ export default function DashboardSidebar() {
         }
     }
 
-    const eventGroups:
-        NavGroup[] =
-        eventId
-            ? [
-                  {
-                      title:
-                          "Event Workspace",
-                      items: [
+    const eventGroups =
+        useMemo<NavGroup[]>(
+            () =>
+                eventId
+                    ? [
                           {
-                              href:
-                                  `/dashboard/events/${eventId}`,
-                              label:
-                                  "Event Overview",
-                              icon:
-                                  ClipboardList,
-                              exact:
-                                  true,
-                              roles:
-                                  allRoles,
-                              moduleKey:
-                                  "overview",
+                              title:
+                                  "Event Workspace",
+                              items: [
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}`,
+                                      label:
+                                          "Event Overview",
+                                      icon:
+                                          ClipboardList,
+                                      exact:
+                                          true,
+                                      moduleKeys:
+                                          [
+                                              "overview",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/guests`,
+                                      label:
+                                          "Guest List",
+                                      icon:
+                                          Users,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "guests",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/invitations`,
+                                      label:
+                                          "Guest Invitations",
+                                      icon:
+                                          UserRoundCheck,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "invitations",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/payments`,
+                                      label:
+                                          "Ticket Payments",
+                                      icon:
+                                          CreditCard,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "payments",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/tables`,
+                                      label:
+                                          "Tables",
+                                      icon:
+                                          Table2,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "tables",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/table-selection`,
+                                      label:
+                                          "Guest Table Selection",
+                                      icon:
+                                          TableProperties,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "table_selection",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/floor-plan`,
+                                      label:
+                                          "Floor Plan",
+                                      icon:
+                                          Map,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "floor_plan",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/speakers`,
+                                      label:
+                                          "Speakers",
+                                      icon:
+                                          Mic2,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "speakers",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/agenda`,
+                                      label:
+                                          "Agenda",
+                                      icon:
+                                          ListTodo,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "agenda",
+                                          ],
+                                  },
+                              ],
                           },
                           {
-                              href:
-                                  `/dashboard/events/${eventId}/guests`,
-                              label:
-                                  "Guest List",
-                              icon:
-                                  Users,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "guests",
+                              title:
+                                  "Event Day",
+                              items: [
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/scanner`,
+                                      label:
+                                          "QR Scanner",
+                                      icon:
+                                          QrCode,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canScan",
+                                      moduleKeys:
+                                          [
+                                              "scanner",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/check-in-printing`,
+                                      label:
+                                          "Check-in & Printing",
+                                      icon:
+                                          Printer,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canScan",
+                                      moduleKeys:
+                                          [
+                                              "checkin_printing",
+                                              "direct_printing",
+                                          ],
+                                      moduleMode:
+                                          "any",
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/badges`,
+                                      label:
+                                          "Badge Designer",
+                                      icon:
+                                          BadgeCheck,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "badges",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/lucky-draw`,
+                                      label:
+                                          "Lucky Draw",
+                                      icon:
+                                          Gift,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canScan",
+                                      moduleKeys:
+                                          [
+                                              "lucky_draw",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/games`,
+                                      label:
+                                          "Tournament",
+                                      icon:
+                                          Trophy,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canScan",
+                                      moduleKeys:
+                                          [
+                                              "tournament",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/analytics`,
+                                      label:
+                                          "Analytics",
+                                      icon:
+                                          BarChart3,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canViewReports",
+                                      moduleKeys:
+                                          [
+                                              "analytics",
+                                          ],
+                                  },
+                              ],
                           },
                           {
-                              href:
-                                  `/dashboard/events/${eventId}/invitations`,
-                              label:
-                                  "Guest Invitations",
-                              icon:
-                                  UserRoundCheck,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "invitations",
+                              title:
+                                  "Administration",
+                              items: [
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/registration`,
+                                      label:
+                                          "Registration Builder",
+                                      icon:
+                                          ClipboardList,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "registration",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/website`,
+                                      label:
+                                          "Website Builder",
+                                      icon:
+                                          Globe2,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "website",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/branding`,
+                                      label:
+                                          "Branding",
+                                      icon:
+                                          Palette,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "branding",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/emails`,
+                                      label:
+                                          "Email Centre",
+                                      icon:
+                                          Mail,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "emails",
+                                          ],
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/settings`,
+                                      label:
+                                          "Settings & Add-ons",
+                                      icon:
+                                          Puzzle,
+                                      exact:
+                                          true,
+                                      platformAdminOnly:
+                                          true,
+                                  },
+                                  {
+                                      href:
+                                          `/dashboard/events/${eventId}/lucky-draw/settings`,
+                                      label:
+                                          "Lucky Draw Settings",
+                                      icon:
+                                          Settings,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "lucky_draw_settings",
+                                          ],
+                                  },
+                              ],
                           },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/tickets`,
-                              label:
-                                  "Ticket Types",
-                              icon:
-                                  Ticket,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "tickets",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/payments`,
-                              label:
-                                  "Ticket Payments",
-                              icon:
-                                  CreditCard,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "payments",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/tables`,
-                              label:
-                                  "Tables",
-                              icon:
-                                  Table2,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "tables",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/table-selection`,
-                              label:
-                                  "Guest Table Selection",
-                              icon:
-                                  TableProperties,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "table_selection",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/floor-plan`,
-                              label:
-                                  "Floor Plan",
-                              icon:
-                                  Map,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "floor_plan",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/speakers`,
-                              label:
-                                  "Speakers",
-                              icon:
-                                  Mic2,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "speakers",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/agenda`,
-                              label:
-                                  "Agenda",
-                              icon:
-                                  ListTodo,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "agenda",
-                          },
-                      ],
-                  },
-                  {
-                      title:
-                          "Event Day",
-                      items: [
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/scanner`,
-                              label:
-                                  "QR Scanner",
-                              icon:
-                                  QrCode,
-                              exact:
-                                  true,
-                              roles:
-                                  scanners,
-                              moduleKey:
-                                  "scanner",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/check-in-printing`,
-                              label:
-                                  "Check-in & Printing",
-                              icon:
-                                  Printer,
-                              exact:
-                                  true,
-                              roles:
-                                  scanners,
-                              moduleKeys:
-                                  [
-                                      "checkin_printing",
-                                      "direct_printing",
-                                  ],
-                              moduleMode:
-                                  "any",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/badges`,
-                              label:
-                                  "Badge Designer",
-                              icon:
-                                  BadgeCheck,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "badges",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/lucky-draw`,
-                              label:
-                                  "Lucky Draw",
-                              icon:
-                                  Gift,
-                              exact:
-                                  true,
-                              roles:
-                                  scanners,
-                              moduleKey:
-                                  "lucky_draw",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/games`,
-                              label:
-                                  "Tournament",
-                              icon:
-                                  Trophy,
-                              exact:
-                                  true,
-                              roles:
-                                  scanners,
-                              moduleKey:
-                                  "tournament",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/analytics`,
-                              label:
-                                  "Analytics",
-                              icon:
-                                  BarChart3,
-                              exact:
-                                  true,
-                              roles:
-                                  reportViewers,
-                              moduleKey:
-                                  "analytics",
-                          },
-                      ],
-                  },
-                  {
-                      title:
-                          "Administration",
-                      items: [
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/registration`,
-                              label:
-                                  "Registration Builder",
-                              icon:
-                                  ClipboardList,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "registration",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/website`,
-                              label:
-                                  "Website Builder",
-                              icon:
-                                  Globe2,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "website",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/branding`,
-                              label:
-                                  "Branding",
-                              icon:
-                                  Palette,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "branding",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/emails`,
-                              label:
-                                  "Email Centre",
-                              icon:
-                                  Mail,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "emails",
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/settings`,
-                              label:
-                                  "Settings & Add-ons",
-                              icon:
-                                  Puzzle,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKeys:
-                                  [
-                                      "settings",
-                                      "addons",
-                                  ],
-                              moduleMode:
-                                  "any",
-                              alwaysVisibleForAdmin:
-                                  true,
-                          },
-                          {
-                              href:
-                                  `/dashboard/events/${eventId}/lucky-draw/settings`,
-                              label:
-                                  "Lucky Draw Settings",
-                              icon:
-                                  Settings,
-                              exact:
-                                  true,
-                              roles:
-                                  eventManagers,
-                              moduleKey:
-                                  "lucky_draw_settings",
-                          },
-                      ],
-                  },
-              ]
-            : [];
+                      ]
+                    : [],
+            [eventId],
+        );
 
-    const groups: NavGroup[] = [
-        {
-            title: "Main",
-            items: [
+    const navigation =
+        useMemo<NavGroup[]>(
+            () => [
                 {
-                    href:
-                        "/dashboard",
-                    label:
-                        "Dashboard",
-                    icon: Home,
-                    exact: true,
-                    roles: allRoles,
+                    title: "Main",
+                    items: [
+                        {
+                            href:
+                                "/dashboard",
+                            label:
+                                "Dashboard",
+                            icon: Home,
+                            exact: true,
+                        },
+                        {
+                            href:
+                                "/dashboard/events",
+                            label:
+                                "My Events",
+                            icon:
+                                CalendarDays,
+                            exact: true,
+                        },
+                        {
+                            href:
+                                "/dashboard/events/new",
+                            label:
+                                "Create Event",
+                            icon:
+                                PlusCircle,
+                            exact: true,
+                            permission:
+                                "canCreateEvent",
+                        },
+                    ],
                 },
                 {
-                    href:
-                        "/dashboard/events",
-                    label:
-                        "My Events",
-                    icon:
-                        CalendarDays,
-                    exact: true,
-                    roles: allRoles,
+                    title:
+                        "Management",
+                    items: [
+                        {
+                            href:
+                                "/dashboard/users",
+                            label:
+                                "Users & Permissions",
+                            icon: Users,
+                            exact: true,
+                            permission:
+                                "canManageUsers",
+                        },
+                        {
+                            href:
+                                "/dashboard/roles",
+                            label:
+                                "Roles & Permissions",
+                            icon:
+                                ShieldCheck,
+                            exact: true,
+                            permission:
+                                "canManageRoles",
+                        },
+                        {
+                            href:
+                                "/dashboard/payment-setup",
+                            label:
+                                "Stripe Payment Setup",
+                            icon:
+                                WalletCards,
+                            exact: true,
+                            permission:
+                                "canManageStripe",
+                        },
+                        {
+                            href:
+                                "/dashboard/company-plans",
+                            label:
+                                "Company Plans",
+                            icon:
+                                Building2,
+                            exact: true,
+                            platformAdminOnly:
+                                true,
+                        },
+                    ],
                 },
+                ...eventGroups,
                 {
-                    href:
-                        "/dashboard/events/new",
-                    label:
-                        "Create Event",
-                    icon:
-                        PlusCircle,
-                    exact: true,
-                    roles: adminOnly,
+                    title:
+                        "Account",
+                    items: [
+                        {
+                            href:
+                                "/dashboard/profile",
+                            label:
+                                "My Profile",
+                            icon:
+                                UserCircle,
+                            exact: true,
+                        },
+                        {
+                            href:
+                                "/dashboard/settings",
+                            label:
+                                "Settings",
+                            icon:
+                                Settings,
+                            exact: true,
+                            platformAdminOnly:
+                                true,
+                        },
+                    ],
                 },
             ],
-        },
-        {
-            title:
-                "Management",
-            items: [
-                {
-                    href:
-                        "/dashboard/users",
-                    label:
-                        "Users & Permissions",
-                    icon: Users,
-                    exact: true,
-                    roles: adminOnly,
-                },
-                {
-                    href:
-                        "/dashboard/roles",
-                    label:
-                        "Roles & Permissions",
-                    icon:
-                        ShieldCheck,
-                    exact: true,
-                    roles: adminOnly,
-                },
-                {
-                    href:
-                        "/dashboard/payment-setup",
-                    label:
-                        "Stripe Payment Setup",
-                    icon:
-                        WalletCards,
-                    exact: true,
-                    roles: adminOnly,
-                },
-            ],
-        },
-        ...eventGroups,
-        {
-            title: "Account",
-            items: [
-                {
-                    href:
-                        "/dashboard/profile",
-                    label:
-                        "My Profile",
-                    icon:
-                        UserCircle,
-                    exact: true,
-                    roles: allRoles,
-                },
-                {
-                    href:
-                        "/dashboard/settings",
-                    label:
-                        "Settings",
-                    icon:
-                        Settings,
-                    exact: true,
-                    roles: adminOnly,
-                },
-            ],
-        },
-    ];
+            [eventGroups],
+        );
 
     function canShow(
         item: NavItem,
     ) {
+        if (!context) {
+            return false;
+        }
+
         if (
-            loadingProfile ||
-            !profile
+            item.platformAdminOnly &&
+            !context.profile
+                .isPlatformAdmin
         ) {
             return false;
         }
 
         if (
-            !item.roles.includes(
-                profile.role,
-            )
+            item.permission
         ) {
-            return false;
+            const isManagementItem =
+                item.permission ===
+                    "canManageUsers" ||
+                item.permission ===
+                    "canManageRoles" ||
+                item.permission ===
+                    "canManageStripe" ||
+                item.permission ===
+                    "canManageWorkspace";
+
+            const legacyAdminFallback =
+                isManagementItem &&
+                (
+                    context.profile
+                        .isPlatformAdmin ||
+                    context.profile
+                        .role ===
+                        "admin"
+                );
+
+            if (
+                !context.permissions[
+                    item.permission
+                ] &&
+                !legacyAdminFallback
+            ) {
+                return false;
+            }
         }
 
-        // Company and platform admins always retain management/settings links.
         if (
-            profile.role ===
-                "admin" &&
-            (
-                item.alwaysVisibleForAdmin ||
-                !item.moduleKey &&
-                !item.moduleKeys
-            )
+            item.alwaysVisibleForManagers &&
+            context.permissions
+                .canManageEvent
         ) {
             return true;
         }
 
         if (
-            !eventId ||
-            (
-                !item.moduleKey &&
-                !item.moduleKeys
-            )
+            !item.moduleKeys ||
+            item.moduleKeys
+                .length === 0
         ) {
             return true;
         }
 
-        if (
-            loadingModules
-        ) {
-            return (
-                profile.role ===
-                "admin"
-            );
-        }
-
-        if (
-            item.alwaysVisibleForAdmin &&
-            profile.role ===
-                "admin"
-        ) {
-            return true;
-        }
-
-        const keys =
-            item.moduleKeys ||
-            (
-                item.moduleKey
-                    ? [
-                          item.moduleKey,
-                      ]
-                    : []
-            );
         const states =
-            keys.map(
+            item.moduleKeys.map(
                 (key) =>
-                    enabledModules[
+                    context.modules?.[
                         key
                     ] !== false,
             );
@@ -1380,6 +1001,9 @@ export default function DashboardSidebar() {
                   Boolean,
               );
     }
+
+    const showLabels =
+        !collapsed;
 
     return (
         <>
@@ -1399,7 +1023,7 @@ export default function DashboardSidebar() {
             <aside
                 aria-label="Dashboard navigation"
                 className={[
-                    "fixed inset-y-0 left-0 z-50 flex h-[100dvh] flex-col border-r border-slate-200 bg-white shadow-2xl transition-[width,transform] duration-300 lg:shadow-none",
+                    "fixed inset-y-0 left-0 z-50 flex h-[100dvh] flex-col border-r border-slate-200 bg-white shadow-2xl transition-[width,transform] duration-300 ease-out lg:shadow-none",
                     "w-[min(90vw,20rem)] sm:w-80",
                     collapsed
                         ? "lg:w-24"
@@ -1435,7 +1059,7 @@ export default function DashboardSidebar() {
                                     false,
                                 )
                             }
-                            className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] font-black text-white lg:flex"
+                            className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] font-black text-white shadow-lg lg:flex"
                         >
                             R
                         </Link>
@@ -1453,15 +1077,19 @@ export default function DashboardSidebar() {
                                 !collapsed,
                             )
                         }
-                        className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5] lg:flex"
+                        className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5] transition hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/30 lg:flex"
                     >
                         {collapsed ? (
                             <ChevronRight
-                                size={20}
+                                size={
+                                    20
+                                }
                             />
                         ) : (
                             <ChevronLeft
-                                size={20}
+                                size={
+                                    20
+                                }
                             />
                         )}
                     </button>
@@ -1474,26 +1102,80 @@ export default function DashboardSidebar() {
                                 false,
                             )
                         }
-                        className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5] lg:hidden"
+                        className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F5FF] text-[#4F46E5] focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/30 lg:hidden"
                     >
                         <X size={21} />
                     </button>
                 </header>
 
-                <nav className="mt-5 min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pb-4 sm:px-4">
-                    {loadingProfile ? (
-                        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-400">
-                            <span
-                                className={
-                                    collapsed
-                                        ? "lg:hidden"
-                                        : ""
-                                }
-                            >
-                                Loading menu…
+                {context && (
+                    <div
+                        className={[
+                            "mx-4 mt-5 rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-4 sm:mx-5",
+                            collapsed
+                                ? "lg:hidden"
+                                : "",
+                        ].join(" ")}
+                    >
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#4F46E5] shadow-sm">
+                                {context.event ? (
+                                    <CalendarDays
+                                        size={
+                                            19
+                                        }
+                                    />
+                                ) : (
+                                    <Building2
+                                        size={
+                                            19
+                                        }
+                                    />
+                                )}
                             </span>
+
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#4F46E5]">
+                                    {context.event
+                                        ? "Current Event"
+                                        : context.profile
+                                              .isPlatformAdmin
+                                          ? "Platform Workspace"
+                                          : "Company Workspace"}
+                                </p>
+
+                                <p className="mt-1 truncate text-sm font-black text-slate-900">
+                                    {context.event
+                                        ?.name ||
+                                        context.company
+                                            ?.name ||
+                                        "RegiGo"}
+                                </p>
+
+                                {context.event &&
+                                    context.event
+                                        .companyName && (
+                                        <p className="mt-1 truncate text-xs text-slate-500">
+                                            {
+                                                context
+                                                    .event
+                                                    .companyName
+                                            }
+                                        </p>
+                                    )}
+                            </div>
                         </div>
-                    ) : menuError ? (
+                    </div>
+                )}
+
+                <nav className="mt-5 min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pb-4 sm:px-4">
+                    {loading ? (
+                        <SidebarSkeleton
+                            collapsed={
+                                collapsed
+                            }
+                        />
+                    ) : error ? (
                         <div
                             className={[
                                 "rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700",
@@ -1502,10 +1184,10 @@ export default function DashboardSidebar() {
                                     : "",
                             ].join(" ")}
                         >
-                            {menuError}
+                            {error}
                         </div>
                     ) : (
-                        groups.map(
+                        navigation.map(
                             (group) => {
                                 const items =
                                     group.items.filter(
@@ -1520,7 +1202,7 @@ export default function DashboardSidebar() {
                                 }
 
                                 return (
-                                    <NavGroup
+                                    <SidebarGroup
                                         key={
                                             group.title
                                         }
@@ -1535,14 +1217,14 @@ export default function DashboardSidebar() {
                                             (
                                                 item,
                                             ) => (
-                                                <SideLink
+                                                <SidebarLink
                                                     key={
                                                         item.href
                                                     }
                                                     item={
                                                         item
                                                     }
-                                                    active={isActive(
+                                                    active={itemIsActive(
                                                         pathname,
                                                         item,
                                                     )}
@@ -1557,7 +1239,7 @@ export default function DashboardSidebar() {
                                                 />
                                             ),
                                         )}
-                                    </NavGroup>
+                                    </SidebarGroup>
                                 );
                             },
                         )
@@ -1565,7 +1247,7 @@ export default function DashboardSidebar() {
                 </nav>
 
                 <footer className="shrink-0 border-t border-slate-100 px-4 pt-4 sm:px-5">
-                    {profile && (
+                    {context && (
                         <div
                             className={[
                                 "mb-3 rounded-2xl bg-[#F7F5FF] px-4 py-3",
@@ -1575,20 +1257,38 @@ export default function DashboardSidebar() {
                             ].join(" ")}
                         >
                             <p className="truncate text-sm font-black text-slate-800">
-                                {profile.full_name ||
+                                {context.profile
+                                    .fullName ||
                                     "User"}
                             </p>
                             <p className="mt-0.5 truncate text-xs text-slate-500">
-                                {profile.email}
+                                {
+                                    context
+                                        .profile
+                                        .email
+                                }
                             </p>
-                            <p className="mt-2 text-xs font-black capitalize text-[#4F46E5]">
-                                {profile.is_platform_admin
-                                    ? "Platform Admin"
-                                    : profile.role ===
-                                        "admin"
-                                      ? "Company Admin"
-                                      : profile.role}
-                            </p>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                                <span className="truncate text-xs font-black capitalize text-[#4F46E5]">
+                                    {context.profile
+                                        .isPlatformAdmin
+                                        ? "Platform Admin"
+                                        : context
+                                              .profile
+                                              .role}
+                                </span>
+
+                                {context.company
+                                    ?.name && (
+                                    <span className="max-w-[55%] truncate text-right text-[11px] font-bold text-slate-400">
+                                        {
+                                            context
+                                                .company
+                                                .name
+                                        }
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1601,21 +1301,23 @@ export default function DashboardSidebar() {
                             loggingOut
                         }
                         className={[
-                            "flex min-h-11 w-full items-center rounded-2xl px-4 py-3 font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-60",
+                            "flex min-h-11 w-full items-center rounded-2xl px-4 py-3 font-bold text-red-600 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200 disabled:opacity-60",
                             collapsed
                                 ? "gap-3 lg:justify-center lg:px-3"
                                 : "gap-3",
                         ].join(" ")}
                     >
                         <LogOut
-                            size={20}
+                            size={
+                                20
+                            }
                             className="shrink-0"
                         />
                         <span
                             className={
-                                collapsed
-                                    ? "lg:hidden"
-                                    : ""
+                                showLabels
+                                    ? ""
+                                    : "lg:hidden"
                             }
                         >
                             {loggingOut
@@ -1629,14 +1331,15 @@ export default function DashboardSidebar() {
     );
 }
 
-function NavGroup({
+function SidebarGroup({
     title,
     collapsed,
     children,
 }: {
     title: string;
     collapsed: boolean;
-    children: ReactNode;
+    children:
+        React.ReactNode;
 }) {
     return (
         <section>
@@ -1650,6 +1353,7 @@ function NavGroup({
             >
                 {title}
             </p>
+
             <div className="space-y-1">
                 {children}
             </div>
@@ -1657,7 +1361,7 @@ function NavGroup({
     );
 }
 
-function SideLink({
+function SidebarLink({
     item,
     active,
     collapsed,
@@ -1686,12 +1390,12 @@ function SideLink({
             }
             onClick={onClick}
             className={[
-                "flex min-h-11 items-center rounded-2xl px-4 py-3 text-sm font-bold transition",
+                "group flex min-h-11 items-center rounded-2xl px-4 py-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/25",
                 collapsed
                     ? "gap-3 lg:justify-center lg:px-3"
                     : "gap-3",
                 active
-                    ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-lg"
+                    ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-lg shadow-indigo-200/70"
                     : "text-slate-700 hover:bg-[#EEF2FF] hover:text-[#4F46E5]",
             ].join(" ")}
         >
@@ -1710,5 +1414,50 @@ function SideLink({
                 {item.label}
             </span>
         </Link>
+    );
+}
+
+function SidebarSkeleton({
+    collapsed,
+}: {
+    collapsed: boolean;
+}) {
+    return (
+        <div className="space-y-6 px-1">
+            {[0, 1, 2].map(
+                (group) => (
+                    <div
+                        key={
+                            group
+                        }
+                        className="space-y-2"
+                    >
+                        <div
+                            className={[
+                                "h-3 w-24 animate-pulse rounded-full bg-slate-100",
+                                collapsed
+                                    ? "lg:hidden"
+                                    : "",
+                            ].join(" ")}
+                        />
+                        {[0, 1, 2].map(
+                            (item) => (
+                                <div
+                                    key={
+                                        item
+                                    }
+                                    className={[
+                                        "h-11 animate-pulse rounded-2xl bg-slate-100",
+                                        collapsed
+                                            ? "lg:mx-auto lg:w-11"
+                                            : "w-full",
+                                    ].join(" ")}
+                                />
+                            ),
+                        )}
+                    </div>
+                ),
+            )}
+        </div>
     );
 }

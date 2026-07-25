@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Logo from "./Logo";
+import Logo from "@/components/layout/logo";
 import Button from "../ui/Button";
 
 export default function Navbar() {

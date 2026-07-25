@@ -1,237 +1,1040 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import {
+    NextResponse,
+} from "next/server";
+import {
+    createClient,
+    type SupabaseClient,
+    type User,
+} from "@supabase/supabase-js";
 
-function getSupabaseUrl() {
-    const value = process.env.NEXT_PUBLIC_SUPABASE_URL;
+export const runtime =
+    "nodejs";
+export const dynamic =
+    "force-dynamic";
+export const revalidate =
+    0;
 
-    if (!value) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+type ProfileRow = {
+    id: string;
+    full_name:
+        | string
+        | null;
+    email:
+        | string
+        | null;
+    role:
+        | string
+        | null;
+    platform_role:
+        | string
+        | null;
+    company_id:
+        | string
+        | null;
+};
+
+type RequesterContext = {
+    user: User;
+    profile:
+        | ProfileRow
+        | null;
+    isPlatformAdmin: boolean;
+    isCompanyAdmin: boolean;
+    companyId:
+        | string
+        | null;
+};
+
+type DeleteRequest = {
+    userId?: unknown;
+};
+
+type CleanupResult = {
+    table: string;
+    column: string;
+    affected:
+        | number
+        | null;
+};
+
+class DeleteUserError extends Error {
+    status: number;
+
+    constructor(
+        message: string,
+        status = 400,
+    ) {
+        super(
+            message,
+        );
+        this.name =
+            "DeleteUserError";
+        this.status =
+            status;
     }
-
-    return value;
 }
 
-function getSupabaseAnonKey() {
-    const value = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const COMPATIBILITY_CODES =
+    new Set([
+        "42P01",
+        "42703",
+        "PGRST116",
+        "PGRST204",
+        "PGRST205",
+    ]);
 
-    if (!value) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-    }
-
-    return value;
-}
-
-function getServiceRoleKey() {
-    const value = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!value) {
-        throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
-    }
-
-    return value;
-}
-
-function createSupabaseAdmin() {
-    return createClient(getSupabaseUrl(), getServiceRoleKey(), {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    });
-}
-
-function createAuthedSupabase(accessToken: string) {
-    return createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
-        global: {
+function reply(
+    body: Record<
+        string,
+        unknown
+    >,
+    status = 200,
+) {
+    return NextResponse.json(
+        body,
+        {
+            status,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                "Cache-Control":
+                    "no-store, no-cache, must-revalidate, max-age=0",
             },
         },
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    });
-}
-
-async function requireAdmin(request: Request) {
-    const authHeader = request.headers.get("authorization") || "";
-    const accessToken = authHeader.replace("Bearer ", "").trim();
-
-    if (!accessToken) {
-        return {
-            error: "Missing authorization token.",
-            status: 401,
-            adminClient: null,
-            userId: null,
-        };
-    }
-
-    const authedClient = createAuthedSupabase(accessToken);
-    const adminClient = createSupabaseAdmin();
-
-    const {
-        data: { user },
-        error: userError,
-    } = await authedClient.auth.getUser();
-
-    if (userError || !user) {
-        return {
-            error: "Invalid or expired session.",
-            status: 401,
-            adminClient: null,
-            userId: null,
-        };
-    }
-
-    const { data: profile, error: profileError } = await adminClient
-        .from("profiles")
-        .select("id, role")
-        .eq("id", user.id)
-        .single();
-
-    if (profileError || !profile) {
-        return {
-            error: "Unable to verify admin profile.",
-            status: 403,
-            adminClient: null,
-            userId: null,
-        };
-    }
-
-    if (profile.role !== "admin") {
-        return {
-            error: "Only admin users can delete users.",
-            status: 403,
-            adminClient: null,
-            userId: null,
-        };
-    }
-
-    return {
-        error: null,
-        status: 200,
-        adminClient,
-        userId: user.id,
-    };
-}
-
-function shouldIgnoreOptionalDeleteError(error: any) {
-    const message = String(error?.message || "").toLowerCase();
-
-    return (
-        message.includes("does not exist") ||
-        message.includes("could not find") ||
-        message.includes("relation") ||
-        message.includes("schema cache")
     );
 }
 
-async function safeDeleteRows({
-    adminClient,
-    table,
-    column,
-    userId,
-}: {
-    adminClient: ReturnType<typeof createSupabaseAdmin>;
-    table: string;
-    column: string;
-    userId: string;
-}) {
-    const { error } = await adminClient.from(table).delete().eq(column, userId);
+function normalise(
+    value: unknown,
+) {
+    return String(
+        value ||
+            "",
+    )
+        .trim()
+        .toLowerCase()
+        .replace(
+            /\s+/g,
+            "_",
+        );
+}
 
-    if (error && !shouldIgnoreOptionalDeleteError(error)) {
-        console.warn(`Failed to clean ${table}.${column}:`, error.message);
+function isUuid(
+    value: string,
+) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+    );
+}
+
+function isCompatibilityError(
+    error:
+        | {
+              code?: unknown;
+          }
+        | null
+        | undefined,
+) {
+    return COMPATIBILITY_CODES.has(
+        String(
+            error?.code ||
+                "",
+        ),
+    );
+}
+
+function serviceClient() {
+    const url =
+        process.env
+            .NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey =
+        process.env
+            .SUPABASE_SERVICE_ROLE_KEY;
+
+    if (
+        !url ||
+        !serviceRoleKey
+    ) {
+        throw new DeleteUserError(
+            "Supabase server configuration is incomplete.",
+            500,
+        );
+    }
+
+    return createClient(
+        url,
+        serviceRoleKey,
+        {
+            auth: {
+                autoRefreshToken:
+                    false,
+                persistSession:
+                    false,
+            },
+        },
+    );
+}
+
+function bearerToken(
+    request: Request,
+) {
+    const authorization =
+        request.headers.get(
+            "authorization",
+        ) ||
+        "";
+    const match =
+        authorization.match(
+            /^Bearer\s+(.+)$/i,
+        );
+
+    return match?.[1]
+        ?.trim() ||
+        "";
+}
+
+async function readProfile(
+    admin: SupabaseClient,
+    userId: string,
+) {
+    const primary =
+        await admin
+            .from(
+                "profiles",
+            )
+            .select(
+                "id, full_name, email, role, platform_role, company_id",
+            )
+            .eq(
+                "id",
+                userId,
+            )
+            .maybeSingle();
+
+    if (
+        primary.error &&
+        String(
+            primary.error
+                .code ||
+                "",
+        ) ===
+            "42703"
+    ) {
+        const fallback =
+            await admin
+                .from(
+                    "profiles",
+                )
+                .select(
+                    "id, full_name, email, role, company_id",
+                )
+                .eq(
+                    "id",
+                    userId,
+                )
+                .maybeSingle();
+
+        if (
+            fallback.error &&
+            !isCompatibilityError(
+                fallback.error,
+            )
+        ) {
+            throw new DeleteUserError(
+                fallback.error
+                    .message,
+                500,
+            );
+        }
+
+        if (
+            !fallback.data
+        ) {
+            return null;
+        }
+
+        return {
+            ...fallback.data,
+            platform_role:
+                null,
+        } as unknown as ProfileRow;
+    }
+
+    if (
+        primary.error
+    ) {
+        if (
+            isCompatibilityError(
+                primary.error,
+            )
+        ) {
+            return null;
+        }
+
+        throw new DeleteUserError(
+            primary.error
+                .message,
+            500,
+        );
+    }
+
+    return (
+        primary.data ||
+        null
+    ) as unknown as
+        | ProfileRow
+        | null;
+}
+
+async function requesterContext(
+    request: Request,
+    admin: SupabaseClient,
+): Promise<RequesterContext> {
+    const token =
+        bearerToken(
+            request,
+        );
+
+    if (
+        !token
+    ) {
+        throw new DeleteUserError(
+            "Your login session could not be verified.",
+            401,
+        );
+    }
+
+    const {
+        data: {
+            user,
+        },
+        error:
+            userError,
+    } =
+        await admin.auth.getUser(
+            token,
+        );
+
+    if (
+        userError ||
+        !user
+    ) {
+        throw new DeleteUserError(
+            "Your login session has expired. Sign in again.",
+            401,
+        );
+    }
+
+    const profile =
+        await readProfile(
+            admin,
+            user.id,
+        );
+    const platformRole =
+        normalise(
+            profile
+                ?.platform_role,
+        );
+    const profileRole =
+        normalise(
+            profile?.role,
+        );
+    const companyId =
+        profile?.company_id ||
+        null;
+    const isPlatformAdmin =
+        [
+            "super_admin",
+            "platform_admin",
+            "platform-admin",
+        ].includes(
+            platformRole,
+        ) ||
+        (
+            !companyId &&
+            [
+                "super_admin",
+                "platform_admin",
+            ].includes(
+                profileRole,
+            )
+        );
+    const isCompanyAdmin =
+        Boolean(
+            companyId,
+        ) &&
+        [
+            "admin",
+            "administrator",
+            "owner",
+            "company_admin",
+            "company-admin",
+        ].includes(
+            profileRole,
+        );
+
+    if (
+        !isPlatformAdmin &&
+        !isCompanyAdmin
+    ) {
+        throw new DeleteUserError(
+            "Only a RegiGo platform administrator or company administrator can delete users.",
+            403,
+        );
+    }
+
+    return {
+        user,
+        profile,
+        isPlatformAdmin,
+        isCompanyAdmin,
+        companyId,
+    };
+}
+
+async function authUserById(
+    admin: SupabaseClient,
+    userId: string,
+) {
+    const result =
+        await admin.auth.admin.getUserById(
+            userId,
+        );
+
+    if (
+        result.error
+    ) {
+        const message =
+            result.error.message
+                .toLowerCase();
+
+        if (
+            message.includes(
+                "not found",
+            ) ||
+            message.includes(
+                "no user",
+            )
+        ) {
+            return null;
+        }
+
+        throw new DeleteUserError(
+            result.error
+                .message,
+            500,
+        );
+    }
+
+    return (
+        result.data.user ||
+        null
+    );
+}
+
+async function verifyAccess({
+    requester,
+    targetProfile,
+}: {
+    requester:
+        RequesterContext;
+    targetProfile:
+        | ProfileRow
+        | null;
+}) {
+    if (
+        requester.isPlatformAdmin
+    ) {
+        return;
+    }
+
+    if (
+        !requester.companyId
+    ) {
+        throw new DeleteUserError(
+            "Your account is not assigned to an event company.",
+            403,
+        );
+    }
+
+    if (
+        !targetProfile ||
+        targetProfile.company_id !==
+            requester.companyId
+    ) {
+        throw new DeleteUserError(
+            "You can delete only users belonging to your own event company.",
+            403,
+        );
+    }
+
+    const targetPlatformRole =
+        normalise(
+            targetProfile
+                .platform_role,
+        );
+
+    if (
+        [
+            "super_admin",
+            "platform_admin",
+            "platform-admin",
+        ].includes(
+            targetPlatformRole,
+        )
+    ) {
+        throw new DeleteUserError(
+            "A company administrator cannot delete the RegiGo platform administrator.",
+            403,
+        );
     }
 }
 
-export async function DELETE(request: Request) {
+async function storageObjectCount(
+    admin: SupabaseClient,
+    userId: string,
+) {
+    const storage =
+        admin.schema(
+            "storage",
+        );
+
+    const ownerIdResult =
+        await storage
+            .from(
+                "objects",
+            )
+            .select(
+                "id",
+                {
+                    count:
+                        "exact",
+                    head:
+                        true,
+                },
+            )
+            .eq(
+                "owner_id",
+                userId,
+            );
+
+    if (
+        !ownerIdResult.error
+    ) {
+        return ownerIdResult.count ||
+            0;
+    }
+
+    if (
+        !isCompatibilityError(
+            ownerIdResult.error,
+        )
+    ) {
+        throw new DeleteUserError(
+            ownerIdResult.error
+                .message,
+            500,
+        );
+    }
+
+    const ownerResult =
+        await storage
+            .from(
+                "objects",
+            )
+            .select(
+                "id",
+                {
+                    count:
+                        "exact",
+                    head:
+                        true,
+                },
+            )
+            .eq(
+                "owner",
+                userId,
+            );
+
+    if (
+        ownerResult.error
+    ) {
+        if (
+            isCompatibilityError(
+                ownerResult.error,
+            )
+        ) {
+            return 0;
+        }
+
+        throw new DeleteUserError(
+            ownerResult.error
+                .message,
+            500,
+        );
+    }
+
+    return ownerResult.count ||
+        0;
+}
+
+async function deleteRows({
+    admin,
+    table,
+    column,
+    value,
+}: {
+    admin:
+        SupabaseClient;
+    table: string;
+    column: string;
+    value: string;
+}): Promise<CleanupResult> {
+    const result =
+        await admin
+            .from(
+                table,
+            )
+            .delete({
+                count:
+                    "exact",
+            })
+            .eq(
+                column,
+                value,
+            );
+
+    if (
+        result.error
+    ) {
+        if (
+            isCompatibilityError(
+                result.error,
+            )
+        ) {
+            return {
+                table,
+                column,
+                affected:
+                    null,
+            };
+        }
+
+        throw new DeleteUserError(
+            `Unable to remove ${table}.${column}: ${result.error.message}`,
+            500,
+        );
+    }
+
+    return {
+        table,
+        column,
+        affected:
+            result.count ??
+            0,
+    };
+}
+
+async function clearCompanyOwnership(
+    admin: SupabaseClient,
+    userId: string,
+) {
+    const result =
+        await admin
+            .from(
+                "companies",
+            )
+            .update({
+                owner_user_id:
+                    null,
+                updated_at:
+                    new Date()
+                        .toISOString(),
+            })
+            .eq(
+                "owner_user_id",
+                userId,
+            );
+
+    if (
+        result.error &&
+        !isCompatibilityError(
+            result.error,
+        )
+    ) {
+        throw new DeleteUserError(
+            `Unable to clear company ownership: ${result.error.message}`,
+            500,
+        );
+    }
+}
+
+async function cleanupReferences({
+    admin,
+    userId,
+    email,
+}: {
+    admin:
+        SupabaseClient;
+    userId: string;
+    email: string;
+}) {
+    await clearCompanyOwnership(
+        admin,
+        userId,
+    );
+
+    const userReferences = [
+        [
+            "event_members",
+            "profile_id",
+        ],
+        [
+            "event_members",
+            "user_id",
+        ],
+        [
+            "company_members",
+            "user_id",
+        ],
+        [
+            "company_members",
+            "profile_id",
+        ],
+        [
+            "staff",
+            "profile_id",
+        ],
+        [
+            "staff",
+            "user_id",
+        ],
+        [
+            "user_event_assignments",
+            "user_id",
+        ],
+        [
+            "user_event_assignments",
+            "profile_id",
+        ],
+        [
+            "event_user_permissions",
+            "user_id",
+        ],
+        [
+            "event_user_permissions",
+            "profile_id",
+        ],
+        [
+            "team_members",
+            "user_id",
+        ],
+        [
+            "team_members",
+            "profile_id",
+        ],
+        [
+            "profiles",
+            "id",
+        ],
+    ] as const;
+
+    const cleanup:
+        CleanupResult[] =
+        [];
+
+    for (const [
+        table,
+        column,
+    ] of userReferences) {
+        cleanup.push(
+            await deleteRows({
+                admin,
+                table,
+                column,
+                value:
+                    userId,
+            }),
+        );
+    }
+
+    if (
+        email
+    ) {
+        const emailReferences = [
+            [
+                "company_invitations",
+                "email",
+            ],
+            [
+                "user_invitations",
+                "email",
+            ],
+            [
+                "team_invitations",
+                "email",
+            ],
+        ] as const;
+
+        for (const [
+            table,
+            column,
+        ] of emailReferences) {
+            cleanup.push(
+                await deleteRows({
+                    admin,
+                    table,
+                    column,
+                    value:
+                        email,
+                }),
+            );
+        }
+    }
+
+    return cleanup;
+}
+
+async function verifyDeleted(
+    admin: SupabaseClient,
+    userId: string,
+) {
+    const authResult =
+        await admin.auth.admin.getUserById(
+            userId,
+        );
+    const authDeleted =
+        Boolean(
+            authResult.error,
+        ) ||
+        !authResult.data
+            .user;
+
+    const profileResult =
+        await admin
+            .from(
+                "profiles",
+            )
+            .select(
+                "id",
+            )
+            .eq(
+                "id",
+                userId,
+            )
+            .maybeSingle();
+    const profileDeleted =
+        !profileResult.data;
+
+    if (
+        profileResult.error &&
+        !isCompatibilityError(
+            profileResult.error,
+        )
+    ) {
+        throw new DeleteUserError(
+            profileResult.error
+                .message,
+            500,
+        );
+    }
+
+    return {
+        authDeleted,
+        profileDeleted,
+    };
+}
+
+export async function DELETE(
+    request: Request,
+) {
     try {
-        const adminCheck = await requireAdmin(request);
+        const admin =
+            serviceClient();
+        const requester =
+            await requesterContext(
+                request,
+                admin,
+            );
+        const body =
+            (await request.json()) as DeleteRequest;
+        const userId =
+            String(
+                body.userId ||
+                    "",
+            ).trim();
 
-        if (adminCheck.error || !adminCheck.adminClient || !adminCheck.userId) {
-            return NextResponse.json(
-                { error: adminCheck.error },
-                { status: adminCheck.status }
+        if (
+            !userId ||
+            !isUuid(
+                userId,
+            )
+        ) {
+            throw new DeleteUserError(
+                "A valid user ID is required.",
             );
         }
 
-        const body = await request.json();
-        const userId = String(body.userId || body.user_id || "").trim();
-
-        if (!userId) {
-            return NextResponse.json(
-                { error: "Missing userId." },
-                { status: 400 }
+        if (
+            requester.user.id ===
+            userId
+        ) {
+            throw new DeleteUserError(
+                "You cannot delete the account currently signed in.",
+                409,
             );
         }
 
-        if (userId === adminCheck.userId) {
-            return NextResponse.json(
-                { error: "You cannot delete your own logged-in admin account." },
-                { status: 400 }
+        const [
+            targetProfile,
+            targetAuthUser,
+        ] =
+            await Promise.all([
+                readProfile(
+                    admin,
+                    userId,
+                ),
+                authUserById(
+                    admin,
+                    userId,
+                ),
+            ]);
+
+        if (
+            !targetProfile &&
+            !targetAuthUser
+        ) {
+            throw new DeleteUserError(
+                "The user no longer exists.",
+                404,
             );
         }
 
-        const adminClient = adminCheck.adminClient;
-
-        await safeDeleteRows({
-            adminClient,
-            table: "event_users",
-            column: "user_id",
-            userId,
+        await verifyAccess({
+            requester,
+            targetProfile,
         });
 
-        await safeDeleteRows({
-            adminClient,
-            table: "event_members",
-            column: "user_id",
-            userId,
-        });
+        const targetEmail =
+            String(
+                targetAuthUser
+                    ?.email ||
+                    targetProfile
+                        ?.email ||
+                    "",
+            )
+                .trim()
+                .toLowerCase();
 
-        await safeDeleteRows({
-            adminClient,
-            table: "event_assignments",
-            column: "user_id",
-            userId,
-        });
+        const ownedStorageObjects =
+            await storageObjectCount(
+                admin,
+                userId,
+            );
 
-        await safeDeleteRows({
-            adminClient,
-            table: "user_events",
-            column: "user_id",
-            userId,
-        });
-
-        await safeDeleteRows({
-            adminClient,
-            table: "event_user_roles",
-            column: "user_id",
-            userId,
-        });
-
-        await adminClient.from("profiles").delete().eq("id", userId);
-
-        const { error: authDeleteError } =
-            await adminClient.auth.admin.deleteUser(userId);
-
-        if (authDeleteError) {
-            return NextResponse.json(
-                { error: authDeleteError.message },
-                { status: 400 }
+        if (
+            ownedStorageObjects >
+            0
+        ) {
+            throw new DeleteUserError(
+                `Deletion stopped because this user owns ${ownedStorageObjects} Storage file(s). Delete or reassign those files in Supabase Storage first.`,
+                409,
             );
         }
 
-        return NextResponse.json({
-            success: true,
-            message: "User deleted successfully.",
+        const cleanup =
+            await cleanupReferences({
+                admin,
+                userId,
+                email:
+                    targetEmail,
+            });
+
+        let authDeleted =
+            !targetAuthUser;
+
+        if (
+            targetAuthUser
+        ) {
+            const result =
+                await admin.auth.admin.deleteUser(
+                    userId,
+                    false,
+                );
+
+            if (
+                result.error
+            ) {
+                throw new DeleteUserError(
+                    `The database references were cleared, but Supabase Auth could not delete the account: ${result.error.message}`,
+                    500,
+                );
+            }
+
+            authDeleted =
+                true;
+        }
+
+        /*
+         * Some older schemas do not cascade from auth.users to profiles.
+         * Run a final profile cleanup after the Auth deletion.
+         */
+        await deleteRows({
+            admin,
+            table:
+                "profiles",
+            column:
+                "id",
+            value:
+                userId,
         });
-    } catch (error: any) {
-        return NextResponse.json(
+
+        const verification =
+            await verifyDeleted(
+                admin,
+                userId,
+            );
+
+        if (
+            !verification.authDeleted ||
+            !verification.profileDeleted
+        ) {
+            throw new DeleteUserError(
+                "The server could not confirm that the user was fully deleted.",
+                500,
+            );
+        }
+
+        return reply({
+            success:
+                true,
+            message:
+                targetEmail
+                    ? `${targetEmail} was permanently deleted from RegiGo and Supabase Auth.`
+                    : "The user was permanently deleted from RegiGo and Supabase Auth.",
+            deletedUserId:
+                userId,
+            deletedEmail:
+                targetEmail ||
+                null,
+            authDeleted,
+            profileDeleted:
+                verification.profileDeleted,
+            cleanup,
+        });
+    } catch (error) {
+        return reply(
             {
-                error: error?.message || "Failed to delete user.",
+                success:
+                    false,
+                error:
+                    error instanceof
+                        Error
+                        ? error.message
+                        : "Unable to delete the user.",
             },
-            { status: 500 }
+            error instanceof
+            DeleteUserError
+                ? error.status
+                : 500,
         );
     }
 }
