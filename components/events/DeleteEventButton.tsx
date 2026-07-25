@@ -1,6 +1,8 @@
 "use client";
 
 import {
+    ExternalLink,
+    Globe2,
     Loader2,
     Trash2,
 } from "lucide-react";
@@ -11,6 +13,7 @@ import {
 import {
     useRouter,
 } from "next/navigation";
+import Link from "next/link";
 
 type EligibilityPayload = {
     success?: boolean;
@@ -60,6 +63,7 @@ export default function DeleteEventButton({
         "/dashboard/events",
     compact =
         false,
+    eventSlug,
 }: {
     eventId: string;
     eventName?:
@@ -69,6 +73,9 @@ export default function DeleteEventButton({
     showLockedMessage?: boolean;
     redirectAfterDelete?: string;
     compact?: boolean;
+    eventSlug?:
+        | string
+        | null;
 }) {
     const router =
         useRouter();
@@ -259,15 +266,80 @@ export default function DeleteEventButton({
         }
     }
 
+    const cleanEventSlug =
+        String(
+            eventSlug ||
+                "",
+        ).trim();
+
+    const websiteAction =
+        compact ? (
+            cleanEventSlug ? (
+                <Link
+                    href={`/event/${encodeURIComponent(
+                        cleanEventSlug,
+                    )}?preview=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5] transition hover:border-[#4F46E5] hover:bg-white"
+                >
+                    <Globe2
+                        size={
+                            17
+                        }
+                    />
+                    View Website
+                    <ExternalLink
+                        size={
+                            14
+                        }
+                    />
+                </Link>
+            ) : (
+                <span className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-400">
+                    Website not ready
+                </span>
+            )
+        ) : null;
+
     if (
         loadingAccess
     ) {
-        return null;
+        return websiteAction ? (
+            <div className="flex w-full items-center gap-3">
+                {
+                    websiteAction
+                }
+            </div>
+        ) : null;
     }
 
     if (
         !allowed
     ) {
+        if (
+            compact &&
+            websiteAction
+        ) {
+            return (
+                <div className="w-full space-y-2">
+                    <div className="flex w-full items-center gap-3">
+                        {
+                            websiteAction
+                        }
+                    </div>
+
+                    {showLockedMessage && (
+                        <p className="text-xs font-semibold leading-5 text-slate-500">
+                            {error ||
+                                reason ||
+                                "Event deletion is unavailable for this account."}
+                        </p>
+                    )}
+                </div>
+            );
+        }
+
         if (
             !showLockedMessage
         ) {
@@ -295,10 +367,21 @@ export default function DeleteEventButton({
         <div
             className={
                 compact
-                    ? "inline-flex flex-col items-end gap-2"
+                    ? "flex w-full flex-col gap-2"
                     : "space-y-2"
             }
         >
+            <div
+                className={
+                    compact
+                        ? "flex w-full items-center gap-3"
+                        : ""
+                }
+            >
+                {
+                    websiteAction
+                }
+
             <button
                 type="button"
                 onClick={() =>
@@ -351,6 +434,7 @@ export default function DeleteEventButton({
                     </span>
                 )}
             </button>
+            </div>
 
             {error && (
                 <p

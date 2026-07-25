@@ -111,8 +111,13 @@ export class EventConfigurationError extends Error {
 }
 
 function missingRelation(
-    error: any,
+    error: unknown,
 ) {
+    const code =
+        error && typeof error === "object"
+            ? (error as { code?: unknown }).code
+            : undefined;
+
     return [
         "42P01",
         "42703",
@@ -121,7 +126,7 @@ function missingRelation(
         "PGRST205",
     ].includes(
         String(
-            error?.code ||
+            code ||
                 "",
         ),
     );
@@ -219,7 +224,7 @@ export async function requireEventConfigurationActor(
     const server =
         await createSupabaseServerClient();
     const db =
-        server as any;
+        server;
     const {
         data: { user },
     } =
@@ -645,7 +650,7 @@ export async function saveEventConfiguration({
     eventId: string;
     body: Record<
         string,
-        any
+        unknown
     >;
 }) {
     const configuration =
@@ -656,7 +661,7 @@ export async function saveEventConfiguration({
         actor,
     } = configuration;
 
-    let enabledModules =
+    const enabledModules =
         cleanModuleMap(
             body.enabledModules ??
                 body.enabled_modules ??
@@ -665,16 +670,16 @@ export async function saveEventConfiguration({
                     .enabled_modules,
         );
 
-    for (const module of
+    for (const moduleItem of
         companyModuleCatalog) {
         if (
             configuration
                 .companyModules[
-                module.key
+                moduleItem.key
             ] === false
         ) {
             enabledModules[
-                module.key
+                moduleItem.key
             ] = false;
         }
     }
@@ -689,11 +694,11 @@ export async function saveEventConfiguration({
         Record<string, unknown> = {
             ...rawAddonInput,
         };
-    const registrationInput =
+    const registrationInput: Record<string, unknown> =
         body.registration &&
         typeof body.registration ===
             "object"
-            ? body.registration
+            ? (body.registration as Record<string, unknown>)
             : {};
     const requestedRegistrationMode =
         actor.canManageSettings
@@ -774,11 +779,11 @@ export async function saveEventConfiguration({
         actor
             .canManageSettings
     ) {
-        const eventInput =
+        const eventInput: Record<string, unknown> =
             body.event &&
             typeof body.event ===
                 "object"
-                ? body.event
+                ? (body.event as Record<string, unknown>)
                 : {};
 
         const eventName =

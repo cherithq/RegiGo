@@ -8,7 +8,6 @@ import {
     ChevronRight,
     CirclePlus,
     Loader2,
-    Mail,
     Pencil,
     Search,
     X,

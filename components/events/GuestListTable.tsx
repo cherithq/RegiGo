@@ -134,7 +134,7 @@ export default function GuestListTable({
                 {searchTerm && (
                     <p>
                         Search result for{" "}
-                        <span className="font-black text-[#4F46E5]">"{searchTerm}"</span>
+                        <span className="font-black text-[#4F46E5]">&quot;{searchTerm}&quot;</span>
                     </p>
                 )}
             </div>

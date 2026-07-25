@@ -7,6 +7,9 @@ import {
     useRef,
     useState,
 } from "react";
+import type {
+    CSSProperties,
+} from "react";
 import {
     supabase,
 } from "@/lib/supabase";
@@ -106,6 +109,17 @@ type AudienceBackgroundSettings = {
     background_image_url?:
         | string
         | null;
+};
+
+type ResolvedAudienceBackgroundSettings = {
+    background_mode:
+        | "gradient"
+        | "solid"
+        | "image";
+    background_color: string;
+    gradient_start: string;
+    gradient_end: string;
+    background_image_url: string;
 };
 
 type Props = {
@@ -218,7 +232,7 @@ function cleanHex(
 
 function parseBackgroundSettings(
     value: unknown,
-): Required<AudienceBackgroundSettings> {
+): ResolvedAudienceBackgroundSettings {
     const source =
         value &&
         typeof value ===
@@ -229,20 +243,22 @@ function parseBackgroundSettings(
                   unknown
               >
             : {};
-    const mode =
-        [
-            "gradient",
-            "solid",
-            "image",
-        ].includes(
-            String(
-                source.background_mode ||
-                    "",
-            ),
+
+    const requestedMode =
+        String(
+            source.background_mode ||
+                "",
         )
-            ? String(
-                  source.background_mode,
-              )
+            .trim()
+            .toLowerCase();
+
+    const mode:
+        ResolvedAudienceBackgroundSettings["background_mode"] =
+        requestedMode ===
+            "solid" ||
+        requestedMode ===
+            "image"
+            ? requestedMode
             : "gradient";
 
     return {
@@ -273,8 +289,8 @@ function parseBackgroundSettings(
 }
 
 function backgroundStyle(
-    settings: Required<AudienceBackgroundSettings>,
-) {
+    settings: ResolvedAudienceBackgroundSettings,
+): CSSProperties {
     if (
         settings.background_mode ===
             "image" &&

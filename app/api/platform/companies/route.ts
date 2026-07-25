@@ -974,3 +974,102 @@ export async function PATCH(
         return fail(error);
     }
 }
+
+export async function DELETE(
+    request: Request,
+) {
+    try {
+        const actor =
+            await getCompanyActor();
+
+        if (
+            !actor.isPlatformAdmin
+        ) {
+            throw new CompanyModuleError(
+                "Only the platform super admin can delete a company.",
+                403,
+            );
+        }
+
+        const body =
+            (await request.json()) as Record<
+                string,
+                unknown
+            >;
+        const companyId =
+            typeof body.companyId ===
+            "string"
+                ? body.companyId.trim()
+                : "";
+
+        if (!companyId) {
+            throw new CompanyModuleError(
+                "Choose a company to delete.",
+            );
+        }
+
+        const {
+            data: company,
+            error: lookupError,
+        } = await actor.admin
+            .from("companies")
+            .select(
+                "id, company_name",
+            )
+            .eq("id", companyId)
+            .maybeSingle();
+
+        if (lookupError) {
+            throw new CompanyModuleError(
+                lookupError.message,
+            );
+        }
+
+        if (!company) {
+            throw new CompanyModuleError(
+                "The company could not be found.",
+                404,
+            );
+        }
+
+        const deletion =
+            await actor.admin
+                .from("companies")
+                .delete()
+                .eq("id", companyId)
+                .select("id")
+                .maybeSingle();
+
+        if (deletion.error) {
+            const isForeignKey =
+                String(
+                    deletion.error
+                        .code || "",
+                ) === "23503";
+
+            throw new CompanyModuleError(
+                isForeignKey
+                    ? "This company still has events, users or other records attached. Remove or reassign them before deleting the company."
+                    : deletion.error
+                          .message,
+                isForeignKey
+                    ? 409
+                    : 500,
+            );
+        }
+
+        if (!deletion.data) {
+            throw new CompanyModuleError(
+                "The company was not deleted because it no longer exists.",
+                404,
+            );
+        }
+
+        return reply({
+            success: true,
+            message: `${company.company_name || "Company"} was permanently deleted.`,
+        });
+    } catch (error) {
+        return fail(error);
+    }
+}

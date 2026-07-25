@@ -1,6 +1,15 @@
 import Link from "next/link";
 
-export default function WebsiteFooter({ event }: { event: any }) {
+type FooterEvent = {
+    event_name?: string | null;
+    event_date?: string | null;
+    event_time?: string | null;
+    venue?: string | null;
+    registration_open?: boolean | null;
+    event_slug?: string | null;
+};
+
+export default function WebsiteFooter({ event }: { event: FooterEvent }) {
     return (
         <footer className="rounded-[2rem] bg-slate-950 p-8 text-white shadow-xl">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">

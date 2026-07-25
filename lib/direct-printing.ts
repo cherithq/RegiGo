@@ -4,6 +4,9 @@ import {
     createHash,
     randomBytes,
 } from "node:crypto";
+import type {
+    SupabaseClient,
+} from "@supabase/supabase-js";
 import {
     BadgeError,
     requireBadgeManager,
@@ -70,11 +73,12 @@ export async function requireDirectPrintingManager(
 }
 
 export async function requirePrinterDevice(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _request: Request,
 ): Promise<{
     token: string;
-    service: any;
-    device: any;
+    service: SupabaseClient;
+    device: Record<string, unknown>;
 }> {
     throw new DirectPrintingError(
         "The legacy local printer bridge has been disabled. Use the Browser Print Station instead.",

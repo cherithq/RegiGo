@@ -26,7 +26,6 @@ import {
     Megaphone,
     Lock,
     MousePointerClick,
-    Palette,
     Pause,
     PartyPopper,
     Sparkles,

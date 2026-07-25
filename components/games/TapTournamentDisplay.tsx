@@ -6,7 +6,6 @@ import {
     Award,
     Calculator,
     CircleDollarSign,
-    Coins,
     Crown,
     Eye,
     Grid2X2,
@@ -715,7 +714,7 @@ export default function TapTournamentDisplay({
                             <div className="mt-12 grid w-full max-w-5xl items-end gap-4 md:grid-cols-3">
                                 {[topThree[1], topThree[0], topThree[2]]
                                     .filter(Boolean)
-                                    .map((entry, index) => {
+                                    .map((entry) => {
                                         const podiumPosition =
                                             entry.position;
                                         const heightClass =

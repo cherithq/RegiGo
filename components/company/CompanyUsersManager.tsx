@@ -1,8 +1,6 @@
 "use client";
 
 import {
-    Building2,
-    CalendarDays,
     Eye,
     EyeOff,
     KeyRound,
@@ -503,6 +501,35 @@ export default function CompanyUsersManager() {
         }
     }
 
+    async function removeCompany(target: Company) {
+        if (
+            !window.confirm(
+                `Permanently delete ${target.company_name}? This cannot be undone, and only succeeds if the company has no events or users left.`,
+            )
+        ) {
+            return;
+        }
+
+        setWorking(`delete-company:${target.id}`);
+        setMessage("");
+
+        try {
+            const response = await fetch("/api/platform/companies", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ companyId: target.id }),
+            });
+            const result = await readJson(response);
+            if (!response.ok) throw new Error(result.error || "Unable to delete the company.");
+            setMessage(result.message || "Company deleted.");
+            await reload();
+        } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Unable to delete the company.");
+        } finally {
+            setWorking("");
+        }
+    }
+
     async function remove(user: UserRow) {
         if (!company || !window.confirm(`Remove ${user.full_name || user.email} from ${company.company_name}?`)) {
             return;
@@ -674,39 +701,60 @@ export default function CompanyUsersManager() {
                         </div>
                         <div className="mt-4 space-y-2">
                             {data.companies.map((item) => (
-                                <button
+                                <div
                                     key={item.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setCompanyId(
-                                            item.id,
-                                        );
-                                        setFullName(
-                                            "",
-                                        );
-                                        setEmail(
-                                            "",
-                                        );
-                                        setPassword(
-                                            "",
-                                        );
-                                        setConfirmPassword(
-                                            "",
-                                        );
-                                        setShowPassword(
-                                            false,
-                                        );
-                                        setEventIds([]);
-                                        setEditingUserId(null);
-                                        setEdit(null);
-                                    }}
-                                    className={`w-full rounded-2xl p-4 text-left ${item.id === company.id ? "bg-[#4F46E5] text-white" : "bg-slate-50"}`}
+                                    className={`flex items-center gap-1 rounded-2xl p-1 ${item.id === company.id ? "bg-[#4F46E5] text-white" : "bg-slate-50"}`}
                                 >
-                                    <p className="font-black">{item.company_name}</p>
-                                    <p className={`mt-1 text-xs font-bold ${item.id === company.id ? "text-white/75" : "text-slate-400"}`}>
-                                        {item.users.length} users · {item.events.length} events
-                                    </p>
-                                </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCompanyId(
+                                                item.id,
+                                            );
+                                            setFullName(
+                                                "",
+                                            );
+                                            setEmail(
+                                                "",
+                                            );
+                                            setPassword(
+                                                "",
+                                            );
+                                            setConfirmPassword(
+                                                "",
+                                            );
+                                            setShowPassword(
+                                                false,
+                                            );
+                                            setEventIds([]);
+                                            setEditingUserId(null);
+                                            setEdit(null);
+                                        }}
+                                        className="flex-1 rounded-xl p-3 text-left"
+                                    >
+                                        <p className="font-black">{item.company_name}</p>
+                                        <p className={`mt-1 text-xs font-bold ${item.id === company.id ? "text-white/75" : "text-slate-400"}`}>
+                                            {item.users.length} users · {item.events.length} events
+                                        </p>
+                                    </button>
+
+                                    {data.isPlatformAdmin && (
+                                        <button
+                                            type="button"
+                                            disabled={working === `delete-company:${item.id}`}
+                                            onClick={() => void removeCompany(item)}
+                                            title={`Delete ${item.company_name}`}
+                                            aria-label={`Delete ${item.company_name}`}
+                                            className={`shrink-0 rounded-xl p-3 transition disabled:opacity-40 ${item.id === company.id ? "text-white hover:bg-white/20" : "text-red-600 hover:bg-red-50"}`}
+                                        >
+                                            {working === `delete-company:${item.id}` ? (
+                                                <Loader2 size={15} className="animate-spin" />
+                                            ) : (
+                                                <Trash2 size={15} />
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     </div>

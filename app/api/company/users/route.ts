@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
     createManagedCompanyUser,
     normalizeManagedEmail,
@@ -85,7 +86,7 @@ function ids(value: unknown) {
     );
 }
 
-async function validCompanyEvents(admin: any, companyId: string, eventIds: string[]) {
+async function validCompanyEvents(admin: SupabaseClient, companyId: string, eventIds: string[]) {
     if (!eventIds.length) return [];
     const { data, error } = await admin
         .from("events")
@@ -93,7 +94,7 @@ async function validCompanyEvents(admin: any, companyId: string, eventIds: strin
         .eq("company_id", companyId)
         .in("id", eventIds);
     if (error) throw new CompanyModuleError(error.message);
-    const output = (data || []).map((item: any) => String(item.id));
+    const output = (data || []).map((item: Record<string, unknown>) => String(item.id));
     if (output.length !== eventIds.length) {
         throw new CompanyModuleError(
             "One or more selected events do not belong to this company.",
@@ -109,7 +110,7 @@ async function replaceAssignments({
     userRole,
     eventIds,
 }: {
-    admin: any;
+    admin: SupabaseClient;
     companyId: string;
     userId: string;
     userRole: string;
@@ -121,7 +122,7 @@ async function replaceAssignments({
         .eq("company_id", companyId);
     if (eventError) throw new CompanyModuleError(eventError.message);
 
-    const companyEventIds = (companyEvents || []).map((item: any) => String(item.id));
+    const companyEventIds = (companyEvents || []).map((item: Record<string, unknown>) => String(item.id));
     if (companyEventIds.length) {
         const { error } = await admin
             .from("event_members")
@@ -162,11 +163,11 @@ export async function GET() {
         const { data: companies, error } = await companyQuery;
         if (error) throw new CompanyModuleError(error.message);
 
-        const companyIds = (companies || []).map((item: any) => String(item.id));
-        let profiles: any[] = [];
-        let events: any[] = [];
-        let memberships: any[] = [];
-        let assignments: any[] = [];
+        const companyIds = (companies || []).map((item: Record<string, unknown>) => String(item.id));
+        let profiles: Record<string, unknown>[] = [];
+        let events: Record<string, unknown>[] = [];
+        let memberships: Record<string, unknown>[] = [];
+        let assignments: Record<string, unknown>[] = [];
 
         if (companyIds.length) {
             const [profileResult, eventResult, memberResult] = await Promise.all([
@@ -196,12 +197,12 @@ export async function GET() {
             // their company_members record is retained. Load those profiles too so
             // administrators can still see and reactivate them under the company.
             const loadedProfileIds = new Set(
-                profiles.map((item: any) => String(item.id)),
+                profiles.map((item: Record<string, unknown>) => String(item.id)),
             );
             const missingMemberUserIds = Array.from(
                 new Set(
                     memberships
-                        .map((item: any) => String(item.user_id))
+                        .map((item: Record<string, unknown>) => String(item.user_id))
                         .filter((id: string) => id && !loadedProfileIds.has(id)),
                 ),
             );
@@ -219,8 +220,8 @@ export async function GET() {
                 profiles = [...profiles, ...(missingProfiles.data || [])];
             }
 
-            const profileIds = profiles.map((item: any) => String(item.id));
-            const eventIds = events.map((item: any) => String(item.id));
+            const profileIds = profiles.map((item: Record<string, unknown>) => String(item.id));
+            const eventIds = events.map((item: Record<string, unknown>) => String(item.id));
             if (profileIds.length && eventIds.length) {
                 const result = await actor.admin
                     .from("event_members")
@@ -233,7 +234,7 @@ export async function GET() {
         }
 
         const memberMap = new Map(
-            memberships.map((item: any) => [
+            memberships.map((item: Record<string, unknown>) => [
                 `${item.company_id}:${item.user_id}`,
                 item,
             ]),
@@ -247,13 +248,13 @@ export async function GET() {
             ]);
         }
 
-        const output = (companies || []).map((company: any) => ({
+        const output = (companies || []).map((company: Record<string, unknown>) => ({
             ...company,
             events: events.filter(
-                (event: any) => String(event.company_id) === String(company.id),
+                (event: Record<string, unknown>) => String(event.company_id) === String(company.id),
             ),
             users: profiles
-                .filter((profile: any) => {
+                .filter((profile: Record<string, unknown>) => {
                     const membership = memberMap.get(
                         `${company.id}:${profile.id}`,
                     );
@@ -263,7 +264,7 @@ export async function GET() {
                         Boolean(membership)
                     );
                 })
-                .map((profile: any) => {
+                .map((profile: Record<string, unknown>) => {
                     const membership = memberMap.get(
                         `${company.id}:${profile.id}`,
                     );
@@ -528,7 +529,7 @@ export async function DELETE(request: Request) {
             .select("id")
             .eq("company_id", companyId);
         if (eventError) throw new CompanyModuleError(eventError.message);
-        const eventIds = (events || []).map((item: any) => String(item.id));
+        const eventIds = (events || []).map((item: Record<string, unknown>) => String(item.id));
         if (eventIds.length) {
             const { error } = await actor.admin
                 .from("event_members")

@@ -1,7 +1,13 @@
+type EventSection = {
+    id: string;
+    title?: string | null;
+    content?: string | null;
+};
+
 export default function EventSections({
     sections,
 }: {
-    sections: any[];
+    sections: EventSection[];
 }) {
     if (!sections.length) return null;
 

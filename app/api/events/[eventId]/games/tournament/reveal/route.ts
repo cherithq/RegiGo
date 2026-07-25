@@ -17,7 +17,7 @@ function json(
     });
 }
 
-async function requireManager(eventId: string) {
+async function requireManager() {
     const supabaseServer =
         await createSupabaseServerClient();
 
@@ -80,7 +80,7 @@ export async function GET(
     try {
         const { eventId } = await context.params;
         const supabaseServer =
-            await requireManager(eventId);
+            await requireManager();
 
         return json({
             reveal: await loadState(
@@ -112,7 +112,7 @@ export async function POST(
     try {
         const { eventId } = await context.params;
         const supabaseServer =
-            await requireManager(eventId);
+            await requireManager();
         const body = await request.json();
         const action = String(
             body.action || ""

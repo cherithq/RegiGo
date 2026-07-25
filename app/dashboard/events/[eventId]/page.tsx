@@ -97,7 +97,7 @@ export default async function EventOverviewPage({
         redirect("/auth/login");
     }
 
-    const db = supabaseServer as any;
+    const db = supabaseServer;
     const admin =
         getCompanyAdminClient();
 
@@ -895,6 +895,7 @@ export default async function EventOverviewPage({
                         {managementCards.map(
                             ({
                                 moduleKey,
+                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                 allowed,
                                 ...item
                             }) => (
@@ -917,6 +918,7 @@ export default async function EventOverviewPage({
                         {eventDayCards.map(
                             ({
                                 moduleKey,
+                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                 allowed,
                                 ...item
                             }) => (
@@ -939,6 +941,7 @@ export default async function EventOverviewPage({
                         {reportCards.map(
                             ({
                                 moduleKey,
+                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                 allowed,
                                 ...item
                             }) => (
@@ -961,6 +964,7 @@ export default async function EventOverviewPage({
                         {administrationCards.map(
                             ({
                                 moduleKey,
+                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                 allowed,
                                 ...item
                             }) => (

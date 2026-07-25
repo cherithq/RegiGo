@@ -88,7 +88,7 @@ async function loadCompanyUserActor() {
     const supabaseServer =
         await createSupabaseServerClient();
     const db =
-        supabaseServer as any;
+        supabaseServer;
 
     const {
         data: { user },

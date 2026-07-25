@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Search, Bell, UserCircle } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useSidebar } from "./SidebarContext";
 
 export default function DashboardHeader() {

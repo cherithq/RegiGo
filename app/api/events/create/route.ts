@@ -559,15 +559,15 @@ export async function POST(
                 body.enabledModules,
             );
 
-        for (const module of
+        for (const moduleItem of
             companyModuleCatalog) {
             if (
                 allowedModules[
-                    module.key
+                    moduleItem.key
                 ] === false
             ) {
                 requestedModules[
-                    module.key
+                    moduleItem.key
                 ] = false;
             }
         }

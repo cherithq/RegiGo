@@ -150,10 +150,10 @@ function resourceMissing(
     }
 
     const record =
-        error as Record<
-            string,
-            any
-        >;
+        error as {
+            code?: unknown;
+            raw?: { code?: unknown };
+        };
 
     return (
         record.code ===

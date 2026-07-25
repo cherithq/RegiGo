@@ -90,7 +90,7 @@ export function cleanIds(value: unknown) {
 export async function requireCompanyAdminForApi(): Promise<CompanyAdminApiContext> {
     const supabaseServer =
         await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
 
     const {
         data: { user },

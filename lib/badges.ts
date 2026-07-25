@@ -8,6 +8,9 @@ import {
     type PDFFont,
 } from "pdf-lib";
 import QRCode from "qrcode";
+import type {
+    SupabaseClient,
+} from "@supabase/supabase-js";
 import {
     EventAddonError,
     getAddonActor,
@@ -118,7 +121,7 @@ function hex(value: unknown, fallback: string) {
 
 export function cleanBadgeElements(value: unknown): BadgeElement[] {
     if (!Array.isArray(value)) return [];
-    return value.filter((item) => item && typeof item === "object").map((item, index) => {
+    return value.filter((item) => item && typeof item === "object").map((item, index): BadgeElement => {
         const raw = item as Record<string, unknown>;
         const type = ["text", "qr", "rectangle", "line"].includes(String(raw.type))
             ? String(raw.type) as BadgeElement["type"]
@@ -248,7 +251,12 @@ function siteUrl() {
     return "http://localhost:3000";
 }
 
-function missingOptionalRelation(error: any) {
+function missingOptionalRelation(error: unknown) {
+    const code =
+        error && typeof error === "object"
+            ? (error as { code?: unknown }).code
+            : undefined;
+
     return Boolean(
         error &&
         [
@@ -257,12 +265,12 @@ function missingOptionalRelation(error: any) {
             "PGRST200",
             "PGRST204",
             "PGRST205",
-        ].includes(String(error.code || "")),
+        ].includes(String(code || "")),
     );
 }
 
 function firstText(
-    row: Record<string, any> | null | undefined,
+    row: Record<string, unknown> | null | undefined,
     keys: string[],
 ) {
     for (const key of keys) {
@@ -281,7 +289,7 @@ function firstText(
 }
 
 export async function loadBadgeData(args: {
-    admin: any;
+    admin: SupabaseClient;
     eventId: string;
     registrationIds: string[];
 }) {
@@ -330,15 +338,15 @@ export async function loadBadgeData(args: {
     const event =
         eventResult.data as Record<
             string,
-            any
+            unknown
         >;
     const registrations = (
         registrationsResult.data || []
-    ) as Record<string, any>[];
+    ) as Record<string, unknown>[];
 
     let company: Record<
         string,
-        any
+        unknown
     > | null = null;
 
     if (event.company_id) {
@@ -481,7 +489,7 @@ export async function loadBadgeData(args: {
 
     const assignments = (
         assignmentResult.data || []
-    ) as Record<string, any>[];
+    ) as Record<string, unknown>[];
 
     const tableIds = Array.from(
         new Set(

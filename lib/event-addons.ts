@@ -157,7 +157,7 @@ export async function getAddonActor(
 ): Promise<AddonActor> {
     const supabaseServer =
         await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
 
     const {
         data: { user },

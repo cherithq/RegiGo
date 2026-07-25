@@ -2,6 +2,7 @@ import Link from "next/link";
 import DeleteEventButton from "@/components/events/DeleteEventButton";
 import {
     ArrowRight,
+    Building2,
     CalendarDays,
     Clock3,
     MapPin,
@@ -22,6 +23,7 @@ export const dynamic = "force-dynamic";
 type EventItem = {
     id: string;
     company_id: string | null;
+    company_name: string | null;
     event_name: string;
     event_slug: string;
     event_date: string | null;
@@ -40,13 +42,15 @@ export default async function EventsPage({
     searchParams: Promise<{
         q?: string;
         status?: string;
+        company?: string;
     }>;
 }) {
     const context = await getCurrentCompanyContext();
     const permission = evaluateEventCreation(context);
     const supabaseServer = await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
     const query = await searchParams;
+    const isPlatformAdmin = isPlatformAdminContext(context);
 
     let eventQuery = db
         .from("events")
@@ -54,7 +58,7 @@ export default async function EventsPage({
             "id, company_id, event_name, event_slug, event_date, event_time, venue, description, status, max_guests, registration_open, created_at",
         );
 
-    if (!isPlatformAdminContext(context)) {
+    if (!isPlatformAdmin) {
         eventQuery = eventQuery.eq(
             "company_id",
             context.company.id,
@@ -62,7 +66,7 @@ export default async function EventsPage({
     }
 
     if (
-        !isPlatformAdminContext(context) &&
+        !isPlatformAdmin &&
         !hasAllCompanyEvents(context)
     ) {
         const ids =
@@ -84,10 +88,59 @@ export default async function EventsPage({
         throw new Error(error.message);
     }
 
+    const companyNameById = new Map<string, string>();
+
+    if (isPlatformAdmin) {
+        const companyIds = Array.from(
+            new Set(
+                (data || [])
+                    .map((event) => event.company_id)
+                    .filter((value): value is string => Boolean(value)),
+            ),
+        );
+
+        if (companyIds.length > 0) {
+            const { data: companies, error: companiesError } = await db
+                .from("companies")
+                .select("id, company_name")
+                .in("id", companyIds);
+
+            if (companiesError) {
+                throw new Error(companiesError.message);
+            }
+
+            for (const row of companies || []) {
+                companyNameById.set(row.id, row.company_name);
+            }
+        }
+    }
+
+    const allEvents = ((data || []) as Omit<EventItem, "company_name">[]).map(
+        (event) => ({
+            ...event,
+            company_name:
+                (event.company_id &&
+                    companyNameById.get(event.company_id)) ||
+                null,
+        }),
+    );
+
+    const companyOptions = Array.from(
+        new Map(
+            allEvents
+                .filter((event) => event.company_id && event.company_name)
+                .map((event) => [
+                    event.company_id as string,
+                    event.company_name as string,
+                ]),
+        ),
+    ).sort((a, b) => a[1].localeCompare(b[1]));
+
     const keyword = (query.q || "").trim().toLowerCase();
     const statusFilter = (query.status || "all").trim().toLowerCase();
+    const companyFilter = (query.company || "all").trim();
 
-    const events = ((data || []) as EventItem[]).filter((event) => {
+    const events = allEvents.filter((event) => {
         const matchesKeyword =
             !keyword ||
             [
@@ -105,7 +158,12 @@ export default async function EventsPage({
             statusFilter === "all" ||
             (event.status || "draft").toLowerCase() === statusFilter;
 
-        return matchesKeyword && matchesStatus;
+        const matchesCompany =
+            !isPlatformAdmin ||
+            companyFilter === "all" ||
+            event.company_id === companyFilter;
+
+        return matchesKeyword && matchesStatus && matchesCompany;
     });
 
     const published = events.filter(
@@ -175,7 +233,13 @@ export default async function EventsPage({
             </section>
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-                <form className="grid gap-3 md:grid-cols-[1fr_210px_auto]">
+                <form
+                    className={`grid gap-3 ${
+                        isPlatformAdmin
+                            ? "md:grid-cols-[1fr_180px_180px_auto]"
+                            : "md:grid-cols-[1fr_210px_auto]"
+                    }`}
+                >
                     <label className="relative">
                         <Search
                             size={18}
@@ -198,6 +262,21 @@ export default async function EventsPage({
                         <option value="published">Published</option>
                         <option value="draft">Draft</option>
                     </select>
+
+                    {isPlatformAdmin && (
+                        <select
+                            name="company"
+                            defaultValue={companyFilter}
+                            className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-[#4F46E5]"
+                        >
+                            <option value="all">All companies</option>
+                            {companyOptions.map(([id, name]) => (
+                                <option key={id} value={id}>
+                                    {name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
 
                     <button
                         type="submit"
@@ -273,6 +352,13 @@ function EventCard({
                     {event.event_name}
                 </h2>
 
+                {event.company_name && (
+                    <p className="mt-1 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[#4F46E5]">
+                        <Building2 size={13} />
+                        {event.company_name}
+                    </p>
+                )}
+
                 <p className="mt-2 line-clamp-2 min-h-12 text-sm leading-6 text-slate-500">
                     {event.description ||
                         "Open the event workspace to configure guests, registration, seating, emails and event-day tools."}
@@ -330,6 +416,9 @@ function EventCard({
                         eventId={event.id}
                         eventName={
                             event.event_name
+                        }
+                        eventSlug={
+                            event.event_slug
                         }
                         compact
                     />

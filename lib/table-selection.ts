@@ -147,10 +147,34 @@ export async function getPublicTableSelectionContext({
             );
         }
 
+        const {
+            data: registrationDetails,
+            error: registrationDetailsError,
+        } = await admin
+            .from("registrations")
+            .select(
+                "payment_status, selected_ticket_quantity",
+            )
+            .eq("id", registration.id)
+            .maybeSingle();
+
+        if (registrationDetailsError) {
+            throw new TableSelectionError(
+                registrationDetailsError.message,
+            );
+        }
+
+        if (!registrationDetails) {
+            throw new TableSelectionError(
+                "The registration could not be found.",
+                404,
+            );
+        }
+
         if (
             settings.require_paid_ticket &&
             !["paid", "not_required"].includes(
-                String(registration.payment_status || ""),
+                String(registrationDetails.payment_status || ""),
             )
         ) {
             throw new TableSelectionError(
@@ -167,7 +191,7 @@ export async function getPublicTableSelectionContext({
             settings,
             partySize: Math.max(
                 Number(
-                    registration.selected_ticket_quantity ||
+                    registrationDetails.selected_ticket_quantity ??
                         1,
                 ),
                 1,

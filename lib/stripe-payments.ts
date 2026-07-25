@@ -124,7 +124,7 @@ export async function requireCompanyPaymentAdmin(
 ) {
     const supabaseServer =
         await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
 
     const {
         data: { user },

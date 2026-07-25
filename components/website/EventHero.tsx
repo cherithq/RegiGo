@@ -1,11 +1,29 @@
 import Link from "next/link";
 
+type HeroEvent = {
+    event_name?: string | null;
+    description?: string | null;
+    event_date?: string | null;
+    event_time?: string | null;
+    venue?: string | null;
+    event_slug?: string | null;
+};
+
+type HeroBranding = {
+    primary_color?: string | null;
+    secondary_color?: string | null;
+    banner_background_url?: string | null;
+    banner_overlay_opacity?: number | null;
+    hero_title?: string | null;
+    hero_subtitle?: string | null;
+};
+
 export default function EventHero({
     event,
     branding,
 }: {
-    event: any;
-    branding: any;
+    event: HeroEvent;
+    branding: HeroBranding | null | undefined;
 }) {
     const primary = branding?.primary_color || "#4F46E5";
     const secondary = branding?.secondary_color || "#EC4899";

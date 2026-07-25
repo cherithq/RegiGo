@@ -189,16 +189,16 @@ export default function CompanyRolesManager() {
                     ModuleDefinition[]
                 >();
 
-            for (const module of
+            for (const moduleItem of
                 data?.moduleCatalog ||
                 []) {
                 groups.set(
-                    module.group,
+                    moduleItem.group,
                     [
                         ...(groups.get(
-                            module.group,
+                            moduleItem.group,
                         ) || []),
-                        module,
+                        moduleItem,
                     ],
                 );
             }

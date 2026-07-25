@@ -1,7 +1,16 @@
+type Speaker = {
+    id: string;
+    profile_image?: string | null;
+    full_name: string;
+    designation?: string | null;
+    company?: string | null;
+    biography?: string | null;
+};
+
 export default function EventSpeakers({
     speakers,
 }: {
-    speakers: any[];
+    speakers: Speaker[];
 }) {
 
     if (!speakers.length) return null;

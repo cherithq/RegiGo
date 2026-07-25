@@ -1,6 +1,11 @@
 import Link from "next/link";
 
-export default function RegistrationCTA({ event }: { event: any }) {
+type CTAEvent = {
+    registration_open?: boolean | null;
+    event_slug?: string | null;
+};
+
+export default function RegistrationCTA({ event }: { event: CTAEvent }) {
     const isOpen = event.registration_open;
 
     return (

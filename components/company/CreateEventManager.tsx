@@ -360,24 +360,24 @@ export default function CreateEventManager() {
                     ModuleDefinition[]
                 >();
 
-            for (const module of
+            for (const moduleItem of
                 data?.moduleCatalog ||
                 []) {
                 if (
                     hiddenModuleKeys.has(
-                        module.key,
+                        moduleItem.key,
                     )
                 ) {
                     continue;
                 }
 
                 groups.set(
-                    module.group,
+                    moduleItem.group,
                     [
                         ...(groups.get(
-                            module.group,
+                            moduleItem.group,
                         ) || []),
-                        module,
+                        moduleItem,
                     ],
                 );
             }

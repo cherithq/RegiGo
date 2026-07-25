@@ -75,7 +75,7 @@ export default async function DashboardPage() {
     const context = await getCurrentCompanyContext();
     const permission = evaluateEventCreation(context);
     const supabaseServer = await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
     const today = new Date().toISOString().slice(0, 10);
 
     const [

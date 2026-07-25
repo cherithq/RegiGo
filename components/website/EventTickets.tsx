@@ -1,7 +1,15 @@
+type Ticket = {
+    id: string;
+    colour?: string | null;
+    ticket_name?: string | null;
+    description?: string | null;
+    capacity?: number | null;
+};
+
 export default function EventTickets({
     tickets,
 }: {
-    tickets: any[];
+    tickets: Ticket[];
 }) {
 
     if (!tickets.length) return null;
@@ -28,7 +36,7 @@ export default function EventTickets({
                         <span
                             className="inline-flex rounded-full px-4 py-1 text-sm font-black text-white"
                             style={{
-                                backgroundColor: ticket.colour,
+                                backgroundColor: ticket.colour || undefined,
                             }}
                         >
                             {ticket.ticket_name}

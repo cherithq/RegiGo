@@ -114,7 +114,7 @@ export function hasAllCompanyEvents(
 export async function getCurrentCompanyContext(): Promise<CompanyContext> {
     const supabaseServer =
         await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
 
     const {
         data: { user },
@@ -506,7 +506,7 @@ export async function requireEventCompanyAccess(
         await getCurrentCompanyContext();
     const supabaseServer =
         await createSupabaseServerClient();
-    const db = supabaseServer as any;
+    const db = supabaseServer;
 
     const { data: event, error } = await db
         .from("events")

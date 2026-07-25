@@ -27,6 +27,7 @@ export function cleanOrganizerEnabledModules(
 }
 
 export function canRoleSeeEventModule({
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     role,
     enabledModules,
     moduleKey,

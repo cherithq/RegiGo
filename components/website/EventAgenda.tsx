@@ -1,7 +1,18 @@
+type AgendaItem = {
+    id: string;
+    start_time?: string | null;
+    title?: string | null;
+    location?: string | null;
+    description?: string | null;
+    speakers?: {
+        full_name?: string | null;
+    } | null;
+};
+
 export default function EventAgenda({
     agenda,
 }: {
-    agenda: any[];
+    agenda: AgendaItem[];
 }) {
 
     if (!agenda.length) return null;
