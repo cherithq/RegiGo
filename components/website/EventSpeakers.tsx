@@ -17,7 +17,7 @@ export default function EventSpeakers({
 
     return (
 
-        <section className="mb-12">
+        <section className="mb-12 p-1 pt-2 sm:p-2 sm:pt-3">
 
             <h2 className="mb-8 text-3xl font-black">
 
@@ -25,56 +25,68 @@ export default function EventSpeakers({
 
             </h2>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
 
                 {speakers.map((speaker) => (
 
                     <div
                         key={speaker.id}
-                        className="rounded-[2rem] bg-white p-6 shadow-xl"
+                        className="mx-auto w-full max-w-xs overflow-hidden rounded-[2rem] bg-white shadow-xl"
                     >
 
-                        {speaker.profile_image ? (
+                        <div className="relative">
 
-                            <img
-                                src={speaker.profile_image}
-                                alt={speaker.full_name}
-                                className="h-56 w-full rounded-2xl object-cover"
-                            />
+                            {speaker.profile_image ? (
 
-                        ) : (
+                                <img
+                                    src={speaker.profile_image}
+                                    alt={speaker.full_name}
+                                    className="aspect-square w-full object-cover object-top"
+                                />
 
-                            <div className="flex h-56 items-center justify-center rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-6xl font-black text-white">
+                            ) : (
 
-                                {speaker.full_name.charAt(0)}
+                                <div className="flex aspect-square items-center justify-center bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-6xl font-black text-white">
+
+                                    {speaker.full_name.charAt(0)}
+
+                                </div>
+
+                            )}
+
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 pt-10">
+
+                                <h3 className="text-xl font-black text-white">
+
+                                    {speaker.full_name}
+
+                                </h3>
 
                             </div>
 
-                        )}
+                        </div>
 
-                        <h3 className="mt-5 text-2xl font-black">
+                        <div className="p-5">
 
-                            {speaker.full_name}
+                            <p className="text-slate-500">
 
-                        </h3>
+                                {speaker.designation}
 
-                        <p className="mt-2 text-slate-500">
+                            </p>
 
-                            {speaker.designation}
+                            <p className="text-slate-500">
 
-                        </p>
+                                {speaker.company}
 
-                        <p className="text-slate-500">
+                            </p>
 
-                            {speaker.company}
+                            <p className="mt-4 text-sm leading-6 text-slate-700">
 
-                        </p>
+                                {speaker.biography}
 
-                        <p className="mt-5 text-sm leading-7 text-slate-700">
+                            </p>
 
-                            {speaker.biography}
-
-                        </p>
+                        </div>
 
                     </div>
 

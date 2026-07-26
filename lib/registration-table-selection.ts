@@ -180,13 +180,14 @@ export async function getRegistrationTableSelectionContext({
             )
             .maybeSingle(),
 
+        // select("*") instead of an explicit column list so this keeps
+        // working even before the page_title/page_subtitle/banner_color_*
+        // appearance columns have been added to the database.
         admin
             .from(
                 "event_table_selection_settings",
             )
-            .select(
-                "hold_minutes, allow_changes, require_paid_ticket, allow_registration_selection, allow_rsvp_selection, selection_required, instructions",
-            )
+            .select("*")
             .eq(
                 "event_id",
                 event.id,
@@ -304,7 +305,7 @@ export async function getRegistrationTableSelectionSnapshot({
 
     const [
         tablesResult,
-        assignmentsResult,
+        allTableIdsResult,
         holdsResult,
     ] = await Promise.all([
         context.admin
@@ -312,7 +313,7 @@ export async function getRegistrationTableSelectionSnapshot({
                 "event_tables",
             )
             .select(
-                "id, table_name, capacity, selection_label, selection_description, selection_order, guest_selectable",
+                "id, table_name, capacity:table_capacity, selection_label, selection_description, selection_order, guest_selectable, floor_x, floor_y, table_size, table_shape, rotation",
             )
             .eq(
                 "event_id",
@@ -339,11 +340,9 @@ export async function getRegistrationTableSelectionSnapshot({
 
         context.admin
             .from(
-                "table_assignments",
+                "event_tables",
             )
-            .select(
-                "id, table_id, registration_id, assignment_source, assigned_at",
-            )
+            .select("id")
             .eq(
                 "event_id",
                 context.event.id,
@@ -368,7 +367,7 @@ export async function getRegistrationTableSelectionSnapshot({
 
     for (const result of [
         tablesResult,
-        assignmentsResult,
+        allTableIdsResult,
         holdsResult,
     ]) {
         if (result.error) {
@@ -376,6 +375,36 @@ export async function getRegistrationTableSelectionSnapshot({
                 result.error.message,
             );
         }
+    }
+
+    const allTableIds = (
+        allTableIdsResult.data || []
+    ).map((table) => table.id);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = allTableIds.length
+        ? await context.admin
+              .from("table_assignments")
+              .select(
+                  "id, table_id, registration_id, assignment_source, assigned_at",
+              )
+              .in("table_id", allTableIds)
+        : {
+              data: [] as {
+                  id: string;
+                  table_id: string;
+                  registration_id: string;
+                  assignment_source: string | null;
+                  assigned_at: string;
+              }[],
+              error: null,
+          };
+
+    if (assignmentsResult.error) {
+        throw new TableSelectionError(
+            assignmentsResult.error.message,
+        );
     }
 
     const assignments =

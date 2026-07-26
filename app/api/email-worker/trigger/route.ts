@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
+// Vercel Cron issues GET requests, so this endpoint answers both GET (for the
+// scheduled safety-net trigger) and POST (for manual/app-triggered calls).
+export async function GET(req: Request) {
+    return POST(req);
+}
+
 export async function POST(req: Request) {
     try {
         const secret = process.env.EMAIL_WORKER_SECRET;

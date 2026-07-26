@@ -3,6 +3,7 @@
 import {
     Check,
     Clock3,
+    Image as ImageIcon,
     Loader2,
     RefreshCw,
     Save,
@@ -36,6 +37,11 @@ type Settings = {
     allow_rsvp_selection: boolean;
     selection_required: boolean;
     instructions: string | null;
+    page_title: string | null;
+    page_subtitle: string | null;
+    banner_color_from: string | null;
+    banner_color_to: string | null;
+    banner_image_url: string | null;
 };
 
 type Payload = {
@@ -177,6 +183,58 @@ export default function TableSelectionManager({
                 error instanceof Error
                     ? error.message
                     : "Unable to save table selection.",
+            );
+        } finally {
+            setWorking("");
+        }
+    }
+
+    async function uploadBannerImage(
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+
+        if (!file) return;
+
+        setWorking("upload");
+        setMessage("");
+
+        try {
+            const formData = new FormData();
+            formData.set("file", file);
+
+            const response = await fetch(
+                `/api/events/${eventId}/table-selection/assets`,
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
+            const result = await readJson(response);
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error ||
+                        "Unable to upload the banner image.",
+                );
+            }
+
+            if (!result.url) {
+                throw new Error(
+                    "The upload completed without returning an image URL.",
+                );
+            }
+
+            updateSetting("banner_image_url", result.url);
+            setMessage(
+                "Image uploaded — click Save Rules to apply it.",
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to upload the banner image.",
             );
         } finally {
             setWorking("");
@@ -396,6 +454,180 @@ export default function TableSelectionManager({
                             />
                         </div>
 
+                        <div className="border-t border-slate-100 pt-4">
+                            <p className="text-sm font-black text-slate-700">
+                                Page Appearance
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Customise the banner guests see on
+                                the &ldquo;Choose your table&rdquo;
+                                page.
+                            </p>
+
+                            <div className="mt-4 space-y-4">
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Title
+                                    </label>
+                                    <input
+                                        value={
+                                            data.settings
+                                                .page_title || ""
+                                        }
+                                        onChange={(event) =>
+                                            updateSetting(
+                                                "page_title",
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="Choose your table"
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Subtitle
+                                    </label>
+                                    <textarea
+                                        value={
+                                            data.settings
+                                                .page_subtitle || ""
+                                        }
+                                        onChange={(event) =>
+                                            updateSetting(
+                                                "page_subtitle",
+                                                event.target.value,
+                                            )
+                                        }
+                                        rows={2}
+                                        placeholder="Your registration has been saved. Choose a table for your party before continuing to your QR pass."
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="mb-2 block text-xs font-black text-slate-500">
+                                            Gradient From
+                                        </label>
+                                        <input
+                                            type="color"
+                                            value={
+                                                data.settings
+                                                    .banner_color_from ||
+                                                "#4F46E5"
+                                            }
+                                            onChange={(event) =>
+                                                updateSetting(
+                                                    "banner_color_from",
+                                                    event.target
+                                                        .value,
+                                                )
+                                            }
+                                            className="h-11 w-full cursor-pointer rounded-xl border border-slate-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-2 block text-xs font-black text-slate-500">
+                                            Gradient To
+                                        </label>
+                                        <input
+                                            type="color"
+                                            value={
+                                                data.settings
+                                                    .banner_color_to ||
+                                                "#EC4899"
+                                            }
+                                            onChange={(event) =>
+                                                updateSetting(
+                                                    "banner_color_to",
+                                                    event.target
+                                                        .value,
+                                                )
+                                            }
+                                            className="h-11 w-full cursor-pointer rounded-xl border border-slate-200"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Image
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700">
+                                            {working === "upload" ? (
+                                                <Loader2
+                                                    size={15}
+                                                    className="animate-spin"
+                                                />
+                                            ) : (
+                                                <ImageIcon size={15} />
+                                            )}
+                                            Upload Image
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                hidden
+                                                disabled={
+                                                    working === "upload"
+                                                }
+                                                onChange={
+                                                    uploadBannerImage
+                                                }
+                                            />
+                                        </label>
+
+                                        {data.settings
+                                            .banner_image_url && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    updateSetting(
+                                                        "banner_image_url",
+                                                        "",
+                                                    )
+                                                }
+                                                className="text-xs font-black text-red-600"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div
+                                    className="overflow-hidden rounded-2xl p-4 text-white shadow-sm"
+                                    style={{
+                                        backgroundImage:
+                                            data.settings
+                                                .banner_image_url
+                                                ? `linear-gradient(rgba(2,6,23,.35), rgba(2,6,23,.55)), url("${data.settings.banner_image_url}")`
+                                                : `linear-gradient(to right, ${
+                                                      data.settings
+                                                          .banner_color_from ||
+                                                      "#4F46E5"
+                                                  }, ${
+                                                      data.settings
+                                                          .banner_color_to ||
+                                                      "#EC4899"
+                                                  })`,
+                                        backgroundSize: "cover",
+                                        backgroundPosition: "center",
+                                    }}
+                                >
+                                    <p className="text-xs font-black uppercase tracking-wide text-white/75">
+                                        Preview
+                                    </p>
+                                    <p className="mt-1 text-lg font-black">
+                                        {data.settings.page_title ||
+                                            "Choose your table"}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
                         <button
                             type="button"
                             onClick={() =>
@@ -423,6 +655,21 @@ export default function TableSelectionManager({
                                         instructions:
                                             data.settings
                                                 .instructions,
+                                        pageTitle:
+                                            data.settings
+                                                .page_title,
+                                        pageSubtitle:
+                                            data.settings
+                                                .page_subtitle,
+                                        bannerColorFrom:
+                                            data.settings
+                                                .banner_color_from,
+                                        bannerColorTo:
+                                            data.settings
+                                                .banner_color_to,
+                                        bannerImageUrl:
+                                            data.settings
+                                                .banner_image_url,
                                     },
                                     "settings",
                                 )

@@ -240,7 +240,7 @@ export default async function EventOverviewPage({
         guestResult,
         checkedInResult,
         ticketResult,
-        tableResult,
+        eventTableIdsResult,
     ] = await Promise.all([
         admin
             .from("registrations")
@@ -276,18 +276,29 @@ export default async function EventOverviewPage({
             ),
 
         admin
-            .from(
-                "table_assignments",
-            )
-            .select("id", {
-                count: "exact",
-                head: true,
-            })
+            .from("event_tables")
+            .select("id")
             .eq(
                 "event_id",
                 eventId,
             ),
     ]);
+
+    const eventTableIds = (
+        eventTableIdsResult.data || []
+    ).map((table) => table.id);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const tableResult = eventTableIds.length
+        ? await admin
+              .from("table_assignments")
+              .select("id", {
+                  count: "exact",
+                  head: true,
+              })
+              .in("table_id", eventTableIds)
+        : { count: 0 };
 
     const total =
         guestResult.count || 0;
@@ -423,7 +434,7 @@ export default async function EventOverviewPage({
             {
                 moduleKey:
                     "agenda",
-                title: "Agenda",
+                title: "Programme",
                 description:
                     "Build the programme and event timeline.",
                 href:

@@ -117,11 +117,16 @@ export default async function PublicEventPage({
                 </div>
 
                 <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
-                    <EventSections sections={sectionsResult.data || []} />
+                    <EventAgenda agenda={agendaResult.data || []} />
                 </div>
 
                 <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
-                    <EventAgenda agenda={agendaResult.data || []} />
+                    <EventSections
+                        sections={(sectionsResult.data || []).filter(
+                            (section: { section_type?: string | null }) =>
+                                section.section_type !== "agenda",
+                        )}
+                    />
                 </div>
 
                 <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">

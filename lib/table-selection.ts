@@ -118,11 +118,12 @@ export async function getPublicTableSelectionContext({
             );
         }
 
+        // select("*") instead of an explicit column list so this keeps
+        // working even before the page_title/page_subtitle/banner_color_*
+        // appearance columns have been added to the database.
         const { data: settings, error } = await admin
             .from("event_table_selection_settings")
-            .select(
-                "hold_minutes, allow_changes, require_paid_ticket, allow_registration_selection, allow_rsvp_selection, selection_required, instructions",
-            )
+            .select("*")
             .eq("event_id", event.id)
             .maybeSingle();
 
@@ -237,12 +238,12 @@ export async function getTableSelectionSnapshot({
         { p_event_id: context.event.id },
     );
 
-    const [tablesResult, assignmentsResult, holdsResult] =
+    const [tablesResult, allTableIdsResult, holdsResult] =
         await Promise.all([
             context.admin
                 .from("event_tables")
                 .select(
-                    "id, table_name, capacity, selection_label, selection_description, selection_order, guest_selectable",
+                    "id, table_name, capacity:table_capacity, selection_label, selection_description, selection_order, guest_selectable, floor_x, floor_y, table_size, table_shape, rotation",
                 )
                 .eq("event_id", context.event.id)
                 .eq("guest_selectable", true)
@@ -252,10 +253,8 @@ export async function getTableSelectionSnapshot({
                 .order("table_name", { ascending: true }),
 
             context.admin
-                .from("table_assignments")
-                .select(
-                    "id, table_id, registration_id, assignment_source, assigned_at",
-                )
+                .from("event_tables")
+                .select("id")
                 .eq("event_id", context.event.id),
 
             context.admin
@@ -272,14 +271,44 @@ export async function getTableSelectionSnapshot({
             tablesResult.error.message,
         );
     }
-    if (assignmentsResult.error) {
+    if (allTableIdsResult.error) {
         throw new TableSelectionError(
-            assignmentsResult.error.message,
+            allTableIdsResult.error.message,
         );
     }
     if (holdsResult.error) {
         throw new TableSelectionError(
             holdsResult.error.message,
+        );
+    }
+
+    const allTableIds = (allTableIdsResult.data || []).map(
+        (table) => table.id,
+    );
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = allTableIds.length
+        ? await context.admin
+              .from("table_assignments")
+              .select(
+                  "id, table_id, registration_id, assignment_source, assigned_at",
+              )
+              .in("table_id", allTableIds)
+        : {
+              data: [] as {
+                  id: string;
+                  table_id: string;
+                  registration_id: string;
+                  assignment_source: string | null;
+                  assigned_at: string;
+              }[],
+              error: null,
+          };
+
+    if (assignmentsResult.error) {
+        throw new TableSelectionError(
+            assignmentsResult.error.message,
         );
     }
 

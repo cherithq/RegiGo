@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { CalendarClock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const starterSections = [
@@ -9,13 +11,6 @@ const starterSections = [
         title: "About the Event",
         content: "Share what this event is about and what guests can expect.",
         sort_order: 1,
-        is_visible: true,
-    },
-    {
-        section_type: "agenda",
-        title: "Programme",
-        content: "6:30 PM - Registration\n7:00 PM - Dinner\n8:00 PM - Activities\n9:30 PM - Lucky Draw",
-        sort_order: 2,
         is_visible: true,
     },
     {
@@ -44,13 +39,23 @@ const starterSections = [
 export default function EventWebsiteBuilder({
     event,
     initialSections,
+    agendaCount = 0,
 }: {
     event: any;
     initialSections: any[];
+    agendaCount?: number;
 }) {
-    const [sections, setSections] = useState(initialSections);
+    // The event's programme/timeline is managed on its own dedicated page
+    // (see the card below) and should not also be editable here as a
+    // freeform text section — that led to two competing, out-of-sync
+    // copies of the same content.
+    const editableSections = initialSections.filter(
+        (section: any) => section.section_type !== "agenda"
+    );
+
+    const [sections, setSections] = useState(editableSections);
     const [selected, setSelected] = useState<any>(
-        initialSections[0] || starterSections[0]
+        editableSections[0] || starterSections[0]
     );
     const [message, setMessage] = useState("");
 
@@ -211,6 +216,30 @@ export default function EventWebsiteBuilder({
             </aside>
 
             <section className="space-y-6">
+                <div className="rounded-[2rem] bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-6 text-white shadow-xl">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-black uppercase tracking-wide">
+                                <CalendarClock size={14} />
+                                Programme
+                            </div>
+
+                            <p className="mt-3 max-w-lg text-sm leading-6 text-white/85">
+                                {agendaCount > 0
+                                    ? `${agendaCount} session${agendaCount === 1 ? "" : "s"} added. Your programme is managed separately and appears on your public event page automatically — no extra section needed here.`
+                                    : "No sessions added yet. Build your event timeline on the Programme page and it will appear on your public event website automatically."}
+                            </p>
+                        </div>
+
+                        <Link
+                            href={`/dashboard/events/${event.id}/agenda`}
+                            className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-white px-5 py-3 font-black text-[#4F46E5] transition hover:bg-white/90"
+                        >
+                            {agendaCount > 0 ? "Edit Programme" : "Add Programme"}
+                        </Link>
+                    </div>
+                </div>
+
                 <div className="rounded-[2rem] bg-white p-6 shadow-xl">
                     <h2 className="text-2xl font-black">Edit Section</h2>
 

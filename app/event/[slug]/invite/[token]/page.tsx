@@ -361,6 +361,23 @@ async function updateRsvp(
         )
             .trim()
             .toLowerCase();
+    const rawPartySize =
+        Number(
+            formData.get(
+                "partySize",
+            ),
+        );
+    const partySize =
+        Number.isInteger(
+            rawPartySize,
+        ) &&
+        rawPartySize >
+            0
+            ? Math.min(
+                  rawPartySize,
+                  20,
+              )
+            : 1;
 
     if (
         !slug ||
@@ -456,6 +473,13 @@ async function updateRsvp(
                     response,
                 registration_status:
                     registrationStatus,
+                ...(response ===
+                "accepted"
+                    ? {
+                          selected_ticket_quantity:
+                              partySize,
+                      }
+                    : {}),
             })
             .eq(
                 "id",
@@ -840,16 +864,14 @@ export default async function InvitePage({
                     true,
                 ),
 
+            // table_assignments.event_id is not reliably populated, so
+            // scope by registration_id alone (already unique per guest).
             admin
                 .from(
                     "table_assignments",
                 )
                 .select(
                     "table_id",
-                )
-                .eq(
-                    "event_id",
-                    event.id,
                 )
                 .eq(
                     "registration_id",
@@ -1093,6 +1115,7 @@ export default async function InvitePage({
                             action={
                                 updateRsvp
                             }
+                            className="space-y-3"
                         >
                             <input
                                 type="hidden"
@@ -1113,6 +1136,28 @@ export default async function InvitePage({
                                 name="response"
                                 value="accepted"
                             />
+
+                            <label className="block">
+                                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                                    Guests attending
+                                    (including you)
+                                </span>
+                                <input
+                                    type="number"
+                                    name="partySize"
+                                    min={
+                                        1
+                                    }
+                                    max={
+                                        20
+                                    }
+                                    defaultValue={
+                                        registration.selected_ticket_quantity ||
+                                        1
+                                    }
+                                    className="min-h-11 w-full rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-950 outline-none focus:border-[#4F46E5]"
+                                />
+                            </label>
 
                             <button
                                 type="submit"

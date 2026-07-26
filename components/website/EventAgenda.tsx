@@ -1,6 +1,9 @@
+import { formatClockTime } from "@/lib/format-time";
+
 type AgendaItem = {
     id: string;
     start_time?: string | null;
+    end_time?: string | null;
     title?: string | null;
     location?: string | null;
     description?: string | null;
@@ -37,7 +40,15 @@ export default function EventAgenda({
                         <div className="min-w-[90px]">
 
                             <p className="text-lg font-black text-[#4F46E5]">
-                                {item.start_time}
+                                {formatClockTime(item.start_time)}
+                                {item.end_time && (
+                                    <>
+                                        <br />
+                                        <span className="text-sm font-bold text-[#4F46E5]/70">
+                                            – {formatClockTime(item.end_time)}
+                                        </span>
+                                    </>
+                                )}
                             </p>
 
                         </div>

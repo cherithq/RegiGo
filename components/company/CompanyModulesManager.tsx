@@ -46,6 +46,18 @@ type CompanyRow = {
     current_plan_id?:
         | string
         | null;
+    custom_sender_name?:
+        | string
+        | null;
+    custom_sender_reply_to?:
+        | string
+        | null;
+    custom_sender_status?:
+        | string
+        | null;
+    custom_sender_review_note?:
+        | string
+        | null;
 };
 
 type ModuleRow = {
@@ -83,6 +95,20 @@ type Company = {
             string,
             boolean
         >;
+    customSenderName:
+        | string
+        | null;
+    customSenderReplyTo:
+        | string
+        | null;
+    customSenderStatus:
+        | "none"
+        | "pending"
+        | "approved"
+        | "rejected";
+    customSenderReviewNote:
+        | string
+        | null;
 };
 
 type ModuleDefinition = {
@@ -362,6 +388,103 @@ export default function CompanyModulesManager() {
         } | null>(
             null,
         );
+    const [
+        senderReviewSaving,
+        setSenderReviewSaving,
+    ] = useState("");
+
+    async function reviewSenderRequest(
+        company: Company,
+        action:
+            | "approve"
+            | "reject",
+    ) {
+        setSenderReviewSaving(
+            `${action}:${company.id}`,
+        );
+        setMessage(
+            null,
+        );
+
+        try {
+            const response =
+                await fetch(
+                    "/api/company/sender-request",
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify(
+                            {
+                                companyId:
+                                    company.id,
+                                action,
+                            },
+                        ),
+                    },
+                );
+            const result =
+                await response.json();
+
+            if (
+                !response.ok
+            ) {
+                throw new Error(
+                    result.error ||
+                        "Unable to review the custom sender request.",
+                );
+            }
+
+            setCompanies(
+                (
+                    current,
+                ) =>
+                    current.map(
+                        (
+                            item,
+                        ) =>
+                            item.id ===
+                            company.id
+                                ? {
+                                      ...item,
+                                      customSenderStatus:
+                                          action ===
+                                          "approve"
+                                              ? "approved"
+                                              : "rejected",
+                                      customSenderReviewNote:
+                                          null,
+                                  }
+                                : item,
+                    ),
+            );
+            setMessage(
+                {
+                    type: "success",
+                    text:
+                        result.message ||
+                        "Custom sender request reviewed.",
+                },
+            );
+        } catch (error) {
+            setMessage(
+                {
+                    type: "error",
+                    text:
+                        error instanceof
+                        Error
+                            ? error.message
+                            : "Unable to review the custom sender request.",
+                },
+            );
+        } finally {
+            setSenderReviewSaving(
+                "",
+            );
+        }
+    }
 
     const load =
         useCallback(async () => {
@@ -379,7 +502,7 @@ export default function CompanyModulesManager() {
                             "companies",
                         )
                         .select(
-                            "id, company_name, company_slug, status, current_plan_id",
+                            "id, company_name, company_slug, status, current_plan_id, custom_sender_name, custom_sender_reply_to, custom_sender_status, custom_sender_review_note",
                         )
                         .order(
                             "company_name",
@@ -597,6 +720,24 @@ export default function CompanyModulesManager() {
                                     ),
                                 ),
                             },
+                            customSenderName:
+                                company.custom_sender_name ||
+                                null,
+                            customSenderReplyTo:
+                                company.custom_sender_reply_to ||
+                                null,
+                            customSenderStatus:
+                                company.custom_sender_status ===
+                                    "pending" ||
+                                company.custom_sender_status ===
+                                    "approved" ||
+                                company.custom_sender_status ===
+                                    "rejected"
+                                    ? company.custom_sender_status
+                                    : "none",
+                            customSenderReviewNote:
+                                company.custom_sender_review_note ||
+                                null,
                         }),
                     );
 
@@ -1034,6 +1175,106 @@ export default function CompanyModulesManager() {
                                     Save Modules
                                 </button>
                             </div>
+
+                            {selectedCompany.customSenderStatus !==
+                                "none" && (
+                                <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <p className="text-sm font-black uppercase tracking-wide text-slate-500">
+                                            Custom Sender Request
+                                        </p>
+
+                                        <span
+                                            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                                                selectedCompany.customSenderStatus ===
+                                                "approved"
+                                                    ? "bg-emerald-50 text-emerald-700"
+                                                    : selectedCompany.customSenderStatus ===
+                                                        "pending"
+                                                      ? "bg-amber-50 text-amber-700"
+                                                      : "bg-red-50 text-red-700"
+                                            }`}
+                                        >
+                                            {
+                                                selectedCompany.customSenderStatus
+                                            }
+                                        </span>
+                                    </div>
+
+                                    <p className="mt-3 text-sm font-semibold text-slate-700">
+                                        {
+                                            selectedCompany.customSenderName
+                                        }{" "}
+                                        &lt;
+                                        {
+                                            selectedCompany.customSenderReplyTo
+                                        }
+                                        &gt;
+                                    </p>
+
+                                    {selectedCompany.customSenderStatus ===
+                                        "pending" && (
+                                        <div className="mt-4 flex flex-wrap gap-3">
+                                            <button
+                                                type="button"
+                                                disabled={Boolean(
+                                                    senderReviewSaving,
+                                                )}
+                                                onClick={() =>
+                                                    void reviewSenderRequest(
+                                                        selectedCompany,
+                                                        "approve",
+                                                    )
+                                                }
+                                                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50"
+                                            >
+                                                {senderReviewSaving ===
+                                                `approve:${selectedCompany.id}` ? (
+                                                    <Loader2
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="animate-spin"
+                                                    />
+                                                ) : (
+                                                    <CheckCircle2
+                                                        size={
+                                                            15
+                                                        }
+                                                    />
+                                                )}
+                                                Approve
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                disabled={Boolean(
+                                                    senderReviewSaving,
+                                                )}
+                                                onClick={() =>
+                                                    void reviewSenderRequest(
+                                                        selectedCompany,
+                                                        "reject",
+                                                    )
+                                                }
+                                                className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-black text-red-700 disabled:opacity-50"
+                                            >
+                                                {senderReviewSaving ===
+                                                `reject:${selectedCompany.id}` ? (
+                                                    <Loader2
+                                                        size={
+                                                            15
+                                                        }
+                                                        className="animate-spin"
+                                                    />
+                                                ) : (
+                                                    "Reject"
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="mt-6 grid gap-3 sm:grid-cols-2">
                                 {MODULES.map(

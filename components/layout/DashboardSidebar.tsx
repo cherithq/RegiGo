@@ -580,7 +580,7 @@ export default function DashboardSidebar() {
                                       href:
                                           `/dashboard/events/${eventId}/agenda`,
                                       label:
-                                          "Agenda",
+                                          "Programme",
                                       icon:
                                           ListTodo,
                                       exact:

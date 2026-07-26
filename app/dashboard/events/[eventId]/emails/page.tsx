@@ -77,11 +77,26 @@ export default async function EmailsPage({
         }
     }
 
-    const { data: templates } = await supabaseServer
-        .from("email_templates")
-        .select("*")
-        .eq("event_id", eventId)
-        .order("created_at", { ascending: false });
+    const [templatesResult, companyResult] = await Promise.all([
+        supabaseServer
+            .from("email_templates")
+            .select("*")
+            .eq("event_id", eventId)
+            .order("created_at", { ascending: false }),
+
+        event.company_id
+            ? supabaseServer
+                  .from("companies")
+                  .select(
+                      "id, custom_sender_name, custom_sender_reply_to, custom_sender_status, custom_sender_review_note",
+                  )
+                  .eq("id", event.company_id)
+                  .maybeSingle()
+            : Promise.resolve({ data: null }),
+    ]);
+
+    const templates = templatesResult.data;
+    const company = companyResult.data;
 
     const eventName = event.event_name || event.title || event.name || "Event";
 
@@ -121,7 +136,11 @@ export default async function EmailsPage({
                 </section>
 
                 <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
-                    <EmailCentre event={event} templates={templates || []} />
+                    <EmailCentre
+                        event={event}
+                        templates={templates || []}
+                        company={company}
+                    />
                 </section>
             </div>
         </main>

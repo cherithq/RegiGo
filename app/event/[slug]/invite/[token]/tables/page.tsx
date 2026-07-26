@@ -33,12 +33,31 @@ export default async function PublicTablesPage({
         return (
             <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-10">
                 <div className="mx-auto max-w-5xl space-y-6">
-                    <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-7 text-white shadow-xl md:p-10">
+                    <section
+                        className="relative overflow-hidden rounded-[2rem] p-7 text-white shadow-xl md:p-10"
+                        style={{
+                            backgroundImage:
+                                snapshot.settings.banner_image_url
+                                    ? `linear-gradient(rgba(2,6,23,.35), rgba(2,6,23,.55)), url("${snapshot.settings.banner_image_url}")`
+                                    : `linear-gradient(to right, ${
+                                          snapshot.settings
+                                              .banner_color_from ||
+                                          "#4F46E5"
+                                      }, ${
+                                          snapshot.settings
+                                              .banner_color_to ||
+                                          "#EC4899"
+                                      })`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                        }}
+                    >
                         <p className="text-sm font-black uppercase tracking-[0.18em] text-white/75">
                             Guest Table Selection
                         </p>
                         <h1 className="mt-4 text-4xl font-black md:text-5xl">
-                            {snapshot.event.event_name}
+                            {snapshot.settings.page_title ||
+                                snapshot.event.event_name}
                         </h1>
 
                         <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">

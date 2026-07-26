@@ -54,10 +54,33 @@ export default async function QRPassPage({
         );
     }
 
+    // table_assignments.event_id is not reliably populated, so look this up
+    // by registration_id instead of relying on a join through events.
+    const { data: tableAssignment } = await supabaseServer
+        .from("table_assignments")
+        .select("table_id, event_tables(table_name)")
+        .eq("registration_id", registration)
+        .maybeSingle();
+
+    const eventTables = tableAssignment?.event_tables as
+        | { table_name?: string }
+        | { table_name?: string }[]
+        | null
+        | undefined;
+
+    const tableName = Array.isArray(eventTables)
+        ? eventTables[0]?.table_name
+        : eventTables?.table_name;
+
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-8">
             <div className="mx-auto max-w-xl">
-                <QRPassCard event={event} guest={guest} ticket={ticket} />
+                <QRPassCard
+                    event={event}
+                    guest={guest}
+                    ticket={ticket}
+                    tableName={tableName || null}
+                />
             </div>
         </main>
     );

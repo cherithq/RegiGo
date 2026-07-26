@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
+import { resolveCompanySender } from "@/lib/company-sender";
 
 type EmailTemplate = {
     subject: string | null;
@@ -49,14 +50,7 @@ function getDefaultBody(emailType: string) {
     if (emailType === "table_assignment") {
         return `Hi {{name}},
 
-Your table has been assigned for {{event_name}}.
-
-Table: {{table_name}}
-
-Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
+Your table has been assigned for {{event_name}}. Your details are below.
 
 You may view your QR pass here:
 {{pass_url}}`;
@@ -65,15 +59,7 @@ You may view your QR pass here:
     if (emailType === "event_update") {
         return `Hi {{name}},
 
-There has been an update for {{event_name}}.
-
-Updated Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
-
-Your current table assignment:
-Table: {{table_name}}
+There has been an update for {{event_name}}. The latest details are below.
 
 You may view your QR pass here:
 {{pass_url}}`;
@@ -81,14 +67,7 @@ You may view your QR pass here:
 
     return `Hi {{name}},
 
-Thank you for registering for {{event_name}}.
-
-Event Details:
-Date: {{event_date}}
-Time: {{event_time}}
-Venue: {{venue}}
-Ticket Type: {{ticket_type}}
-Table: {{table_name}}
+Thank you for registering for {{event_name}}. Your details are below.
 
 You may view your QR pass here:
 {{pass_url}}`;
@@ -114,9 +93,9 @@ async function runEmailWorker(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const supabaseServer = await createSupabaseServerClient();
+        const admin = getSupabaseAdminClient();
 
-        const { data: jobs, error: jobsError } = await supabaseServer
+        const { data: jobs, error: jobsError } = await admin
             .from("email_jobs")
             .select("*")
             .eq("status", "pending")
@@ -165,7 +144,7 @@ async function runEmailWorker(req: Request) {
 
         for (const job of jobs) {
             try {
-                await supabaseServer
+                await admin
                     .from("email_jobs")
                     .update({
                         status: "processing",
@@ -175,7 +154,7 @@ async function runEmailWorker(req: Request) {
                     .eq("id", job.id);
 
                 const { data: registration, error: registrationError } =
-                    await supabaseServer
+                    await admin
                         .from("registrations")
                         .select("*")
                         .eq("id", job.registration_id)
@@ -184,7 +163,7 @@ async function runEmailWorker(req: Request) {
                 if (registrationError) throw new Error(registrationError.message);
                 if (!registration) throw new Error("Registration not found.");
 
-                const { data: event, error: eventError } = await supabaseServer
+                const { data: event, error: eventError } = await admin
                     .from("events")
                     .select("*")
                     .eq("id", registration.event_id)
@@ -201,7 +180,7 @@ async function runEmailWorker(req: Request) {
 
                 const passUrl = `${siteUrl}/event/${event.event_slug}/pass?registration=${registration.id}`;
 
-                const ticketResult = await supabaseServer
+                const ticketResult = await admin
                     .from("qr_tickets")
                     .select("*")
                     .eq("registration_id", registration.id)
@@ -219,7 +198,7 @@ async function runEmailWorker(req: Request) {
                 let ticketName = "-";
 
                 if (registration.ticket_type_id) {
-                    const { data: ticketType } = await supabaseServer
+                    const { data: ticketType } = await admin
                         .from("ticket_types")
                         .select("*")
                         .eq("id", registration.ticket_type_id)
@@ -230,14 +209,14 @@ async function runEmailWorker(req: Request) {
 
                 let tableName = "-";
 
-                const { data: tableAssignment } = await supabaseServer
+                const { data: tableAssignment } = await admin
                     .from("table_assignments")
                     .select("*")
                     .eq("registration_id", registration.id)
                     .maybeSingle();
 
                 if (tableAssignment?.table_id) {
-                    const { data: table } = await supabaseServer
+                    const { data: table } = await admin
                         .from("event_tables")
                         .select("*")
                         .eq("id", tableAssignment.table_id)
@@ -279,7 +258,7 @@ async function runEmailWorker(req: Request) {
                     company: "RegiGo",
                 };
 
-                const { data: savedTemplate } = await supabaseServer
+                const { data: savedTemplate } = await admin
                     .from("email_templates")
                     .select("subject, body")
                     .eq("event_id", event.id)
@@ -299,7 +278,12 @@ async function runEmailWorker(req: Request) {
 
                 const fromAddress =
                     process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || smtpUser;
-                const fromName = process.env.EMAIL_FROM_NAME || "RegiGo";
+                const defaultFromName = process.env.EMAIL_FROM_NAME || "RegiGo";
+                const sender = await resolveCompanySender({
+                    admin,
+                    companyId: event.company_id,
+                    defaultFromName,
+                });
                 const qrCid = "qrpass@regigo";
                 const attachments = qrBase64
                     ? [
@@ -318,60 +302,99 @@ async function runEmailWorker(req: Request) {
                       <p><b>Date:</b> ${escapeHtml(event.event_date || "-")}</p>
                       <p><b>Time:</b> ${escapeHtml(event.event_time || "-")}</p>
                       <p><b>Venue:</b> ${escapeHtml(event.venue || "-")}</p>
-                      <p><b>Ticket Type:</b> ${escapeHtml(ticketName)}</p>
-                      <p><b>Table:</b> ${escapeHtml(tableName)}</p>
+                      ${
+                          tableName !== "-"
+                              ? `<p><b>Table:</b> ${escapeHtml(tableName)}</p>`
+                              : ""
+                      }
                     </div>
                   `;
 
                 await transporter.sendMail({
-                    from: `"${fromName}" <${fromAddress}>`,
+                    from: `"${sender.fromName}" <${fromAddress}>`,
+                    ...(sender.replyTo
+                        ? { replyTo: sender.replyTo }
+                        : {}),
                     to: job.recipient_email,
                     subject,
-                    html: `
-                        <div style="font-family:Arial,sans-serif;background:#F7F5FF;padding:32px">
-                          <div style="max-width:640px;margin:auto;background:white;border-radius:28px;overflow:hidden">
-                            <div style="background:linear-gradient(135deg,#4F46E5,#EC4899);padding:32px;color:white">
-                              <p style="font-weight:bold;margin:0;opacity:.85">RegiGo</p>
-                              <h1 style="margin:12px 0 0;font-size:30px">${escapeHtml(subject)}</h1>
-                              <p style="margin:8px 0 0;opacity:.9">${escapeHtml(event.event_name || "")}</p>
-                            </div>
+                    html: `<!DOCTYPE html>
+                    <html>
+                      <head>
+                        <meta charset="utf-8" />
+                        <meta name="viewport" content="width=device-width, initial-scale=1" />
+                        <title>${escapeHtml(subject)}</title>
+                      </head>
+                      <body style="margin:0;padding:0;background:#F7F5FF;font-family:Arial,sans-serif">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F5FF;padding:32px 16px">
+                          <tr>
+                            <td align="center">
+                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:28px">
+                                <tr>
+                                  <td style="background:linear-gradient(135deg,#4F46E5,#EC4899);padding:32px;color:#ffffff;border-radius:28px 28px 0 0">
+                                    <p style="font-weight:bold;margin:0;opacity:.85">RegiGo</p>
+                                    <h1 style="margin:12px 0 0;font-size:28px;line-height:1.3">${escapeHtml(subject)}</h1>
+                                    <p style="margin:8px 0 0;opacity:.9">${escapeHtml(event.event_name || "")}</p>
+                                  </td>
+                                </tr>
 
-                            <div style="padding:32px">
-                              <div style="font-size:15px;line-height:1.7;color:#334155">
-                                ${textToHtml(body)}
-                              </div>
+                                <tr>
+                                  <td style="padding:32px">
+                                    <div style="font-size:15px;line-height:1.7;color:#334155">
+                                      ${textToHtml(body)}
+                                    </div>
+                                  </td>
+                                </tr>
 
-                              ${
-                                  qrBase64
-                                      ? `
-                                          <div style="text-align:center;margin:28px 0">
-                                            <img
-                                              src="cid:${qrCid}"
-                                              alt="QR Code"
-                                              width="220"
-                                              height="220"
-                                              style="display:block;margin:auto;width:220px;height:220px;border:0"
-                                            />
-                                          </div>
-                                        `
-                                      : ""
-                              }
+                                ${
+                                    qrBase64
+                                        ? `
+                                            <tr>
+                                              <td align="center" style="padding:0 32px 28px">
+                                                <table role="presentation" cellpadding="0" cellspacing="0">
+                                                  <tr>
+                                                    <td style="background:#ffffff;padding:12px;border:1px solid #E2E8F0;border-radius:20px">
+                                                      <img
+                                                        src="cid:${qrCid}"
+                                                        alt="QR Code"
+                                                        width="220"
+                                                        height="220"
+                                                        style="display:block;width:220px;height:220px;max-width:100%;border:0"
+                                                      />
+                                                    </td>
+                                                  </tr>
+                                                </table>
+                                              </td>
+                                            </tr>
+                                          `
+                                        : ""
+                                }
 
-                              ${informationCard}
+                                <tr>
+                                  <td style="padding:0 32px 32px">
+                                    ${informationCard}
 
-                              <div style="text-align:center;margin-top:28px">
-                                <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#4F46E5;color:white;padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:bold">
-                                  View QR Pass
-                                </a>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px">
+                                      <tr>
+                                        <td align="center">
+                                          <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#4F46E5;color:#ffffff;padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:bold">
+                                            View QR Pass
+                                          </a>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                      </body>
+                    </html>
                     `,
                     attachments,
                 });
 
-                await supabaseServer
+                await admin
                     .from("email_jobs")
                     .update({
                         status: "sent",
@@ -390,7 +413,7 @@ async function runEmailWorker(req: Request) {
                 const message =
                     error instanceof Error ? error.message : "Failed to send email";
 
-                await supabaseServer
+                await admin
                     .from("email_jobs")
                     .update({
                         status: "pending",

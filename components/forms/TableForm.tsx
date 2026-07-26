@@ -17,10 +17,13 @@ export default function TableForm({ eventId }: { eventId: string }) {
         setLoading(true);
         setMessage("");
 
+        const capacity = Number(form.table_capacity || 10);
+
         const { error } = await supabase.from("event_tables").insert({
             event_id: eventId,
             table_name: form.table_name,
-            table_capacity: Number(form.table_capacity || 10),
+            table_capacity: capacity,
+            capacity,
         });
 
         setLoading(false);

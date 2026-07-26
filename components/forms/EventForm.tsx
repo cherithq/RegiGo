@@ -300,8 +300,8 @@ export default function EventForm() {
 
                 <div className="mt-4">
                     <ToggleSwitch
-                        title="Enable Agenda"
-                        description="Turn on if this event needs an agenda or programme schedule."
+                        title="Enable Programme"
+                        description="Turn on if this event needs a programme or schedule."
                         checked={form.enable_agenda}
                         onChange={() => handleToggle("enable_agenda")}
                     />

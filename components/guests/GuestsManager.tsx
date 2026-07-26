@@ -102,9 +102,15 @@ type RegistrationField = {
 
 type CheckInFilter = "all" | "checked_in" | "not_checked_in";
 
+type Counters = {
+    registered: number;
+    checkedIn: number;
+};
+
 type Props = {
     eventId: string;
     initialGuests: Guest[];
+    initialCounters?: Counters;
     fields: RegistrationField[];
 };
 
@@ -524,8 +530,16 @@ function escapeRegExp(value: string) {
     );
 }
 
-export default function GuestsManager({ eventId, initialGuests, fields }: Props) {
+export default function GuestsManager({
+    eventId,
+    initialGuests,
+    initialCounters,
+    fields,
+}: Props) {
     const [guests, setGuests] = useState<Guest[]>(initialGuests);
+    const [counters, setCounters] = useState<Counters | null>(
+        initialCounters || null
+    );
     const [query, setQuery] = useState("");
     const [checkInFilter, setCheckInFilter] = useState<CheckInFilter>("all");
     const [page, setPage] = useState(1);
@@ -575,13 +589,24 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
     }, [guests, query, checkInFilter]);
 
     const stats = useMemo(() => {
+        if (counters) {
+            return {
+                total: counters.registered,
+                checkedIn: counters.checkedIn,
+                notCheckedIn: Math.max(
+                    counters.registered - counters.checkedIn,
+                    0
+                ),
+            };
+        }
+
         const checkedInCount = guests.filter(isCheckedIn).length;
         return {
             total: guests.length,
             checkedIn: checkedInCount,
             notCheckedIn: guests.length - checkedInCount,
         };
-    }, [guests]);
+    }, [guests, counters]);
 
     const totalPages = Math.max(
         1,
@@ -683,6 +708,13 @@ export default function GuestsManager({ eventId, initialGuests, fields }: Props)
         }
 
         setGuests(result.guests || []);
+
+        if (result.counters) {
+            setCounters({
+                registered: Number(result.counters.registered || 0),
+                checkedIn: Number(result.counters.checkedIn || 0),
+            });
+        }
     }
 
     async function saveGuest() {

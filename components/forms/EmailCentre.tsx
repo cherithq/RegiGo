@@ -75,18 +75,85 @@ RegiGo`,
     },
 ];
 
+type CompanySender = {
+    id: string;
+    custom_sender_name: string | null;
+    custom_sender_reply_to: string | null;
+    custom_sender_status: "none" | "pending" | "approved" | "rejected";
+    custom_sender_review_note: string | null;
+} | null;
+
 export default function EmailCentre({
     event,
     templates,
+    company,
 }: {
     event: any;
     templates: any[];
+    company: CompanySender;
 }) {
     const [items, setItems] = useState<any[]>(templates || []);
     const [selected, setSelected] = useState<any>(
         templates?.[0] || starterTemplates[0]
     );
     const [message, setMessage] = useState("");
+
+    const [senderName, setSenderName] = useState(
+        company?.custom_sender_name || ""
+    );
+    const [senderReplyTo, setSenderReplyTo] = useState(
+        company?.custom_sender_reply_to || ""
+    );
+    const [senderStatus, setSenderStatus] = useState(
+        company?.custom_sender_status || "none"
+    );
+    const [senderReviewNote, setSenderReviewNote] = useState(
+        company?.custom_sender_review_note || ""
+    );
+    const [senderMessage, setSenderMessage] = useState("");
+    const [senderSaving, setSenderSaving] = useState(false);
+
+    async function submitSenderRequest(e: React.FormEvent) {
+        e.preventDefault();
+
+        if (!company) return;
+
+        setSenderSaving(true);
+        setSenderMessage("");
+
+        try {
+            const response = await fetch("/api/company/sender-request", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    companyId: company.id,
+                    senderName,
+                    replyTo: senderReplyTo,
+                }),
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Unable to submit the custom sender request."
+                );
+            }
+
+            setSenderStatus("pending");
+            setSenderReviewNote("");
+            setSenderMessage(
+                result.message || "Custom sender request submitted."
+            );
+        } catch (error) {
+            setSenderMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to submit the custom sender request."
+            );
+        } finally {
+            setSenderSaving(false);
+        }
+    }
 
     function updateItems(template: any) {
         setItems((current) => {
@@ -259,7 +326,105 @@ export default function EmailCentre({
         .replaceAll("{{qr_image}}", "[QR code image will appear here]");
 
     return (
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        <div className="space-y-6">
+            {company && (
+                <div className="rounded-[2rem] border border-slate-200 bg-white p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-xl font-black">
+                                Custom Sender
+                            </h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Request a custom sender name and reply-to
+                                address for this company&apos;s emails. A
+                                RegiGo admin reviews every request.
+                            </p>
+                        </div>
+                        <SenderStatusBadge status={senderStatus} />
+                    </div>
+
+                    {senderStatus === "approved" && (
+                        <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                            Emails currently send as &quot;
+                            {company.custom_sender_name}&quot; with replies
+                            going to {company.custom_sender_reply_to}.
+                        </p>
+                    )}
+
+                    {senderStatus === "pending" && (
+                        <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+                            Your request is awaiting review by a RegiGo
+                            admin.
+                        </p>
+                    )}
+
+                    {senderStatus === "rejected" && (
+                        <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                            {senderReviewNote
+                                ? `Rejected: ${senderReviewNote}`
+                                : "Your previous request was rejected. You can submit a new one below."}
+                        </p>
+                    )}
+
+                    <form
+                        onSubmit={submitSenderRequest}
+                        className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end"
+                    >
+                        <label className="block">
+                            <span className="mb-2 block text-sm font-black text-slate-700">
+                                Sender name
+                            </span>
+                            <input
+                                value={senderName}
+                                onChange={(e) =>
+                                    setSenderName(e.target.value)
+                                }
+                                placeholder="Acme Events"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                            />
+                        </label>
+
+                        <label className="block">
+                            <span className="mb-2 block text-sm font-black text-slate-700">
+                                Reply-to email
+                            </span>
+                            <input
+                                type="email"
+                                value={senderReplyTo}
+                                onChange={(e) =>
+                                    setSenderReplyTo(e.target.value)
+                                }
+                                placeholder="contact@acmeevents.com"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                            />
+                        </label>
+
+                        <button
+                            type="submit"
+                            disabled={
+                                senderSaving ||
+                                !senderName.trim() ||
+                                !senderReplyTo.trim()
+                            }
+                            className="rounded-xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-3 font-black text-white disabled:opacity-60"
+                        >
+                            {senderSaving
+                                ? "Submitting..."
+                                : senderStatus === "none"
+                                  ? "Request"
+                                  : "Update Request"}
+                        </button>
+                    </form>
+
+                    {senderMessage && (
+                        <p className="mt-3 text-sm font-semibold text-[#4F46E5]">
+                            {senderMessage}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
             <aside className="rounded-[2rem] bg-[#F7F5FF] p-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-black">Templates</h2>
@@ -471,7 +636,38 @@ export default function EmailCentre({
                     </div>
                 </div>
             </section>
+            </div>
         </div>
+    );
+}
+
+function SenderStatusBadge({
+    status,
+}: {
+    status: "none" | "pending" | "approved" | "rejected";
+}) {
+    if (status === "none") return null;
+
+    const styles =
+        status === "approved"
+            ? "bg-emerald-50 text-emerald-700"
+            : status === "pending"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-red-50 text-red-700";
+
+    const label =
+        status === "approved"
+            ? "Approved"
+            : status === "pending"
+              ? "Pending review"
+              : "Rejected";
+
+    return (
+        <span
+            className={`rounded-full px-3 py-1 text-xs font-black uppercase ${styles}`}
+        >
+            {label}
+        </span>
     );
 }
 

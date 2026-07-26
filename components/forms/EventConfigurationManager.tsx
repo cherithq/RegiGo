@@ -827,6 +827,11 @@ export default function EventConfigurationManager({
                         icon={
                             CalendarDays
                         }
+                        disabled={
+                            !data.access
+                                .isPlatformAdmin
+                        }
+                        lockedNote="RegiGo admin only"
                     />
 
                     <Field
@@ -1609,6 +1614,8 @@ function Field({
     placeholder,
     icon: Icon,
     type = "text",
+    disabled = false,
+    lockedNote,
 }: {
     label: string;
     value: string;
@@ -1619,11 +1626,26 @@ function Field({
     icon:
         typeof CalendarDays;
     type?: string;
+    disabled?: boolean;
+    lockedNote?: string;
 }) {
     return (
         <label>
-            <span className="mb-2 block text-sm font-black text-slate-700">
+            <span className="mb-2 flex items-center gap-2 text-sm font-black text-slate-700">
                 {label}
+                {disabled &&
+                    lockedNote && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-700">
+                            <Lock
+                                size={
+                                    11
+                                }
+                            />
+                            {
+                                lockedNote
+                            }
+                        </span>
+                    )}
             </span>
             <div className="relative">
                 <Icon
@@ -1633,6 +1655,9 @@ function Field({
                 <input
                     type={type}
                     value={value}
+                    disabled={
+                        disabled
+                    }
                     onChange={(
                         event,
                     ) =>
@@ -1651,7 +1676,7 @@ function Field({
                     placeholder={
                         placeholder
                     }
-                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none transition focus:border-[#4F46E5]"
+                    className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none transition focus:border-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-60"
                 />
             </div>
         </label>

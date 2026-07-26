@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 export default function TableAssignmentForm({
     eventId,
@@ -96,52 +95,19 @@ export default function TableAssignmentForm({
             return;
         }
 
-        const { data: existingAssignment, error: existingError } = await supabase
-            .from("table_assignments")
-            .select("*")
-            .eq("registration_id", registrationId)
-            .maybeSingle();
+        const response = await fetch(
+            `/api/events/${eventId}/tables/assign`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ registrationId, tableId }),
+            }
+        );
 
-        if (existingError) {
-            setMessage(existingError.message);
-            setMessageType("error");
-            setAssigningGuestId(null);
-            return;
-        }
+        const result = await response.json();
 
-        let savedAssignment: any = null;
-        let saveError: any = null;
-
-        if (existingAssignment) {
-            const { data, error } = await supabase
-                .from("table_assignments")
-                .update({
-                    event_id: eventId,
-                    table_id: tableId,
-                })
-                .eq("registration_id", registrationId)
-                .select("*")
-                .single();
-
-            savedAssignment = data;
-            saveError = error;
-        } else {
-            const { data, error } = await supabase
-                .from("table_assignments")
-                .insert({
-                    event_id: eventId,
-                    table_id: tableId,
-                    registration_id: registrationId,
-                })
-                .select("*")
-                .single();
-
-            savedAssignment = data;
-            saveError = error;
-        }
-
-        if (saveError) {
-            setMessage(saveError.message);
+        if (!response.ok) {
+            setMessage(result.error || "Failed to assign table.");
             setMessageType("error");
             setAssigningGuestId(null);
             return;
@@ -149,7 +115,7 @@ export default function TableAssignmentForm({
 
         setItems((prev) => [
             ...prev.filter((item) => item.registration_id !== registrationId),
-            savedAssignment,
+            result.assignment,
         ]);
 
         router.refresh();
@@ -176,13 +142,19 @@ export default function TableAssignmentForm({
         setMessageType("");
         setRemovingGuestId(registrationId);
 
-        const { error } = await supabase
-            .from("table_assignments")
-            .delete()
-            .eq("registration_id", registrationId);
+        const response = await fetch(
+            `/api/events/${eventId}/tables/assign`,
+            {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ registrationId }),
+            }
+        );
 
-        if (error) {
-            setMessage(error.message);
+        const result = await response.json();
+
+        if (!response.ok) {
+            setMessage(result.error || "Failed to remove table assignment.");
             setMessageType("error");
             setRemovingGuestId(null);
             return;

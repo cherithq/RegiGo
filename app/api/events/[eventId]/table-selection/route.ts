@@ -46,20 +46,21 @@ async function buildPayload(eventId: string) {
         { p_event_id: eventId },
     );
 
-    const [settingsResult, tablesResult, assignmentsResult, holdsResult] =
+    const [settingsResult, tablesResult, holdsResult] =
         await Promise.all([
+            // select("*") instead of an explicit column list so this keeps
+            // working even before the page_title/page_subtitle/banner_color_*
+            // appearance columns have been added to the database.
             admin
                 .from("event_table_selection_settings")
-                .select(
-                    "hold_minutes, allow_changes, require_paid_ticket, allow_registration_selection, allow_rsvp_selection, selection_required, instructions",
-                )
+                .select("*")
                 .eq("event_id", eventId)
                 .maybeSingle(),
 
             admin
                 .from("event_tables")
                 .select(
-                    "id, table_name, capacity, guest_selectable, selection_label, selection_description, selection_order",
+                    "id, table_name, capacity:table_capacity, guest_selectable, selection_label, selection_description, selection_order",
                 )
                 .eq("event_id", eventId)
                 .order("selection_order", {
@@ -68,13 +69,6 @@ async function buildPayload(eventId: string) {
                 .order("table_name", {
                     ascending: true,
                 }),
-
-            admin
-                .from("table_assignments")
-                .select(
-                    "id, table_id, registration_id, assignment_source, assigned_at",
-                )
-                .eq("event_id", eventId),
 
             admin
                 .from("table_selection_holds")
@@ -88,7 +82,6 @@ async function buildPayload(eventId: string) {
     for (const result of [
         settingsResult,
         tablesResult,
-        assignmentsResult,
         holdsResult,
     ]) {
         if (result.error) {
@@ -96,6 +89,36 @@ async function buildPayload(eventId: string) {
                 result.error.message,
             );
         }
+    }
+
+    const tableIds = (tablesResult.data || []).map(
+        (table) => table.id,
+    );
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = tableIds.length
+        ? await admin
+              .from("table_assignments")
+              .select(
+                  "id, table_id, registration_id, assignment_source, assigned_at",
+              )
+              .in("table_id", tableIds)
+        : {
+              data: [] as {
+                  id: string;
+                  table_id: string;
+                  registration_id: string;
+                  assignment_source: string | null;
+                  assigned_at: string;
+              }[],
+              error: null,
+          };
+
+    if (assignmentsResult.error) {
+        throw new TableSelectionError(
+            assignmentsResult.error.message,
+        );
     }
 
     const assignments = assignmentsResult.data || [];
@@ -242,30 +265,65 @@ export async function PATCH(
                 );
             }
 
+            const basePayload = {
+                event_id: eventId,
+                hold_minutes: holdMinutes,
+                allow_changes: body.allowChanges !== false,
+                require_paid_ticket:
+                    body.requirePaidTicket !== false,
+                allow_registration_selection:
+                    body.allowRegistrationSelection !== false,
+                allow_rsvp_selection:
+                    body.allowRsvpSelection !== false,
+                selection_required:
+                    body.selectionRequired === true,
+                instructions:
+                    cleanText(body.instructions) || null,
+            };
+
+            const appearancePayload = {
+                page_title: cleanText(body.pageTitle) || null,
+                page_subtitle:
+                    cleanText(body.pageSubtitle) || null,
+                banner_color_from:
+                    cleanText(body.bannerColorFrom) ||
+                    "#4F46E5",
+                banner_color_to:
+                    cleanText(body.bannerColorTo) ||
+                    "#EC4899",
+                banner_image_url:
+                    cleanText(body.bannerImageUrl) || null,
+            };
+
             const { error } = await admin
                 .from("event_table_selection_settings")
                 .upsert(
-                    {
-                        event_id: eventId,
-                        hold_minutes: holdMinutes,
-                        allow_changes:
-                            body.allowChanges !== false,
-                        require_paid_ticket:
-                            body.requirePaidTicket !== false,
-                        allow_registration_selection:
-                            body.allowRegistrationSelection !== false,
-                        allow_rsvp_selection:
-                            body.allowRsvpSelection !== false,
-                        selection_required:
-                            body.selectionRequired === true,
-                        instructions:
-                            cleanText(body.instructions) ||
-                            null,
-                    },
+                    { ...basePayload, ...appearancePayload },
                     { onConflict: "event_id" },
                 );
 
-            if (error) {
+            // The page_title/page_subtitle/banner_color_* appearance
+            // columns are a newer addition — if they don't exist in this
+            // database yet, retry without them rather than blocking every
+            // other setting from saving.
+            if (
+                error &&
+                (error.message.includes("does not exist") ||
+                    error.message.includes("schema cache") ||
+                    error.message.includes("could not find"))
+            ) {
+                const { error: fallbackError } = await admin
+                    .from("event_table_selection_settings")
+                    .upsert(basePayload, {
+                        onConflict: "event_id",
+                    });
+
+                if (fallbackError) {
+                    throw new TableSelectionError(
+                        fallbackError.message,
+                    );
+                }
+            } else if (error) {
                 throw new TableSelectionError(error.message);
             }
         } else if (action === "table") {

@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { ArrowLeft, Table2, Users } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
+import { loadAllRows } from "@/lib/event-analytics-server";
 import TableForm from "@/components/forms/TableForm";
+import TableListManager from "@/components/tables/TableListManager";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,33 +34,50 @@ export default async function TablesPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
+    await requirePermission("can_manage_guests");
+
     const { eventId } = await params;
 
-    const [eventResult, tablesResult, assignmentsResult, guestsResult] =
+    // Service-role client: RLS can hide table_assignments rows from the
+    // signed-in session even for events the user manages, which is why
+    // this page previously showed 0 assigned/seats left despite real data.
+    const admin = getSupabaseAdminClient();
+
+    const [eventResult, tablesResult, guests] =
         await Promise.all([
-            supabaseServer
+            admin
                 .from("events")
                 .select("*")
                 .eq("id", eventId)
                 .maybeSingle(),
 
-            supabaseServer
+            admin
                 .from("event_tables")
                 .select("*")
                 .eq("event_id", eventId)
                 .order("table_name", { ascending: true }),
 
-            supabaseServer
-                .from("table_assignments")
-                .select("id, event_id, table_id, registration_id")
-                .eq("event_id", eventId),
-
-            supabaseServer
-                .from("registrations")
-                .select("id, full_name, email")
-                .eq("event_id", eventId),
+            // PostgREST caps unpaginated selects at 1000 rows, and this
+            // event can have thousands of registrations — page through
+            // all of them so every guest resolves in the seat counts.
+            loadAllRows<Guest>({
+                admin,
+                table: "registrations",
+                columns: "id, full_name, email",
+                eventId,
+            }),
         ]);
+
+    const tableIds = (tablesResult.data || []).map((table) => table.id);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = tableIds.length
+        ? await admin
+              .from("table_assignments")
+              .select("id, event_id, table_id, registration_id")
+              .in("table_id", tableIds)
+        : { data: [] as TableAssignment[] };
 
     const event = eventResult.data;
 
@@ -75,13 +95,6 @@ export default async function TablesPage({
 
     const tables = (tablesResult.data || []) as EventTable[];
     const assignments = (assignmentsResult.data || []) as TableAssignment[];
-    const guests = (guestsResult.data || []) as Guest[];
-
-    const guestMap = new Map<string, Guest>();
-
-    guests.forEach((guest) => {
-        guestMap.set(guest.id, guest);
-    });
 
     const eventName = event.event_name || event.title || event.name || "Event";
 
@@ -132,101 +145,12 @@ export default async function TablesPage({
 
                 <div className="grid gap-5 lg:grid-cols-[1fr_420px] lg:gap-6">
                     <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {tables.length > 0 ? (
-                                tables.map((table) => {
-                                    const seatedAssignments = assignments.filter(
-                                        (assignment) => assignment.table_id === table.id
-                                    );
-
-                                    const seatedGuests = seatedAssignments
-                                        .map((assignment) =>
-                                            assignment.registration_id
-                                                ? guestMap.get(assignment.registration_id)
-                                                : null
-                                        )
-                                        .filter(Boolean) as Guest[];
-
-                                    const capacity = Number(table.table_capacity || 0);
-                                    const remaining = Math.max(
-                                        capacity - seatedGuests.length,
-                                        0
-                                    );
-                                    const isFull = capacity > 0 && remaining === 0;
-
-                                    return (
-                                        <div
-                                            key={table.id}
-                                            className="rounded-[1.5rem] bg-[#F7F5FF] p-5 md:rounded-[2rem] md:p-6"
-                                        >
-                                            <div className="flex items-start justify-between gap-4">
-                                                <div className="min-w-0">
-                                                    <h2 className="truncate text-xl font-black md:text-2xl">
-                                                        {table.table_name}
-                                                    </h2>
-
-                                                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                                                        {seatedGuests.length}/{capacity} assigned ·{" "}
-                                                        {remaining} seat
-                                                        {remaining === 1 ? "" : "s"} left
-                                                    </p>
-                                                </div>
-
-                                                <span
-                                                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
-                                                        isFull
-                                                            ? "bg-red-100 text-red-700"
-                                                            : "bg-green-100 text-green-700"
-                                                    }`}
-                                                >
-                                                    {isFull ? "FULL" : "OPEN"}
-                                                </span>
-                                            </div>
-
-                                            <div className="mt-5 space-y-2">
-                                                {seatedGuests.length > 0 ? (
-                                                    seatedGuests.slice(0, 5).map((guest) => (
-                                                        <div
-                                                            key={guest.id}
-                                                            className="rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700"
-                                                        >
-                                                            <p className="font-black">
-                                                                {guest.full_name || "Unnamed Guest"}
-                                                            </p>
-                                                            <p className="break-all text-xs text-slate-500">
-                                                                {guest.email || "No email"}
-                                                            </p>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <p className="rounded-2xl bg-white p-4 text-sm font-semibold text-slate-500">
-                                                        No guests assigned yet.
-                                                    </p>
-                                                )}
-
-                                                {seatedGuests.length > 5 && (
-                                                    <p className="text-sm font-bold text-slate-500">
-                                                        + {seatedGuests.length - 5} more guests
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            ) : (
-                                <div className="col-span-full rounded-2xl bg-[#F7F5FF] p-8 text-center">
-                                    <div className="text-5xl">🪑</div>
-
-                                    <h2 className="mt-4 text-2xl font-black">
-                                        No tables yet
-                                    </h2>
-
-                                    <p className="mt-2 text-slate-500">
-                                        Add tables before assigning guests.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
+                        <TableListManager
+                            eventId={eventId}
+                            initialTables={tables}
+                            assignments={assignments}
+                            guests={guests}
+                        />
                     </section>
 
                     <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8">

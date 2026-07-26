@@ -113,7 +113,7 @@ export const companyModuleCatalog: ModuleDefinition[] = [
     },
     {
         key: "agenda",
-        label: "Agenda",
+        label: "Programme",
         description: "Programme items and event timeline.",
         group: "Workspace",
     },

@@ -471,6 +471,79 @@ async function loadOptionalRows<T>({
     }
 }
 
+async function loadOptionalRowsIn<T>({
+    admin,
+    table,
+    columns,
+    column,
+    ids,
+    orderColumn,
+    chunkSize = 200,
+}: {
+    admin: SupabaseClient;
+    table: string;
+    columns: string;
+    column: string;
+    ids: string[];
+    orderColumn: string;
+    chunkSize?: number;
+}) {
+    try {
+        const rows: T[] = [];
+
+        for (
+            let start = 0;
+            start < ids.length;
+            start += chunkSize
+        ) {
+            const chunk = ids.slice(
+                start,
+                start + chunkSize,
+            );
+
+            const { data, error } = await admin
+                .from(table)
+                .select(columns)
+                .in(column, chunk)
+                .order(orderColumn, {
+                    ascending: true,
+                });
+
+            if (error) {
+                throw new EventAnalyticsError(
+                    error.message,
+                );
+            }
+
+            rows.push(...((data || []) as T[]));
+        }
+
+        return rows;
+    } catch (error) {
+        const message =
+            error instanceof
+                Error
+                ? error.message
+                : "";
+
+        if (
+            message.includes(
+                "does not exist",
+            ) ||
+            message.includes(
+                "schema cache",
+            ) ||
+            message.includes(
+                "could not find",
+            )
+        ) {
+            return [];
+        }
+
+        throw error;
+    }
+}
+
 async function loadFields({
     admin,
     eventId,
@@ -578,7 +651,6 @@ export async function loadEventReportDataset(
         invitations,
         checkIns,
         fieldResult,
-        assignments,
         tables,
     ] =
         await Promise.all([
@@ -621,28 +693,34 @@ export async function loadEventReportDataset(
                 eventId,
             }),
 
-            loadOptionalRows<ReportAssignment>({
-                admin,
-                table:
-                    "table_assignments",
-                columns:
-                    "registration_id, table_id",
-                eventId,
-                orderColumn:
-                    "registration_id",
-            }),
-
             loadOptionalRows<ReportTable>({
                 admin,
                 table:
                     "event_tables",
                 columns:
-                    "id, table_name, capacity",
+                    "id, table_name, capacity:table_capacity",
                 eventId,
                 orderColumn:
                     "table_name",
             }),
         ]);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's registration ids instead of filtering on event_id directly.
+    const registrationIds = registrations.map(
+        (registration) => registration.id,
+    );
+
+    const assignments = registrationIds.length
+        ? await loadOptionalRowsIn<ReportAssignment>({
+              admin,
+              table: "table_assignments",
+              columns: "registration_id, table_id",
+              column: "registration_id",
+              ids: registrationIds,
+              orderColumn: "registration_id",
+          })
+        : [];
 
     if (
         settingsResult.error &&

@@ -3,8 +3,8 @@ import {
     ArrowLeft,
     MailCheck,
 } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
 import BulkEmailButton from "@/components/guests/BulkEmailButton";
 import GuestsManager from "@/components/guests/GuestsManager";
 
@@ -61,17 +61,21 @@ export default async function GuestsPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer =
-        await createSupabaseServerClient();
-
     await requirePermission(
         "can_manage_guests",
     );
 
     const { eventId } = await params;
 
+    // Service-role client: this page needs to see every registration for
+    // the event regardless of how the row was created (registration form,
+    // admin import, or a direct database insert), and RLS on these tables
+    // can otherwise hide rows from the signed-in session even though
+    // requirePermission already gates access to this page.
+    const admin = getSupabaseAdminClient();
+
     const { data: event } =
-        await supabaseServer
+        await admin
             .from("events")
             .select("*")
             .eq("id", eventId)
@@ -89,14 +93,41 @@ export default async function GuestsPage({
         );
     }
 
-    const { data: guests } =
-        await supabaseServer
+    const [
+        { data: guests },
+        registeredCountResult,
+        checkedInCountResult,
+    ] = await Promise.all([
+        admin
             .from("registrations")
             .select("*")
             .eq("event_id", eventId)
             .order("created_at", {
                 ascending: false,
-            });
+            }),
+
+        admin
+            .from("registrations")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", eventId)
+            .not("registration_status", "in", "(cancelled,declined)"),
+
+        admin
+            .from("check_ins")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", eventId),
+    ]);
+
+    const initialCounters = {
+        registered: registeredCountResult.count || 0,
+        checkedIn: checkedInCountResult.count || 0,
+    };
 
     const baseGuests =
         (guests || []) as Guest[];
@@ -110,7 +141,7 @@ export default async function GuestsPage({
 
     if (registrationIds.length > 0) {
         const { data: qrTickets } =
-            await supabaseServer
+            await admin
                 .from("qr_tickets")
                 .select("*")
                 .in(
@@ -163,7 +194,7 @@ export default async function GuestsPage({
     }
 
     const { data: form } =
-        await supabaseServer
+        await admin
             .from("registration_forms")
             .select("*")
             .eq("event_id", eventId)
@@ -173,7 +204,7 @@ export default async function GuestsPage({
 
     if (form?.id) {
         const { data: registrationFields } =
-            await supabaseServer
+            await admin
                 .from("registration_fields")
                 .select("*")
                 .eq("form_id", form.id)
@@ -240,6 +271,9 @@ export default async function GuestsPage({
                     eventId={eventId}
                     initialGuests={
                         guestsWithQrTickets
+                    }
+                    initialCounters={
+                        initialCounters
                     }
                     fields={fields}
                 />

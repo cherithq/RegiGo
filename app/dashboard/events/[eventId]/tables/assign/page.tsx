@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, Users } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
+import { loadAllRows } from "@/lib/event-analytics-server";
 import TableAssignmentForm from "@/components/forms/TableAssignmentForm";
 
 export const dynamic = "force-dynamic";
@@ -11,34 +13,60 @@ export default async function AssignTablesPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
+    await requirePermission("can_manage_guests");
+
     const { eventId } = await params;
 
-    const [eventResult, tablesResult, guestsResult, assignmentsResult] =
+    // Service-role client: RLS can hide table_assignments rows from the
+    // signed-in session even for events the user manages.
+    const admin = getSupabaseAdminClient();
+
+    const [eventResult, tablesResult, guests] =
         await Promise.all([
-            supabaseServer
+            admin
                 .from("events")
                 .select("*")
                 .eq("id", eventId)
                 .maybeSingle(),
 
-            supabaseServer
+            admin
                 .from("event_tables")
                 .select("*")
                 .eq("event_id", eventId)
                 .order("table_name", { ascending: true }),
 
-            supabaseServer
-                .from("registrations")
-                .select("*")
-                .eq("event_id", eventId)
-                .order("full_name", { ascending: true }),
-
-            supabaseServer
-                .from("table_assignments")
-                .select("*")
-                .eq("event_id", eventId),
+            // PostgREST caps unpaginated selects at 1000 rows, and this
+            // event can have thousands of registrations — page through
+            // all of them so every guest is available to assign.
+            loadAllRows({
+                admin,
+                table: "registrations",
+                columns: "*",
+                eventId,
+                orderColumn: "full_name",
+            }),
         ]);
+
+    const tableIds = (tablesResult.data || []).map((table) => table.id);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = tableIds.length
+        ? await admin
+              .from("table_assignments")
+              .select("*")
+              .in("table_id", tableIds)
+        : {
+              data: [] as {
+                  id: string;
+                  event_id: string | null;
+                  table_id: string;
+                  registration_id: string;
+                  assignment_source: string | null;
+                  assigned_at: string;
+                  created_at: string;
+              }[],
+          };
 
     const event = eventResult.data;
 
@@ -95,7 +123,7 @@ export default async function AssignTablesPage({
                     <TableAssignmentForm
                         eventId={eventId}
                         tables={tablesResult.data || []}
-                        guests={guestsResult.data || []}
+                        guests={guests}
                         assignments={assignmentsResult.data || []}
                     />
                 </section>

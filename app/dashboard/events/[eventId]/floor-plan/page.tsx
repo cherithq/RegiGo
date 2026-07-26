@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Map } from "lucide-react";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePermission } from "@/lib/permissions";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
 import FloorPlanEditor from "@/components/floor/FloorPlanEditor";
 
 export default async function FloorPlanPage({
@@ -8,27 +9,38 @@ export default async function FloorPlanPage({
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const supabaseServer = await createSupabaseServerClient();
+    await requirePermission("can_manage_guests");
+
     const { eventId } = await params;
 
-    const [eventResult, tablesResult, assignmentsResult] = await Promise.all([
-        supabaseServer
+    // Service-role client: RLS can hide table_assignments rows from the
+    // signed-in session even for events the user manages.
+    const admin = getSupabaseAdminClient();
+
+    const [eventResult, tablesResult] = await Promise.all([
+        admin
             .from("events")
             .select("*")
             .eq("id", eventId)
             .maybeSingle(),
 
-        supabaseServer
+        admin
             .from("event_tables")
             .select("*")
             .eq("event_id", eventId)
             .order("table_name", { ascending: true }),
-
-        supabaseServer
-            .from("table_assignments")
-            .select("*, registrations(*)")
-            .eq("event_id", eventId),
     ]);
+
+    const tableIds = (tablesResult.data || []).map((table) => table.id);
+
+    // table_assignments.event_id is not reliably populated, so scope by
+    // this event's table ids instead of filtering on event_id directly.
+    const assignmentsResult = tableIds.length
+        ? await admin
+              .from("table_assignments")
+              .select("*, registrations(*)")
+              .in("table_id", tableIds)
+        : { data: [] as Record<string, unknown>[] };
 
     const event = eventResult.data;
 

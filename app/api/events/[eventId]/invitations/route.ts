@@ -11,6 +11,7 @@ import {
     replaceTemplateVariables,
     requireInvitationManager,
 } from "@/lib/guest-invitations";
+import { resolveCompanySender } from "@/lib/company-sender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -371,6 +372,12 @@ RegiGo`;
         const { transporter, fromAddress, fromName } =
             createSmtpTransport();
 
+        const sender = await resolveCompanySender({
+            admin,
+            companyId: event.company_id,
+            defaultFromName: fromName,
+        });
+
         const siteUrl = getSiteUrl();
         const expiresAt = invitationExpiry(event);
         const results: {
@@ -505,7 +512,10 @@ RegiGo`;
                     );
 
                 await transporter.sendMail({
-                    from: `"${fromName}" <${fromAddress}>`,
+                    from: `"${sender.fromName}" <${fromAddress}>`,
+                    ...(sender.replyTo
+                        ? { replyTo: sender.replyTo }
+                        : {}),
                     to: guest.email,
                     subject,
                     html: buildInvitationEmailHtml({

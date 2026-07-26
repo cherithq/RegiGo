@@ -52,6 +52,39 @@ type Prize = {
     updated_at?: string | null;
 };
 
+type DisplaySettings = {
+    background_mode?: string | null;
+    background_color?: string | null;
+    gradient_start?: string | null;
+    gradient_end?: string | null;
+    background_image_url?: string | null;
+} | null;
+
+function audienceBackgroundStyle(settings: DisplaySettings) {
+    const mode = settings?.background_mode || "gradient";
+    const backgroundColor = settings?.background_color || "#050816";
+    const gradientStart = settings?.gradient_start || "#4F46E5";
+    const gradientEnd = settings?.gradient_end || "#EC4899";
+    const backgroundImageUrl = settings?.background_image_url || "";
+
+    if (mode === "image" && backgroundImageUrl) {
+        return {
+            backgroundImage: `linear-gradient(rgba(2,6,23,.24), rgba(2,6,23,.58)), url("${backgroundImageUrl}")`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+        } as const;
+    }
+
+    if (mode === "solid") {
+        return { background: backgroundColor } as const;
+    }
+
+    return {
+        background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})`,
+    } as const;
+}
+
 type RegistrationField = {
     id: string;
     field_label: string;
@@ -192,6 +225,7 @@ export default function LuckyDrawWheel({
     initialWinners = [],
     initialPrizes = [],
     registrationFields = [],
+    displaySettings = null,
 }: {
     eventId: string;
     eventName: string;
@@ -199,6 +233,7 @@ export default function LuckyDrawWheel({
     initialWinners?: Winner[];
     initialPrizes?: Prize[];
     registrationFields?: RegistrationField[];
+    displaySettings?: DisplaySettings;
 }) {
     const [winners, setWinners] = useState<Winner[]>(initialWinners);
 
@@ -1555,9 +1590,13 @@ export default function LuckyDrawWheel({
                             </div>
                         </div>
 
-                        <div className="relative mt-6 min-h-[250px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950 px-3 py-5 sm:px-4 md:px-6">
-                            <div className="pointer-events-none absolute left-[-20%] top-[-80%] h-[520px] w-[520px] rounded-full bg-[#4F46E5]/30 blur-3xl" />
-                            <div className="pointer-events-none absolute bottom-[-100%] right-[-20%] h-[580px] w-[580px] rounded-full bg-[#EC4899]/25 blur-3xl" />
+                        <div
+                            className="relative mt-6 min-h-[250px] overflow-hidden rounded-[1.75rem] border border-white/10 px-3 py-5 sm:px-4 md:px-6"
+                            style={audienceBackgroundStyle(
+                                displaySettings
+                            )}
+                        >
+                            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-white/5" />
 
                             {liveMachineNames.length > 0 ? (
                                 <div

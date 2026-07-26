@@ -275,7 +275,7 @@ export async function POST(
                         true,
                     )
                     .gt(
-                        "capacity",
+                        "table_capacity",
                         0,
                     ),
             ]);
@@ -630,7 +630,7 @@ export async function POST(
                 recipient_email:
                     email,
                 email_type:
-                    "registration_confirmation",
+                    "confirmation",
                 status:
                     "pending",
                 attempts: 0,

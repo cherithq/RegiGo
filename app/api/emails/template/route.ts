@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import QRCode from "qrcode";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
+import { resolveCompanySender } from "@/lib/company-sender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ type Registration = {
 
 type EventRecord = {
     id: string;
+    company_id?: string | null;
     event_name?: string | null;
     title?: string | null;
     name?: string | null;
@@ -485,7 +487,7 @@ export async function POST(request: Request) {
         const smtpSecure =
             process.env.SMTP_SECURE === "true" || smtpPort === 465;
 
-        const fromName =
+        const defaultFromName =
             process.env.EVENT_EMAIL_FROM_NAME ||
             process.env.EMAIL_FROM_NAME ||
             "RegiGo";
@@ -508,6 +510,12 @@ export async function POST(request: Request) {
                 user: smtpUser,
                 pass: smtpPass,
             },
+        });
+
+        const sender = await resolveCompanySender({
+            admin: supabaseServer,
+            companyId: eventRecord.company_id,
+            defaultFromName,
         });
 
         const results: {
@@ -596,7 +604,10 @@ export async function POST(request: Request) {
                 });
 
                 await transporter.sendMail({
-                    from: `"${fromName}" <${smtpUser}>`,
+                    from: `"${sender.fromName}" <${smtpUser}>`,
+                    ...(sender.replyTo
+                        ? { replyTo: sender.replyTo }
+                        : {}),
                     to: registration.email!,
                     subject,
                     html,

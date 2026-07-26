@@ -15,6 +15,7 @@ import {
     useMemo,
     useState,
 } from "react";
+import { useRouter } from "next/navigation";
 
 type TableRow = {
     id: string;
@@ -23,6 +24,11 @@ type TableRow = {
     selection_label: string | null;
     selection_description: string | null;
     availableSeats: number;
+    floor_x?: number | null;
+    floor_y?: number | null;
+    table_size?: number | null;
+    table_shape?: string | null;
+    rotation?: number | null;
 };
 
 type Assignment = {
@@ -124,6 +130,7 @@ export default function PublicTableSelector({
             "PublicTableSelector requires an API path.",
         );
     }
+    const router = useRouter();
     const [data, setData] = useState<Payload>(initialData);
     const [selectedId, setSelectedId] = useState(
         initialData.currentHold?.table_id ||
@@ -207,13 +214,16 @@ export default function PublicTableSelector({
 
     async function act(
         action: "hold" | "confirm" | "release",
+        tableId?: string,
     ) {
-        if (action === "hold" && !selectedId) {
+        const holdTableId = tableId || selectedId;
+
+        if (action === "hold" && !holdTableId) {
             setMessage("Choose a table first.");
             return;
         }
 
-        setWorking(action);
+        setWorking(action === "hold" ? holdTableId! : action);
         setMessage("");
 
         try {
@@ -228,7 +238,7 @@ export default function PublicTableSelector({
                         action,
                         tableId:
                             action === "hold"
-                                ? selectedId
+                                ? holdTableId
                                 : undefined,
                     }),
                 },
@@ -254,6 +264,15 @@ export default function PublicTableSelector({
                 setSelectedId(
                     result.currentAssignment.table_id,
                 );
+            }
+
+            if (
+                action === "confirm" &&
+                result.currentAssignment &&
+                completionUrl
+            ) {
+                router.push(completionUrl);
+                return;
             }
         } catch (error) {
             setMessage(
@@ -401,9 +420,126 @@ export default function PublicTableSelector({
                         </button>
                     </div>
 
+                    <p className="text-sm text-slate-500">
+                        Tap a table to reserve it right away.
+                    </p>
+
+                    {data.tables.some(
+                        (table) =>
+                            table.floor_x != null &&
+                            table.floor_y != null,
+                    ) && (
+                        <div className="overflow-x-auto rounded-2xl border-2 border-dashed border-slate-200 bg-white">
+                            <div className="relative h-[420px] min-w-[520px]">
+                                <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-2xl bg-slate-950 px-10 py-2 text-xs font-black text-white">
+                                    STAGE
+                                </div>
+
+                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-2xl bg-slate-100 px-8 py-2 text-xs font-black text-slate-600">
+                                    ENTRANCE
+                                </div>
+
+                                {data.tables.map((table) => {
+                                    const active =
+                                        table.id === selectedId;
+                                    const reserving =
+                                        working === table.id;
+                                    const enough =
+                                        table.availableSeats >=
+                                            data.guest.partySize ||
+                                        table.id ===
+                                            data.currentAssignment
+                                                ?.table_id ||
+                                        table.id ===
+                                            data.currentHold
+                                                ?.table_id;
+                                    const isFull =
+                                        table.availableSeats <= 0;
+
+                                    return (
+                                        <button
+                                            key={table.id}
+                                            type="button"
+                                            disabled={
+                                                !enough ||
+                                                Boolean(working)
+                                            }
+                                            onClick={() => {
+                                                setSelectedId(
+                                                    table.id,
+                                                );
+                                                void act(
+                                                    "hold",
+                                                    table.id,
+                                                );
+                                            }}
+                                            title={
+                                                table.selection_label ||
+                                                table.table_name
+                                            }
+                                            className={`absolute flex flex-col items-center justify-center border-4 text-center text-xs font-black shadow-md transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                                                table.table_shape ===
+                                                "rectangle"
+                                                    ? "rounded-2xl"
+                                                    : "rounded-full"
+                                            } ${
+                                                active
+                                                    ? "border-[#4F46E5]"
+                                                    : "border-white"
+                                            } ${
+                                                isFull
+                                                    ? "bg-red-100 text-red-700"
+                                                    : "bg-green-100 text-green-700"
+                                            }`}
+                                            style={{
+                                                left:
+                                                    table.floor_x ||
+                                                    80,
+                                                top:
+                                                    table.floor_y ||
+                                                    80,
+                                                width:
+                                                    table.table_size ||
+                                                    90,
+                                                height:
+                                                    table.table_size ||
+                                                    90,
+                                                transform: `rotate(${
+                                                    table.rotation ||
+                                                    0
+                                                }deg)`,
+                                            }}
+                                        >
+                                            {reserving ? (
+                                                <Loader2
+                                                    size={16}
+                                                    className="animate-spin"
+                                                />
+                                            ) : (
+                                                <>
+                                                    <span>
+                                                        {table.selection_label ||
+                                                            table.table_name}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold">
+                                                        {
+                                                            table.availableSeats
+                                                        }{" "}
+                                                        left
+                                                    </span>
+                                                </>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid gap-4 sm:grid-cols-2">
                         {data.tables.map((table) => {
                             const active = table.id === selectedId;
+                            const reserving = working === table.id;
                             const enough =
                                 table.availableSeats >=
                                     data.guest.partySize ||
@@ -415,10 +551,13 @@ export default function PublicTableSelector({
                                 <button
                                     key={table.id}
                                     type="button"
-                                    disabled={!enough}
-                                    onClick={() =>
-                                        setSelectedId(table.id)
+                                    disabled={
+                                        !enough || Boolean(working)
                                     }
+                                    onClick={() => {
+                                        setSelectedId(table.id);
+                                        void act("hold", table.id);
+                                    }}
                                     className={`rounded-3xl border p-5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                                         active
                                             ? "border-[#4F46E5] bg-[#F7F5FF]"
@@ -433,9 +572,16 @@ export default function PublicTableSelector({
                                                     : "bg-slate-100 text-slate-500"
                                             }`}
                                         >
-                                            <TableProperties
-                                                size={19}
-                                            />
+                                            {reserving ? (
+                                                <Loader2
+                                                    size={19}
+                                                    className="animate-spin"
+                                                />
+                                            ) : (
+                                                <TableProperties
+                                                    size={19}
+                                                />
+                                            )}
                                         </span>
                                         <div>
                                             <p className="text-lg font-black">
@@ -451,8 +597,9 @@ export default function PublicTableSelector({
                                             )}
                                             <p className="mt-3 inline-flex items-center gap-2 text-sm font-black text-[#4F46E5]">
                                                 <Users size={15} />
-                                                {table.availableSeats}{" "}
-                                                seats currently available
+                                                {reserving
+                                                    ? "Reserving your seat…"
+                                                    : `${table.availableSeats} seats currently available`}
                                             </p>
                                         </div>
                                     </div>
@@ -467,29 +614,6 @@ export default function PublicTableSelector({
                             currently available.
                         </div>
                     )}
-
-                    {!data.currentHold &&
-                        data.tables.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => void act("hold")}
-                                disabled={
-                                    Boolean(working) ||
-                                    !selectedId
-                                }
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg disabled:opacity-50"
-                            >
-                                {working === "hold" ? (
-                                    <Loader2
-                                        size={18}
-                                        className="animate-spin"
-                                    />
-                                ) : (
-                                    <Clock3 size={18} />
-                                )}
-                                Hold Selected Table
-                            </button>
-                        )}
                 </>
             )}
         </div>

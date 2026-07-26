@@ -8,6 +8,7 @@ import {
     CheckCircle2,
 } from "lucide-react";
 import { requirePermission } from "@/lib/permissions";
+import { getSupabaseAdminClient } from "@/lib/guest-invitations";
 import LuckyDrawWheel from "@/components/lucky-draw/LuckyDrawWheel";
 
 type CheckedInGuest = {
@@ -30,51 +31,121 @@ type RegistrationField = {
     sort_order?: number;
 };
 
+type RegistrationRow = {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    phone: string | null;
+    department: string | null;
+    custom_answers: Record<string, unknown> | null;
+    created_at: string | null;
+    registration_status: string | null;
+};
+
+type CheckInRow = {
+    registration_id: string | null;
+    checked_in_at: string | null;
+};
+
+// Supabase caps rows-per-request (and rejects overly long `?id=in.(...)`
+// filter URLs), so large events need real pagination rather than a single
+// unbounded select or an `.in()` filter built from thousands of ids.
+async function fetchAllRows<T>(
+    buildQuery: (
+        from: number,
+        to: number,
+    ) => PromiseLike<{
+        data: T[] | null;
+        error: { message: string } | null;
+    }>,
+    pageSize = 1000,
+): Promise<T[]> {
+    let rows: T[] = [];
+    let from = 0;
+
+    for (;;) {
+        const { data, error } = await buildQuery(
+            from,
+            from + pageSize - 1,
+        );
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        const batch = data || [];
+        rows = rows.concat(batch);
+
+        if (batch.length < pageSize) {
+            break;
+        }
+
+        from += pageSize;
+
+        if (from > 200000) {
+            // Safety valve against a runaway loop; no real event should
+            // ever have this many rows.
+            break;
+        }
+    }
+
+    return rows;
+}
+
 export default async function LuckyDrawPage({
     params,
 }: {
     params: Promise<{ eventId: string }>;
 }) {
-    const { supabaseServer } = await requirePermission("can_scan_qr");
+    await requirePermission("can_scan_qr");
     const { eventId } = await params;
+
+    // Use the service-role client for reads: this dashboard is meant to see
+    // every registration/check-in for the event regardless of how those rows
+    // were created (scanner, admin UI, or a direct database insert/import),
+    // and row-level security on these tables can otherwise hide rows from
+    // the signed-in session even though requirePermission already gates
+    // access to this page.
+    const admin = getSupabaseAdminClient();
 
     const [
         eventResult,
-        checkInsResult,
         registrationFormResult,
         winnersResult,
         prizesResult,
+        displaySettingsResult,
     ] = await Promise.all([
-        supabaseServer
+        admin
             .from("events")
             .select("*")
             .eq("id", eventId)
             .maybeSingle(),
 
-        supabaseServer
-            .from("check_ins")
-            .select("*")
-            .eq("event_id", eventId)
-            .eq("scan_result", "checked_in")
-            .order("checked_in_at", { ascending: false }),
-
-        supabaseServer
+        admin
             .from("registration_forms")
             .select("id")
             .eq("event_id", eventId)
             .maybeSingle(),
 
-        supabaseServer
+        admin
             .from("lucky_draw_winners")
             .select("*")
             .eq("event_id", eventId)
             .order("created_at", { ascending: false }),
 
-        supabaseServer
+        admin
             .from("lucky_draw_prizes")
             .select("*")
             .eq("event_id", eventId)
             .order("prize_order", { ascending: true }),
+
+        admin
+            .from("lucky_draw_settings")
+            .select(
+                "background_mode, background_color, gradient_start, gradient_end, background_image_url"
+            )
+            .eq("event_id", eventId)
+            .maybeSingle(),
     ]);
 
     const event = eventResult.data;
@@ -101,19 +172,52 @@ export default async function LuckyDrawPage({
         );
     }
 
-    const checkIns = checkInsResult.data || [];
+    const registrationForm = registrationFormResult.data;
 
-    const checkedInRegistrationIds = Array.from(
-        new Set(
-            (checkIns || [])
-                .map((item: any) => item.registration_id)
-                .filter(Boolean)
-        )
-    );
+    // Fetch every registration and every check-in for the event with real
+    // pagination (Supabase caps a single request at 1000 rows), then work
+    // out who's checked in entirely in memory. This avoids ever building an
+    // `.in("id", [...thousands of ids])` filter, which produces a URL long
+    // enough that Supabase's API rejects the request outright — that was
+    // silently emptying this list for any event with more than ~1000
+    // checked-in guests.
+    const [allRegistrations, allCheckIns, fieldRowsResult] =
+        await Promise.all([
+            fetchAllRows<RegistrationRow>((from, to) =>
+                admin
+                    .from("registrations")
+                    .select(
+                        "id, full_name, email, phone, department, custom_answers, created_at, registration_status"
+                    )
+                    .eq("event_id", eventId)
+                    .order("created_at", { ascending: false })
+                    .range(from, to)
+            ),
 
-    const checkInMap = new Map<string, any>();
+            fetchAllRows<CheckInRow>((from, to) =>
+                admin
+                    .from("check_ins")
+                    .select("registration_id, checked_in_at")
+                    .eq("event_id", eventId)
+                    .eq("scan_result", "checked_in")
+                    .order("checked_in_at", { ascending: false })
+                    .range(from, to)
+            ),
 
-    for (const checkIn of checkIns as any[]) {
+            registrationForm?.id
+                ? admin
+                      .from("registration_fields")
+                      .select(
+                          "id, field_label, field_key, field_type, field_options, options, sort_order"
+                      )
+                      .eq("form_id", registrationForm.id)
+                      .order("sort_order", { ascending: true })
+                : Promise.resolve({ data: [], error: null }),
+        ]);
+
+    const checkInMap = new Map<string, CheckInRow>();
+
+    for (const checkIn of allCheckIns) {
         if (!checkIn.registration_id) continue;
 
         if (!checkInMap.has(checkIn.registration_id)) {
@@ -121,43 +225,35 @@ export default async function LuckyDrawPage({
         }
     }
 
-    const registrationForm = registrationFormResult.data;
+    // A guest can be marked checked in either through the QR scanner (a
+    // check_ins row) or by directly setting registrations.registration_status
+    // (e.g. a manual database edit or bulk import). Treat either signal as
+    // checked in so guests aren't invisible to the lucky draw just because
+    // they weren't scanned.
+    const checkedInGuests: CheckedInGuest[] = allRegistrations
+        .filter((guest) => {
+            const statusCheckedIn =
+                guest.registration_status === "checked_in" ||
+                guest.registration_status === "attended";
 
-    const [registrationsResult, fieldRowsResult] = await Promise.all([
-        checkedInRegistrationIds.length > 0
-            ? supabaseServer
-                  .from("registrations")
-                  .select("id, full_name, email, phone, department, custom_answers")
-                  .eq("event_id", eventId)
-                  .in("id", checkedInRegistrationIds)
-            : Promise.resolve({ data: [], error: null }),
+            return checkInMap.has(guest.id) || statusCheckedIn;
+        })
+        .map((guest) => {
+            const checkIn = checkInMap.get(guest.id);
 
-        registrationForm?.id
-            ? supabaseServer
-                  .from("registration_fields")
-                  .select(
-                      "id, field_label, field_key, field_type, field_options, options, sort_order"
-                  )
-                  .eq("form_id", registrationForm.id)
-                  .order("sort_order", { ascending: true })
-            : Promise.resolve({ data: [], error: null }),
-    ]);
-
-    const checkedInGuests: CheckedInGuest[] = (
-        registrationsResult.data || []
-    ).map((guest: any) => {
-        const checkIn = checkInMap.get(guest.id);
-
-        return {
-            id: guest.id,
-            full_name: guest.full_name,
-            email: guest.email,
-            phone: guest.phone,
-            department: guest.department,
-            custom_answers: guest.custom_answers || {},
-            checked_in_at: checkIn?.checked_in_at || checkIn?.created_at || null,
-        };
-    });
+            return {
+                id: guest.id,
+                full_name: guest.full_name,
+                email: guest.email,
+                phone: guest.phone,
+                department: guest.department,
+                custom_answers: guest.custom_answers || {},
+                checked_in_at:
+                    checkIn?.checked_in_at ||
+                    guest.created_at ||
+                    null,
+            };
+        });
 
     const registrationFields = (fieldRowsResult.data || []) as RegistrationField[];
     const winners = winnersResult.data || [];
@@ -269,6 +365,9 @@ export default async function LuckyDrawPage({
                         initialWinners={winners}
                         initialPrizes={prizes}
                         registrationFields={registrationFields}
+                        displaySettings={
+                            displaySettingsResult.data
+                        }
                     />
                 </section>
             </div>

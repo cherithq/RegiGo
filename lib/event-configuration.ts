@@ -786,13 +786,19 @@ export async function saveEventConfiguration({
                 ? (body.event as Record<string, unknown>)
                 : {};
 
-        const eventName =
-            text(
+        const eventName = actor.isPlatformAdmin
+            ? text(
                 eventInput.eventName ??
                     eventInput.event_name ??
                     configuration
                         .event
                         .event_name,
+                180,
+            )
+            : text(
+                configuration
+                    .event
+                    .event_name,
                 180,
             );
         const eventSlug =

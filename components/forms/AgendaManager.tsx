@@ -1,7 +1,32 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatClockTime } from "@/lib/format-time";
+
+const emptyForm = {
+    title: "",
+    description: "",
+    start_time: "",
+    end_time: "",
+    location: "",
+    speaker_id: "",
+    session_type: "Session",
+    display_order: "1",
+};
+
+type AgendaItem = {
+    id: string;
+    title?: string | null;
+    description?: string | null;
+    start_time?: string | null;
+    end_time?: string | null;
+    location?: string | null;
+    speaker_id?: string | null;
+    session_type?: string | null;
+    display_order?: number | null;
+};
 
 export default function AgendaManager({
     eventId,
@@ -14,38 +39,80 @@ export default function AgendaManager({
 }) {
     const [agenda, setAgenda] = useState(initialAgenda);
     const [message, setMessage] = useState("");
+    const [editingId, setEditingId] = useState<string | null>(null);
 
-    const [form, setForm] = useState({
-        title: "",
-        description: "",
-        start_time: "",
-        end_time: "",
-        location: "",
-        speaker_id: "",
-        session_type: "Session",
-        display_order: "1",
-    });
+    const [form, setForm] = useState(emptyForm);
 
     function update(key: string, value: string) {
         setForm({ ...form, [key]: value });
     }
 
-    async function addAgenda(e: React.FormEvent) {
+    function editAgenda(item: AgendaItem) {
+        setEditingId(item.id);
+        setForm({
+            title: item.title || "",
+            description: item.description || "",
+            start_time: item.start_time || "",
+            end_time: item.end_time || "",
+            location: item.location || "",
+            speaker_id: item.speaker_id || "",
+            session_type: item.session_type || "Session",
+            display_order: String(item.display_order ?? 1),
+        });
+        setMessage("");
+    }
+
+    function cancelEdit() {
+        setEditingId(null);
+        setForm({
+            ...emptyForm,
+            display_order: String(agenda.length + 1),
+        });
+        setMessage("");
+    }
+
+    async function saveAgenda(e: React.FormEvent) {
         e.preventDefault();
         setMessage("");
+
+        const payload = {
+            title: form.title,
+            description: form.description,
+            start_time: form.start_time || null,
+            end_time: form.end_time || null,
+            location: form.location,
+            speaker_id: form.speaker_id || null,
+            session_type: form.session_type,
+            display_order: Number(form.display_order || 1),
+        };
+
+        if (editingId) {
+            const { data, error } = await supabase
+                .from("event_agenda")
+                .update(payload)
+                .eq("id", editingId)
+                .select("*, speakers(*)")
+                .single();
+
+            if (error) {
+                setMessage(error.message);
+                return;
+            }
+
+            setAgenda(agenda.map((item) => (item.id === data.id ? data : item)));
+            setEditingId(null);
+            setForm({
+                ...emptyForm,
+                display_order: String(agenda.length + 1),
+            });
+            return;
+        }
 
         const { data, error } = await supabase
             .from("event_agenda")
             .insert({
                 event_id: eventId,
-                title: form.title,
-                description: form.description,
-                start_time: form.start_time || null,
-                end_time: form.end_time || null,
-                location: form.location,
-                speaker_id: form.speaker_id || null,
-                session_type: form.session_type,
-                display_order: Number(form.display_order || 1),
+                ...payload,
             })
             .select("*, speakers(*)")
             .single();
@@ -57,19 +124,13 @@ export default function AgendaManager({
 
         setAgenda([...agenda, data]);
         setForm({
-            title: "",
-            description: "",
-            start_time: "",
-            end_time: "",
-            location: "",
-            speaker_id: "",
-            session_type: "Session",
+            ...emptyForm,
             display_order: String(agenda.length + 2),
         });
     }
 
     async function deleteAgenda(id: string) {
-        const ok = confirm("Delete this agenda item?");
+        const ok = confirm("Delete this programme item?");
         if (!ok) return;
 
         const { error } = await supabase.from("event_agenda").delete().eq("id", id);
@@ -80,6 +141,10 @@ export default function AgendaManager({
         }
 
         setAgenda(agenda.filter((item) => item.id !== id));
+
+        if (editingId === id) {
+            cancelEdit();
+        }
     }
 
     return (
@@ -93,7 +158,8 @@ export default function AgendaManager({
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <p className="text-sm font-black text-[#4F46E5]">
-                                        {item.start_time || "-"} {item.end_time ? `- ${item.end_time}` : ""}
+                                        {item.start_time ? formatClockTime(item.start_time) : "-"}
+                                        {item.end_time ? ` – ${formatClockTime(item.end_time)}` : ""}
                                     </p>
 
                                     <h3 className="mt-2 text-xl font-black">{item.title}</h3>
@@ -115,12 +181,22 @@ export default function AgendaManager({
                                     )}
                                 </div>
 
-                                <button
-                                    onClick={() => deleteAgenda(item.id)}
-                                    className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600"
-                                >
-                                    Delete
-                                </button>
+                                <div className="flex shrink-0 gap-2">
+                                    <button
+                                        onClick={() => editAgenda(item)}
+                                        className="inline-flex items-center gap-1 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-[#4F46E5]"
+                                    >
+                                        <Pencil size={13} />
+                                        Edit
+                                    </button>
+
+                                    <button
+                                        onClick={() => deleteAgenda(item.id)}
+                                        className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -128,7 +204,7 @@ export default function AgendaManager({
                     {agenda.length === 0 && (
                         <div className="rounded-2xl bg-white p-8 text-center">
                             <div className="text-5xl">🗓️</div>
-                            <h3 className="mt-4 text-2xl font-black">No agenda yet</h3>
+                            <h3 className="mt-4 text-2xl font-black">No programme yet</h3>
                             <p className="mt-2 text-slate-500">
                                 Add your event programme and schedule.
                             </p>
@@ -138,9 +214,24 @@ export default function AgendaManager({
             </section>
 
             <section className="rounded-[2rem] bg-white p-6 shadow-xl">
-                <h2 className="text-2xl font-black">Add Agenda Item</h2>
+                <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-2xl font-black">
+                        {editingId ? "Edit Programme Item" : "Add Programme Item"}
+                    </h2>
 
-                <form onSubmit={addAgenda} className="mt-6 space-y-5">
+                    {editingId && (
+                        <button
+                            type="button"
+                            onClick={cancelEdit}
+                            className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600"
+                        >
+                            <X size={13} />
+                            Cancel
+                        </button>
+                    )}
+                </div>
+
+                <form onSubmit={saveAgenda} className="mt-6 space-y-5">
                     <Input label="Title" value={form.title} onChange={(v) => update("title", v)} />
 
                     <div className="grid gap-4 md:grid-cols-2">
@@ -212,7 +303,7 @@ export default function AgendaManager({
                     )}
 
                     <button className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white">
-                        Add Agenda Item
+                        {editingId ? "Save Changes" : "Add Programme Item"}
                     </button>
                 </form>
             </section>

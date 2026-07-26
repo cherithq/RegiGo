@@ -67,7 +67,7 @@ export default async function AgendaPage({
                         </div>
 
                         <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl md:mt-5 md:text-5xl">
-                            Agenda Builder
+                            Programme Builder
                         </h1>
 
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-base md:leading-7">

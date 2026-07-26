@@ -188,7 +188,7 @@ export default async function RegisterPage({
                     true,
                 )
                 .gt(
-                    "capacity",
+                    "table_capacity",
                     0,
                 ),
         ]);

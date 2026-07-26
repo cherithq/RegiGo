@@ -466,11 +466,12 @@ export async function loadBadgeData(args: {
     const tableMap =
         new Map<string, string>();
 
+    // table_assignments.event_id is not reliably populated, so scope by
+    // registration_id (already limited to this event's registrations) instead.
     const assignmentResult =
         await admin
             .from("table_assignments")
             .select("*")
-            .eq("event_id", eventId)
             .in(
                 "registration_id",
                 registrationIds,

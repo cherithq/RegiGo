@@ -6,17 +6,13 @@ export default function QRPassCard({
     event,
     guest,
     ticket,
+    tableName,
 }: {
     event: any;
     guest: any;
     ticket: any;
+    tableName?: string | null;
 }) {
-    const tableAssignment = Array.isArray(guest.table_assignments)
-        ? guest.table_assignments[0]
-        : guest.table_assignments;
-
-    const tableName = tableAssignment?.event_tables?.table_name || "-";
-
     return (
         <div className="overflow-hidden rounded-[2rem] bg-white shadow-2xl">
             <div className="bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-8 text-white">
@@ -34,11 +30,11 @@ export default function QRPassCard({
                 </div>
 
                 <div className="mt-8 grid gap-4 text-left sm:grid-cols-2">
-                    <Info label="Table" value={tableName} />
                     <Info label="Date" value={event.event_date || "-"} />
                     <Info label="Time" value={event.event_time || "-"} />
-                    <Info label="Department" value={guest.department || "-"} />
-                    <Info label="Dietary" value={guest.dietary_request || "-"} />
+                    {tableName && (
+                        <Info label="Table" value={tableName} />
+                    )}
                 </div>
 
                 <p className="mt-8 rounded-2xl bg-[#F7F5FF] p-4 text-sm font-semibold text-slate-600">
