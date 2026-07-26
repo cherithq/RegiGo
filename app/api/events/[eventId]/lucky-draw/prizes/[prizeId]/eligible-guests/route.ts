@@ -179,26 +179,45 @@ export async function PATCH(
             );
         }
 
-        let validIds: string[] = [];
+        const validIds: string[] = [];
 
         if (requestedIds.length > 0) {
-            const { data: registrations, error: registrationsError } =
-                await supabaseAdmin
-                    .from("registrations")
-                    .select("id")
-                    .eq("event_id", eventId)
-                    .in("id", requestedIds);
+            // A single .in() call with thousands of ids can build a query
+            // string long enough that the API gateway rejects it outright
+            // (400 Bad Request) before it ever reaches the database — chunk
+            // the validation so large filtered selections still save.
+            const chunkSize = 200;
 
-            if (registrationsError) {
-                return jsonNoStore(
-                    { error: registrationsError.message },
-                    400
+            for (
+                let start = 0;
+                start < requestedIds.length;
+                start += chunkSize
+            ) {
+                const chunk = requestedIds.slice(
+                    start,
+                    start + chunkSize
+                );
+
+                const { data: registrations, error: registrationsError } =
+                    await supabaseAdmin
+                        .from("registrations")
+                        .select("id")
+                        .eq("event_id", eventId)
+                        .in("id", chunk);
+
+                if (registrationsError) {
+                    return jsonNoStore(
+                        { error: registrationsError.message },
+                        400
+                    );
+                }
+
+                validIds.push(
+                    ...(registrations || []).map((row) =>
+                        String(row.id)
+                    )
                 );
             }
-
-            validIds = (registrations || []).map((row) =>
-                String(row.id)
-            );
 
             if (validIds.length !== requestedIds.length) {
                 return jsonNoStore(

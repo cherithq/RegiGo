@@ -33,6 +33,8 @@ type Draft = {
         string;
     backgroundImageUrl:
         string;
+    backgroundImageOpacity:
+        number;
 };
 
 type ApiPayload = {
@@ -52,26 +54,8 @@ type ApiPayload = {
         background_image_url?:
             | string
             | null;
-        shuffle_interval_ms?:
+        background_image_opacity?:
             | number
-            | null;
-        result_hold_ms?:
-            | number
-            | null;
-        winner_card_style?:
-            | string
-            | null;
-        winner_name_size?:
-            | string
-            | null;
-        max_columns?:
-            | number
-            | null;
-        show_latest_winners_when_idle?:
-            | boolean
-            | null;
-        logo_url?:
-            | string
             | null;
     };
     error?: string;
@@ -118,7 +102,30 @@ function parseDraft(
             payload
                 ?.background_image_url ||
             "",
+        backgroundImageOpacity:
+            payload
+                ?.background_image_opacity ??
+            0.35,
     };
+}
+
+// The dark overlay behind an uploaded image is what keeps winner names
+// readable — opacity 0 leans almost fully dark, opacity 1 leans almost
+// fully toward the raw photo.
+function imageOverlayGradient(
+    opacity: number,
+    url: string,
+) {
+    const clamped = Math.min(
+        Math.max(opacity, 0),
+        1,
+    );
+    const topAlpha =
+        0.92 - clamped * 0.82;
+    const bottomAlpha =
+        0.96 - clamped * 0.66;
+
+    return `linear-gradient(rgba(2,6,23,${topAlpha}), rgba(2,6,23,${bottomAlpha})), url("${url}")`;
 }
 
 async function readJson(
@@ -156,7 +163,10 @@ function previewStyle(
     ) {
         return {
             backgroundImage:
-                `linear-gradient(rgba(2,6,23,.24), rgba(2,6,23,.58)), url("${draft.backgroundImageUrl}")`,
+                imageOverlayGradient(
+                    draft.backgroundImageOpacity,
+                    draft.backgroundImageUrl,
+                ),
             backgroundSize:
                 "cover",
             backgroundPosition:
@@ -285,8 +295,6 @@ export default function LuckyDrawAudienceBackgroundSettings({
                         },
                         body:
                             JSON.stringify({
-                                action:
-                                    "save_settings",
                                 backgroundMode:
                                     draft.backgroundMode,
                                 backgroundColor:
@@ -297,36 +305,8 @@ export default function LuckyDrawAudienceBackgroundSettings({
                                     draft.gradientEnd,
                                 backgroundImageUrl:
                                     draft.backgroundImageUrl,
-
-                                // Preserve the already-working non-design settings.
-                                shuffleIntervalMs:
-                                    originalSettings
-                                        ?.shuffle_interval_ms ??
-                                    90,
-                                resultHoldMs:
-                                    originalSettings
-                                        ?.result_hold_ms ??
-                                    8000,
-                                winnerCardStyle:
-                                    originalSettings
-                                        ?.winner_card_style ??
-                                    "glass",
-                                winnerNameSize:
-                                    originalSettings
-                                        ?.winner_name_size ??
-                                    "compact",
-                                maxColumns:
-                                    originalSettings
-                                        ?.max_columns ??
-                                    10,
-                                showLatestWinnersWhenIdle:
-                                    originalSettings
-                                        ?.show_latest_winners_when_idle !==
-                                    false,
-                                logoUrl:
-                                    originalSettings
-                                        ?.logo_url ||
-                                    "",
+                                backgroundImageOpacity:
+                                    draft.backgroundImageOpacity,
                             }),
                     },
                 );
@@ -671,6 +651,49 @@ export default function LuckyDrawAudienceBackgroundSettings({
                                 placeholder="https://..."
                                 className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-3"
                             />
+                        </label>
+
+                        <label>
+                            <span className="mb-2 flex items-center justify-between text-sm font-black text-slate-700">
+                                Image Visibility
+                                <span className="text-slate-400">
+                                    {Math.round(
+                                        draft.backgroundImageOpacity *
+                                            100,
+                                    )}
+                                    %
+                                </span>
+                            </span>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={
+                                    draft.backgroundImageOpacity
+                                }
+                                onChange={(
+                                    event,
+                                ) =>
+                                    setDraft(
+                                        (
+                                            current,
+                                        ) => ({
+                                            ...current,
+                                            backgroundImageOpacity:
+                                                Number(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                ),
+                                        }),
+                                    )
+                                }
+                                className="w-full accent-[#4F46E5]"
+                            />
+                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                                Lower values keep winner names easier to read over busy photos.
+                            </p>
                         </label>
                     </div>
                 )}

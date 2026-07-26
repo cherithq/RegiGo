@@ -72,10 +72,10 @@ export default async function LuckyDrawAudiencePage({
 
             admin
                 .from(
-                    "lucky_draw_settings",
+                    "lucky_draw_display_settings",
                 )
                 .select(
-                    "background_mode, background_color, gradient_start, gradient_end, background_image_url",
+                    "primary_color, secondary_color, background_color, background_image_url, background_image_opacity",
                 )
                 .eq(
                     "event_id",
@@ -141,16 +141,16 @@ export default async function LuckyDrawAudiencePage({
             displaySettings={
                 settingsResult.data ||
                 {
-                    background_mode:
-                        "gradient",
+                    primary_color:
+                        "#4F46E5",
+                    secondary_color:
+                        "#EC4899",
                     background_color:
                         "#050816",
-                    gradient_start:
-                        "#4F46E5",
-                    gradient_end:
-                        "#EC4899",
                     background_image_url:
                         null,
+                    background_image_opacity:
+                        0.35,
                 }
             }
         />

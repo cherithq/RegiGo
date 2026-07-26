@@ -90,24 +90,25 @@ type LiveDrawNamesPayload = {
     names?: string[];
 };
 
+// This is the raw shape of a lucky_draw_display_settings row — there is no
+// background_mode column, so the mode is derived: an image URL means
+// "image", identical primary/secondary colours means "solid", otherwise
+// "gradient" (see resolveBackgroundMode below).
 type AudienceBackgroundSettings = {
-    background_mode?:
-        | "gradient"
-        | "solid"
-        | "image"
+    primary_color?:
+        | string
+        | null;
+    secondary_color?:
         | string
         | null;
     background_color?:
         | string
         | null;
-    gradient_start?:
-        | string
-        | null;
-    gradient_end?:
-        | string
-        | null;
     background_image_url?:
         | string
+        | null;
+    background_image_opacity?:
+        | number
         | null;
 };
 
@@ -120,6 +121,7 @@ type ResolvedAudienceBackgroundSettings = {
     gradient_start: string;
     gradient_end: string;
     background_image_url: string;
+    background_image_opacity: number;
 };
 
 type Props = {
@@ -244,22 +246,36 @@ function parseBackgroundSettings(
               >
             : {};
 
-    const requestedMode =
-        String(
-            source.background_mode ||
-                "",
-        )
-            .trim()
-            .toLowerCase();
+    const backgroundImageUrl =
+        typeof source.background_image_url ===
+        "string"
+            ? source.background_image_url.trim()
+            : "";
+    const primaryColor =
+        cleanHex(
+            source.primary_color,
+            "#4F46E5",
+        );
+    const secondaryColor =
+        cleanHex(
+            source.secondary_color,
+            "#EC4899",
+        );
 
     const mode:
         ResolvedAudienceBackgroundSettings["background_mode"] =
-        requestedMode ===
-            "solid" ||
-        requestedMode ===
-            "image"
-            ? requestedMode
-            : "gradient";
+        backgroundImageUrl
+            ? "image"
+            : primaryColor ===
+                secondaryColor &&
+              source.primary_color
+                ? "solid"
+                : "gradient";
+
+    const opacity =
+        Number(
+            source.background_image_opacity,
+        );
 
     return {
         background_mode:
@@ -270,21 +286,21 @@ function parseBackgroundSettings(
                 "#050816",
             ),
         gradient_start:
-            cleanHex(
-                source.gradient_start,
-                "#4F46E5",
-            ),
+            primaryColor,
         gradient_end:
-            cleanHex(
-                source.gradient_end,
-                "#EC4899",
-            ),
+            secondaryColor,
         background_image_url:
-            typeof source.background_image_url ===
-            "string"
-                ? source.background_image_url
-                      .trim()
-                : "",
+            backgroundImageUrl,
+        background_image_opacity:
+            Number.isFinite(opacity)
+                ? Math.min(
+                      Math.max(
+                          opacity,
+                          0,
+                      ),
+                      1,
+                  )
+                : 0.35,
     };
 }
 
@@ -296,9 +312,18 @@ function backgroundStyle(
             "image" &&
         settings.background_image_url
     ) {
+        const topAlpha =
+            0.92 -
+            settings.background_image_opacity *
+                0.82;
+        const bottomAlpha =
+            0.96 -
+            settings.background_image_opacity *
+                0.66;
+
         return {
             backgroundImage:
-                `linear-gradient(rgba(2,6,23,.24), rgba(2,6,23,.58)), url("${settings.background_image_url}")`,
+                `linear-gradient(rgba(2,6,23,${topAlpha}), rgba(2,6,23,${bottomAlpha})), url("${settings.background_image_url}")`,
             backgroundSize:
                 "cover",
             backgroundPosition:

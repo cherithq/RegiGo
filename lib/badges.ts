@@ -3,6 +3,7 @@ import "server-only";
 import {
     PDFDocument,
     StandardFonts,
+    degrees,
     rgb,
     type PDFPage,
     type PDFFont,
@@ -22,6 +23,7 @@ export type BadgeMergeKey =
     | "phone"
     | "department"
     | "ticket_name"
+    | "ticket_colour"
     | "table_name"
     | "event_name"
     | "event_date"
@@ -32,7 +34,7 @@ export type BadgeMergeKey =
 
 export type BadgeElement = {
     id: string;
-    type: "text" | "qr" | "rectangle" | "line";
+    type: "text" | "qr" | "rectangle" | "line" | "ticket_color" | "image";
     key?: BadgeMergeKey;
     staticText?: string;
     x: number;
@@ -46,6 +48,11 @@ export type BadgeElement = {
     backgroundColor?: string;
     borderColor?: string;
     borderWidth?: number;
+    rotation?: number;
+    dashed?: boolean;
+    lineOrientation?: "horizontal" | "vertical";
+    imageUrl?: string;
+    fill?: boolean;
 };
 
 export const BADGE_MERGE_FIELDS = [
@@ -123,7 +130,7 @@ export function cleanBadgeElements(value: unknown): BadgeElement[] {
     if (!Array.isArray(value)) return [];
     return value.filter((item) => item && typeof item === "object").map((item, index): BadgeElement => {
         const raw = item as Record<string, unknown>;
-        const type = ["text", "qr", "rectangle", "line"].includes(String(raw.type))
+        const type = ["text", "qr", "rectangle", "line", "ticket_color", "image"].includes(String(raw.type))
             ? String(raw.type) as BadgeElement["type"]
             : "text";
         const key = BADGE_MERGE_FIELDS.some((field) => field.key === raw.key)
@@ -145,6 +152,11 @@ export function cleanBadgeElements(value: unknown): BadgeElement[] {
             backgroundColor: hex(raw.backgroundColor, "#FFFFFF"),
             borderColor: hex(raw.borderColor, "#CBD5E1"),
             borderWidth: clamp(n(raw.borderWidth, 0), 0, 10),
+            rotation: clamp(n(raw.rotation, 0), -359, 359),
+            dashed: raw.dashed === true,
+            lineOrientation: raw.lineOrientation === "vertical" ? "vertical" : "horizontal",
+            imageUrl: typeof raw.imageUrl === "string" ? raw.imageUrl.slice(0, 2000) : undefined,
+            fill: raw.fill !== false,
         };
     }).slice(0, 100);
 }
@@ -170,22 +182,67 @@ function alignedX(x: number, width: number, textWidth: number, align?: BadgeElem
 
 type BadgeData = Record<BadgeMergeKey, string>;
 
+type EmbeddedImage = Awaited<ReturnType<PDFDocument["embedPng"]>>;
+
+async function embedRemoteImage(
+    pdf: PDFDocument,
+    url: string,
+    cache: Map<string, EmbeddedImage | null>,
+): Promise<EmbeddedImage | null> {
+    if (cache.has(url)) return cache.get(url) || null;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        // Sniff the format from the file's magic bytes rather than trusting
+        // the response's content-type header, since storage CDNs don't
+        // always set it accurately.
+        const isPng =
+            bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+
+        const image = isPng
+            ? await pdf.embedPng(bytes)
+            : await pdf.embedJpg(bytes);
+
+        cache.set(url, image);
+        return image;
+    } catch {
+        cache.set(url, null);
+        return null;
+    }
+}
+
 async function drawElement(args: {
     pdf: PDFDocument; page: PDFPage; normalFont: PDFFont; boldFont: PDFFont;
     element: BadgeElement; pageHeight: number; data: BadgeData;
+    imageCache: Map<string, EmbeddedImage | null>;
 }) {
-    const { pdf, page, normalFont, boldFont, element, pageHeight, data } = args;
+    const { pdf, page, normalFont, boldFont, element, pageHeight, data, imageCache } = args;
     const x = mmToPt(element.x);
     const width = mmToPt(element.width);
     const height = mmToPt(element.height);
     const y = pageHeight - mmToPt(element.y) - height;
 
     if (element.type === "rectangle") {
-        page.drawRectangle({ x, y, width, height, color: hexToRgb(element.backgroundColor || "#FFFFFF"), borderColor: hexToRgb(element.borderColor || "#CBD5E1"), borderWidth: element.borderWidth || 0 });
+        page.drawRectangle({
+            x, y, width, height,
+            color: element.fill === false ? undefined : hexToRgb(element.backgroundColor || "#FFFFFF"),
+            borderColor: hexToRgb(element.borderColor || "#CBD5E1"),
+            borderWidth: element.borderWidth || 0,
+            borderDashArray: element.dashed ? [4, 3] : undefined,
+        });
         return;
     }
     if (element.type === "line") {
-        page.drawLine({ start: { x, y: y + height / 2 }, end: { x: x + width, y: y + height / 2 }, color: hexToRgb(element.color || "#0F172A"), thickness: Math.max(element.borderWidth || 1, 0.5) });
+        const dashArray = element.dashed ? [3, 3] : undefined;
+        const thickness = Math.max(element.borderWidth || 1, 0.5);
+        if (element.lineOrientation === "vertical") {
+            page.drawLine({ start: { x: x + width / 2, y }, end: { x: x + width / 2, y: y + height }, color: hexToRgb(element.color || "#0F172A"), thickness, dashArray });
+        } else {
+            page.drawLine({ start: { x, y: y + height / 2 }, end: { x: x + width, y: y + height / 2 }, color: hexToRgb(element.color || "#0F172A"), thickness, dashArray });
+        }
         return;
     }
     if (element.type === "qr") {
@@ -195,13 +252,57 @@ async function drawElement(args: {
         page.drawImage(image, { x, y, width, height });
         return;
     }
+    if (element.type === "ticket_color") {
+        page.drawRectangle({ x, y, width, height, color: hexToRgb(data.ticket_colour || "#94A3B8") });
+        return;
+    }
+    if (element.type === "image") {
+        if (!element.imageUrl) return;
+        const image = await embedRemoteImage(pdf, element.imageUrl, imageCache);
+        if (!image) return;
+        page.drawImage(image, { x, y, width, height, rotate: degrees(element.rotation || 0) });
+        return;
+    }
 
     const font = element.fontWeight === "bold" ? boldFont : normalFont;
     const text = safeText(element.staticText || (element.key ? data[element.key] : ""));
     if (!text) return;
-    const size = fitText(font, text, width, element.fontSize || 12);
+
+    const rotation = element.rotation || 0;
+    const color = hexToRgb(element.color || "#0F172A");
+
+    if (rotation === 0) {
+        const size = fitText(font, text, width, element.fontSize || 12);
+        const textWidth = font.widthOfTextAtSize(text, size);
+        page.drawText(text, { x: alignedX(x, width, textWidth, element.align), y: y + Math.max((height - size) / 2, 0), size, font, color, maxWidth: width });
+        return;
+    }
+
+    // Sideways/rotated labels (e.g. a vertical "ADMIT ONE" ticket-stub tag)
+    // fit against the box's other axis and are centred around the box
+    // midpoint rather than following the normal left/right alignment math.
+    const rotated = ((rotation % 180) + 180) % 180 !== 0;
+    const size = fitText(font, text, rotated ? height : width, element.fontSize || 12);
     const textWidth = font.widthOfTextAtSize(text, size);
-    page.drawText(text, { x: alignedX(x, width, textWidth, element.align), y: y + Math.max((height - size) / 2, 0), size, font, color: hexToRgb(element.color || "#0F172A"), maxWidth: width });
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const halfAscent = size * 0.35;
+    const normalized = ((rotation % 360) + 360) % 360;
+
+    let drawX = centerX;
+    let drawY = centerY;
+    if (normalized === 90) {
+        drawX = centerX - halfAscent;
+        drawY = centerY - textWidth / 2;
+    } else if (normalized === 270) {
+        drawX = centerX + halfAscent;
+        drawY = centerY + textWidth / 2;
+    } else if (normalized === 180) {
+        drawX = centerX + textWidth / 2;
+        drawY = centerY + halfAscent;
+    }
+
+    page.drawText(text, { x: drawX, y: drawY, size, font, color, rotate: degrees(rotation) });
 }
 
 export async function buildBadgePdf(args: {
@@ -215,11 +316,14 @@ export async function buildBadgePdf(args: {
     const width = mmToPt(Number(template.badge_width_mm));
     const height = mmToPt(Number(template.badge_height_mm));
     const elements = cleanBadgeElements(template.elements);
+    // Shared across every badge in this PDF so a repeated logo/image
+    // element is only fetched and embedded once, not once per guest.
+    const imageCache = new Map<string, EmbeddedImage | null>();
 
     for (const data of badges) {
         const page = pdf.addPage([width, height]);
         page.drawRectangle({ x: 0, y: 0, width, height, color: hexToRgb(template.background_color || "#FFFFFF") });
-        for (const element of elements) await drawElement({ pdf, page, normalFont, boldFont, element, pageHeight: height, data });
+        for (const element of elements) await drawElement({ pdf, page, normalFont, boldFont, element, pageHeight: height, data, imageCache });
     }
     return pdf.save();
 }
@@ -381,6 +485,8 @@ export async function loadBadgeData(args: {
 
     const ticketMap =
         new Map<string, string>();
+    const ticketColourMap =
+        new Map<string, string>();
 
     if (ticketIds.length > 0) {
         const ticketResult =
@@ -409,6 +515,14 @@ export async function loadBadgeData(args: {
                     "name",
                     "title",
                 ]),
+            );
+            ticketColourMap.set(
+                String(ticket.id),
+                hex(
+                    ticket.colour ||
+                        ticket.color,
+                    "#94A3B8",
+                ),
             );
         }
     }
@@ -653,6 +767,10 @@ export async function loadBadgeData(args: {
                 ticketMap.get(
                     ticketId,
                 ) || "",
+            ticket_colour:
+                ticketColourMap.get(
+                    ticketId,
+                ) || "#94A3B8",
             table_name:
                 tableMap.get(
                     registrationId,

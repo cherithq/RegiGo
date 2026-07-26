@@ -140,9 +140,9 @@ export default async function LuckyDrawPage({
             .order("prize_order", { ascending: true }),
 
         admin
-            .from("lucky_draw_settings")
+            .from("lucky_draw_display_settings")
             .select(
-                "background_mode, background_color, gradient_start, gradient_end, background_image_url"
+                "primary_color, secondary_color, background_color, background_image_url, background_image_opacity"
             )
             .eq("event_id", eventId)
             .maybeSingle(),

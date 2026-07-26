@@ -348,10 +348,15 @@ export default async function WebsiteBadgePrintPage({
                                                     style={{
                                                         ...commonStyle,
                                                         backgroundColor:
-                                                            element.backgroundColor ||
-                                                            "#FFFFFF",
+                                                            element.fill ===
+                                                            false
+                                                                ? "transparent"
+                                                                : element.backgroundColor ||
+                                                                  "#FFFFFF",
                                                         borderStyle:
-                                                            "solid",
+                                                            element.dashed
+                                                                ? "dashed"
+                                                                : "solid",
                                                         borderColor:
                                                             element.borderColor ||
                                                             "#CBD5E1",
@@ -359,6 +364,35 @@ export default async function WebsiteBadgePrintPage({
                                                             `${element.borderWidth || 0}px`,
                                                         boxSizing:
                                                             "border-box",
+                                                        transform:
+                                                            element.rotation
+                                                                ? `rotate(${element.rotation}deg)`
+                                                                : undefined,
+                                                    }}
+                                                />
+                                            );
+                                        }
+
+                                        if (
+                                            element.type ===
+                                            "ticket_color"
+                                        ) {
+                                            return (
+                                                <div
+                                                    key={
+                                                        element.id
+                                                    }
+                                                    style={{
+                                                        ...commonStyle,
+                                                        backgroundColor:
+                                                            badge.ticket_colour ||
+                                                            "#94A3B8",
+                                                        boxSizing:
+                                                            "border-box",
+                                                        transform:
+                                                            element.rotation
+                                                                ? `rotate(${element.rotation}deg)`
+                                                                : undefined,
                                                     }}
                                                 />
                                             );
@@ -368,6 +402,36 @@ export default async function WebsiteBadgePrintPage({
                                             element.type ===
                                             "line"
                                         ) {
+                                            const style =
+                                                element.dashed
+                                                    ? "dashed"
+                                                    : "solid";
+
+                                            if (
+                                                element.lineOrientation ===
+                                                "vertical"
+                                            ) {
+                                                return (
+                                                    <div
+                                                        key={
+                                                            element.id
+                                                        }
+                                                        style={{
+                                                            ...commonStyle,
+                                                            left: `calc(${element.x}mm + ${element.width / 2}mm)`,
+                                                            width: 0,
+                                                            borderLeftStyle:
+                                                                style,
+                                                            borderLeftWidth:
+                                                                `${Math.max(element.borderWidth || 1, 0.5)}px`,
+                                                            borderLeftColor:
+                                                                element.color ||
+                                                                "#0F172A",
+                                                        }}
+                                                    />
+                                                );
+                                            }
+
                                             return (
                                                 <div
                                                     key={
@@ -379,7 +443,7 @@ export default async function WebsiteBadgePrintPage({
                                                         height:
                                                             0,
                                                         borderTopStyle:
-                                                            "solid",
+                                                            style,
                                                         borderTopWidth:
                                                             `${Math.max(element.borderWidth || 1, 0.5)}px`,
                                                         borderTopColor:
@@ -412,6 +476,33 @@ export default async function WebsiteBadgePrintPage({
                                                         ...commonStyle,
                                                         objectFit:
                                                             "contain",
+                                                    }}
+                                                />
+                                            ) : null;
+                                        }
+
+                                        if (
+                                            element.type ===
+                                            "image"
+                                        ) {
+                                            return element.imageUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    key={
+                                                        element.id
+                                                    }
+                                                    src={
+                                                        element.imageUrl
+                                                    }
+                                                    alt=""
+                                                    style={{
+                                                        ...commonStyle,
+                                                        objectFit:
+                                                            "cover",
+                                                        transform:
+                                                            element.rotation
+                                                                ? `rotate(${element.rotation}deg)`
+                                                                : undefined,
                                                     }}
                                                 />
                                             ) : null;
@@ -455,6 +546,12 @@ export default async function WebsiteBadgePrintPage({
                                                         1,
                                                     boxSizing:
                                                         "border-box",
+                                                    transform:
+                                                        element.rotation
+                                                            ? `rotate(${element.rotation}deg)`
+                                                            : undefined,
+                                                    transformOrigin:
+                                                        "center",
                                                 }}
                                             >
                                                 {elementText(

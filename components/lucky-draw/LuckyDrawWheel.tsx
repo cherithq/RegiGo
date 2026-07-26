@@ -52,31 +52,41 @@ type Prize = {
     updated_at?: string | null;
 };
 
+// This is the raw shape of a lucky_draw_display_settings row — there is no
+// background_mode column, so the mode is derived: an image URL means
+// "image", identical primary/secondary colours means "solid", otherwise
+// "gradient".
 type DisplaySettings = {
-    background_mode?: string | null;
+    primary_color?: string | null;
+    secondary_color?: string | null;
     background_color?: string | null;
-    gradient_start?: string | null;
-    gradient_end?: string | null;
     background_image_url?: string | null;
+    background_image_opacity?: number | null;
 } | null;
 
 function audienceBackgroundStyle(settings: DisplaySettings) {
-    const mode = settings?.background_mode || "gradient";
     const backgroundColor = settings?.background_color || "#050816";
-    const gradientStart = settings?.gradient_start || "#4F46E5";
-    const gradientEnd = settings?.gradient_end || "#EC4899";
+    const gradientStart = settings?.primary_color || "#4F46E5";
+    const gradientEnd = settings?.secondary_color || "#EC4899";
     const backgroundImageUrl = settings?.background_image_url || "";
+    const rawOpacity = Number(settings?.background_image_opacity);
+    const opacity = Number.isFinite(rawOpacity)
+        ? Math.min(Math.max(rawOpacity, 0), 1)
+        : 0.35;
 
-    if (mode === "image" && backgroundImageUrl) {
+    if (backgroundImageUrl) {
+        const topAlpha = 0.92 - opacity * 0.82;
+        const bottomAlpha = 0.96 - opacity * 0.66;
+
         return {
-            backgroundImage: `linear-gradient(rgba(2,6,23,.24), rgba(2,6,23,.58)), url("${backgroundImageUrl}")`,
+            backgroundImage: `linear-gradient(rgba(2,6,23,${topAlpha}), rgba(2,6,23,${bottomAlpha})), url("${backgroundImageUrl}")`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
         } as const;
     }
 
-    if (mode === "solid") {
+    if (settings?.primary_color && gradientStart === gradientEnd) {
         return { background: backgroundColor } as const;
     }
 
