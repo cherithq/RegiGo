@@ -617,7 +617,7 @@ export async function getPublicInvitation({
     const { data: invitation, error } = await admin
         .from("event_invitations")
         .select(
-            "id, event_id, registration_id, status, sent_at, opened_at, responded_at, expires_at, decline_reason, events!inner(id, company_id, event_name, event_slug, event_date, event_time, venue, rsvp_deadline, allow_rsvp_changes, event_branding(*)), registrations!inner(id, full_name, email, rsvp_status)",
+            "id, event_id, registration_id, status, sent_at, opened_at, responded_at, expires_at, decline_reason, events!inner(id, company_id, event_name, event_slug, event_date, event_time, venue, description, rsvp_deadline, allow_rsvp_changes, event_branding(*)), registrations!inner(id, full_name, email, phone, department, rsvp_status, registration_status, payment_status, selected_ticket_quantity, table_selection_status)",
         )
         .eq("token_hash", tokenHash)
         .eq("events.event_slug", slug)

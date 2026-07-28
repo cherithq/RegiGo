@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import InvitationManager from "@/components/invitations/InvitationManager";
 import InvitationCsvImport from "@/components/invitations/InvitationCsvImport";
-import AddInvitationGuest from "@/components/invitations/AddInvitationGuest";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
 
@@ -81,10 +80,6 @@ export default async function InvitationsPage({
                         </p>
                     </div>
                 </section>
-
-                <AddInvitationGuest
-                    eventId={eventId}
-                />
 
                 <InvitationCsvImport
                     eventId={eventId}

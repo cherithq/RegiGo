@@ -101,9 +101,83 @@ function normaliseHeader(
         );
 }
 
+function detectDelimiter(
+    text: string,
+) {
+    const firstLine =
+        text
+            .split(
+                /\r\n|\r|\n/,
+            )
+            .find(
+                (
+                    line,
+                ) =>
+                    line.trim()
+                        .length >
+                    0,
+            ) ||
+        "";
+
+    // Apple Numbers/Pages default to tab-separated (or, in some locales,
+    // semicolon-separated) when you "Export To > Plain Text" instead of
+    // CSV, so sniff the actual separator instead of assuming a comma.
+    const candidates:
+        [
+            string,
+            number,
+        ][] = [
+        [
+            ",",
+            (
+                firstLine.match(
+                    /,/g,
+                ) ||
+                []
+            ).length,
+        ],
+        [
+            "\t",
+            (
+                firstLine.match(
+                    /\t/g,
+                ) ||
+                []
+            ).length,
+        ],
+        [
+            ";",
+            (
+                firstLine.match(
+                    /;/g,
+                ) ||
+                []
+            ).length,
+        ],
+    ];
+
+    candidates.sort(
+        (
+            first,
+            second,
+        ) =>
+            second[1] -
+            first[1],
+    );
+
+    return candidates[0][1] >
+        0
+        ? candidates[0][0]
+        : ",";
+}
+
 function parseCsv(
     text: string,
 ) {
+    const delimiter =
+        detectDelimiter(
+            text,
+        );
     const records:
         string[][] = [];
     let record:
@@ -145,7 +219,7 @@ function parseCsv(
 
         if (
             character ===
-                "," &&
+                delimiter &&
             !quoted
         ) {
             record.push(
@@ -413,12 +487,104 @@ export default function InvitationCsvImport({
                 }
             }
 
+            const uniqueIds =
+                Array.from(
+                    new Set(
+                        importedIds,
+                    ),
+                );
+
+            window.dispatchEvent(
+                new CustomEvent(
+                    "regigo:invitations-imported",
+                    {
+                        detail: {
+                            registrationIds:
+                                uniqueIds,
+                        },
+                    },
+                ),
+            );
+
+            // Send the invitation emails right away instead of leaving
+            // every imported guest sitting as "not invited" until someone
+            // selects them below and presses Send Invitations. Sent in
+            // small batches since each guest is a real SMTP send, not just
+            // a database write.
+            let sent = 0;
+            let sendFailed = false;
+            const sendBatchSize =
+                50;
+
+            for (
+                let start =
+                    0;
+                start <
+                uniqueIds.length;
+                start +=
+                    sendBatchSize
+            ) {
+                const batch =
+                    uniqueIds.slice(
+                        start,
+                        start +
+                            sendBatchSize,
+                    );
+                const end =
+                    Math.min(
+                        start +
+                            batch.length,
+                        uniqueIds.length,
+                    );
+
+                setProgress(
+                    `Sending invitations ${start + 1}–${end} of ${uniqueIds.length.toLocaleString()}…`,
+                );
+
+                try {
+                    const sendResponse =
+                        await fetch(
+                            `/api/events/${encodeURIComponent(
+                                eventId,
+                            )}/invitations`,
+                            {
+                                method:
+                                    "POST",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json",
+                                },
+                                body: JSON.stringify(
+                                    {
+                                        action: "send",
+                                        registrationIds:
+                                            batch,
+                                    },
+                                ),
+                            },
+                        );
+
+                    if (
+                        !sendResponse.ok
+                    ) {
+                        sendFailed = true;
+                    } else {
+                        sent +=
+                            batch.length;
+                    }
+                } catch {
+                    sendFailed = true;
+                }
+            }
+
             setProgress(
                 "",
             );
             setResult({
                 type:
-                    "success",
+                    sendFailed
+                        ? "error"
+                        : "success",
                 text:
                     `${inserted.toLocaleString()} guest${inserted === 1 ? "" : "s"} added` +
                     (
@@ -427,24 +593,12 @@ export default function InvitationCsvImport({
                             ? ` and ${updated.toLocaleString()} updated`
                             : ""
                     ) +
-                    ". Imported guests are selected below and ready for invitation sending.",
+                    (
+                        sendFailed
+                            ? `. ${sent.toLocaleString()} invitation email${sent === 1 ? "" : "s"} sent, but some failed to send — retry the rest from the list below.`
+                            : `. ${sent.toLocaleString()} invitation email${sent === 1 ? "" : "s"} sent.`
+                    ),
             });
-
-            window.dispatchEvent(
-                new CustomEvent(
-                    "regigo:invitations-imported",
-                    {
-                        detail: {
-                            registrationIds:
-                                Array.from(
-                                    new Set(
-                                        importedIds,
-                                    ),
-                                ),
-                        },
-                    },
-                ),
-            );
         } catch (error) {
             setProgress(
                 "",
@@ -483,11 +637,11 @@ export default function InvitationCsvImport({
                         </h2>
 
                         <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-                            Upload a guest list instead of entering guests individually. RegiGo processes the file in 500-row batches and keeps the existing invitation workflow below.
+                            Upload your guest list to add invitees. RegiGo processes the file in batches and automatically sends each guest their invitation email as soon as the import finishes.
                         </p>
 
                         <p className="mt-2 text-xs font-bold leading-5 text-slate-400">
-                            Required columns: full_name and email. Optional columns: phone, department, quantity (party size) and Registration Builder field keys.
+                            Required columns: full_name and email. Optional columns: phone, department, dietary_request, quantity (party size), and any other column name (kept as extra guest details). Also accepts the plain text file you get from Numbers or Pages via Export To &gt; Plain Text.
                         </p>
                     </div>
                 </div>
@@ -512,7 +666,7 @@ export default function InvitationCsvImport({
 
                     <input
                         type="file"
-                        accept=".csv,text/csv"
+                        accept=".csv,text/csv,.txt,text/plain,.tsv,text/tab-separated-values"
                         disabled={
                             working
                         }

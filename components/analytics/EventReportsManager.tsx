@@ -5,7 +5,6 @@ import {
     CheckCircle2,
     ChevronLeft,
     ChevronRight,
-    Download,
     FileDown,
     Loader2,
     Printer,
@@ -38,6 +37,9 @@ type GuestRow = {
 };
 
 type Payload = {
+    mode?:
+        | "public_registration"
+        | "invitation_only";
     rows: GuestRow[];
     counts: {
         total: number;
@@ -231,7 +233,9 @@ export default function EventReportsManager({
     const exportBase =
         `/api/events/${encodeURIComponent(
             eventId,
-        )}/analytics/export`;
+        )}/analytics/export?attendance=${encodeURIComponent(
+            attendance,
+        )}`;
 
     return (
         <div className="space-y-6">
@@ -291,37 +295,14 @@ export default function EventReportsManager({
                             Reports and exports
                         </h2>
                         <p className="mt-1 text-sm leading-6 text-slate-500">
-                            Export individual reports or download every report in one file.
+                            Download every report in one file.
                         </p>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2 xl:flex">
-                        <ExportLink
-                            href={`${exportBase}?report=guests&format=csv`}
-                            label="Guest Report"
-                        />
-                        <ExportLink
-                            href={`${exportBase}?report=attendance&format=csv`}
-                            label="Attendance"
-                        />
-                        <ExportLink
-                            href={`${exportBase}?report=form&format=csv`}
-                            label="Form Responses"
-                        />
-                        <ExportLink
-                            href={`${exportBase}?report=invitations&format=csv`}
-                            label="Invitations"
-                        />
-                        <ExportLink
-                            href={`${exportBase}?report=seating&format=csv`}
-                            label="Seating"
-                        />
                     </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <a
-                        href={`${exportBase}?report=all&format=csv`}
+                        href={`${exportBase}&report=all&format=csv`}
                         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white"
                     >
                         <FileDown
@@ -333,7 +314,7 @@ export default function EventReportsManager({
                     </a>
 
                     <a
-                        href={`${exportBase}?report=all&format=html`}
+                        href={`${exportBase}&report=all&format=html`}
                         target="_blank"
                         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 font-black text-white"
                     >
@@ -682,28 +663,3 @@ function Stat({
     );
 }
 
-function ExportLink({
-    href,
-    label,
-}: {
-    href: string;
-    label: string;
-}) {
-    return (
-        <a
-            href={
-                href
-            }
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700"
-        >
-            <Download
-                size={
-                    16
-                }
-            />
-            {
-                label
-            }
-        </a>
-    );
-}

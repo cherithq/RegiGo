@@ -377,6 +377,10 @@ export default async function WebsiteBadgePrintPage({
                                             element.type ===
                                             "ticket_color"
                                         ) {
+                                            const tint =
+                                                badge.ticket_colour ||
+                                                "#94A3B8";
+
                                             return (
                                                 <div
                                                     key={
@@ -385,8 +389,19 @@ export default async function WebsiteBadgePrintPage({
                                                     style={{
                                                         ...commonStyle,
                                                         backgroundColor:
-                                                            badge.ticket_colour ||
-                                                            "#94A3B8",
+                                                            element.fill ===
+                                                            false
+                                                                ? "transparent"
+                                                                : tint,
+                                                        borderStyle:
+                                                            "solid",
+                                                        borderColor:
+                                                            tint,
+                                                        borderWidth:
+                                                            element.fill ===
+                                                            false
+                                                                ? `${element.borderWidth || 1}px`
+                                                                : 0,
                                                         boxSizing:
                                                             "border-box",
                                                         transform:
@@ -499,6 +514,9 @@ export default async function WebsiteBadgePrintPage({
                                                         ...commonStyle,
                                                         objectFit:
                                                             "cover",
+                                                        opacity:
+                                                            element.opacity ??
+                                                            1,
                                                         transform:
                                                             element.rotation
                                                                 ? `rotate(${element.rotation}deg)`
@@ -528,8 +546,12 @@ export default async function WebsiteBadgePrintPage({
                                                     whiteSpace:
                                                         "nowrap",
                                                     color:
-                                                        element.color ||
-                                                        "#0F172A",
+                                                        element.key ===
+                                                        "ticket_name"
+                                                            ? badge.ticket_colour ||
+                                                              "#0F172A"
+                                                            : element.color ||
+                                                              "#0F172A",
                                                     fontFamily:
                                                         "Arial, Helvetica, sans-serif",
                                                     fontSize:

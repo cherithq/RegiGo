@@ -383,67 +383,111 @@ export async function loadAllRows<T>({
     orderColumn?: string;
     batchSize?: number;
 }) {
-    const rows: T[] = [];
-    let start =
-        0;
-
-    while (true) {
-        const {
-            data,
-            error,
-        } = await admin
+    const maxRows = 50000;
+    const countResult =
+        await admin
             .from(table)
-            .select(columns)
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
             .eq(
                 "event_id",
                 eventId,
-            )
-            .order(
-                orderColumn,
-                {
-                    ascending:
-                        true,
-                },
-            )
-            .range(
-                start,
-                start +
-                    batchSize -
-                    1,
             );
 
+    if (countResult.error) {
+        throw new EventAnalyticsError(
+            countResult.error
+                .message,
+        );
+    }
+
+    const total =
+        Math.min(
+            countResult.count ||
+                0,
+            maxRows,
+        );
+
+    if (total === 0) {
+        return [] as T[];
+    }
+
+    const pageStarts: number[] =
+        [];
+
+    for (
+        let start = 0;
+        start < total;
+        start += batchSize
+    ) {
+        pageStarts.push(
+            start,
+        );
+    }
+
+    // Pages are independent range reads, so fetch them concurrently —
+    // sequential pagination on large events (thousands of rows => many
+    // 1000-row pages) added multiple seconds to every report/export load.
+    const results =
+        await Promise.all(
+            pageStarts.map(
+                (start) =>
+                    admin
+                        .from(table)
+                        .select(columns)
+                        .eq(
+                            "event_id",
+                            eventId,
+                        )
+                        .order(
+                            orderColumn,
+                            {
+                                ascending:
+                                    true,
+                            },
+                        )
+                        // orderColumn alone isn't unique (bulk-inserted rows
+                        // can share the exact same timestamp), which makes
+                        // range() pagination non-deterministic across pages —
+                        // rows get duplicated or dropped at page boundaries.
+                        // "id" as a tiebreaker keeps the order stable
+                        // regardless of ties.
+                        .order(
+                            "id",
+                            {
+                                ascending:
+                                    true,
+                            },
+                        )
+                        .range(
+                            start,
+                            start +
+                                batchSize -
+                                1,
+                        ),
+            ),
+        );
+
+    const rows: T[] = [];
+
+    for (const {
+        data,
+        error,
+    } of results) {
         if (error) {
             throw new EventAnalyticsError(
                 error.message,
             );
         }
 
-        const page =
-            (
+        rows.push(
+            ...((
                 data ||
                 []
-            ) as T[];
-
-        rows.push(
-            ...page,
+            ) as T[]),
         );
-
-        if (
-            page.length <
-            batchSize
-        ) {
-            break;
-        }
-
-        start +=
-            batchSize;
-
-        if (
-            start >
-            50000
-        ) {
-            break;
-        }
     }
 
     return rows;

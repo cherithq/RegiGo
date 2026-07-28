@@ -3,6 +3,7 @@
 import {
     Check,
     Clock3,
+    Eye,
     Image as ImageIcon,
     Loader2,
     RefreshCw,
@@ -703,6 +704,15 @@ export default function TableSelectionManager({
                         </div>
 
                         <div className="flex flex-wrap gap-3">
+                            <a
+                                href={`/dashboard/events/${eventId}/table-selection/preview`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800"
+                            >
+                                <Eye size={16} />
+                                Preview
+                            </a>
                             <button
                                 type="button"
                                 onClick={() =>

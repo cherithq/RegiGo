@@ -83,9 +83,6 @@ export type ReportCheckIn = {
     checked_in_at:
         | string
         | null;
-    created_at:
-        | string
-        | null;
 };
 
 export type ReportField = {
@@ -108,7 +105,19 @@ export type ReportAssignment = {
     registration_id:
         | string
         | null;
-    table_id:
+    table_id?:
+        | string
+        | null;
+    // Some rows carry the table reference and/or name under different
+    // column names than the current schema — see the fallback lookups
+    // below (and the matching handling in lib/badges.ts).
+    event_table_id?:
+        | string
+        | null;
+    table_name?:
+        | string
+        | null;
+    table_label?:
         | string
         | null;
 };
@@ -332,97 +341,20 @@ async function loadCheckIns({
     admin: SupabaseClient;
     eventId: string;
 }) {
-    const primary =
-        await admin
-            .from(
-                "check_ins",
-            )
-            .select(
-                "registration_id, checked_in_at, created_at",
-            )
-            .eq(
-                "event_id",
-                eventId,
-            )
-            .order(
-                "created_at",
-                {
-                    ascending:
-                        true,
-                },
-            )
-            .range(
-                0,
-                49999,
-            );
-
-    if (!primary.error) {
-        return (
-            primary.data ||
-            []
-        ) as ReportCheckIn[];
-    }
-
-    if (
-        !isOptionalError(
-            primary.error,
-        )
-    ) {
-        throw new EventAnalyticsError(
-            primary.error
-                .message,
-        );
-    }
-
-    const fallback =
-        await admin
-            .from(
-                "check_ins",
-            )
-            .select(
-                "registration_id, created_at",
-            )
-            .eq(
-                "event_id",
-                eventId,
-            )
-            .order(
-                "created_at",
-                {
-                    ascending:
-                        true,
-                },
-            )
-            .range(
-                0,
-                49999,
-            );
-
-    if (
-        fallback.error &&
-        !isOptionalError(
-            fallback.error,
-        )
-    ) {
-        throw new EventAnalyticsError(
-            fallback.error
-                .message,
-        );
-    }
-
-    return (
-        fallback.data ||
-        []
-    ).map(
-        (row) => ({
-            registration_id:
-                row.registration_id,
-            checked_in_at:
-                null,
-            created_at:
-                row.created_at,
-        }),
-    );
+    // check_ins has no created_at column — checked_in_at is the only
+    // timestamp, so that's both what we select and what we order/dedupe by.
+    // Uses loadAllRows to paginate past PostgREST's default 1000-row cap,
+    // which silently truncated a single .range() call on larger events.
+    return loadAllRows<ReportCheckIn>({
+        admin,
+        table:
+            "check_ins",
+        columns:
+            "registration_id, checked_in_at",
+        eventId,
+        orderColumn:
+            "checked_in_at",
+    });
 }
 
 async function loadOptionalRows<T>({
@@ -489,26 +421,43 @@ async function loadOptionalRowsIn<T>({
     chunkSize?: number;
 }) {
     try {
-        const rows: T[] = [];
+        const chunks: string[][] = [];
 
         for (
             let start = 0;
             start < ids.length;
             start += chunkSize
         ) {
-            const chunk = ids.slice(
-                start,
-                start + chunkSize,
+            chunks.push(
+                ids.slice(
+                    start,
+                    start + chunkSize,
+                ),
+            );
+        }
+
+        // Chunks are independent lookups, so fetch them concurrently —
+        // on large events (thousands of registrations => dozens of
+        // chunks) doing this sequentially took 7+ seconds and risked
+        // tripping the serverless function timeout on the export/print
+        // route.
+        const results =
+            await Promise.all(
+                chunks.map(
+                    (chunk) =>
+                        admin
+                            .from(table)
+                            .select(columns)
+                            .in(column, chunk)
+                            .order(orderColumn, {
+                                ascending: true,
+                            }),
+                ),
             );
 
-            const { data, error } = await admin
-                .from(table)
-                .select(columns)
-                .in(column, chunk)
-                .order(orderColumn, {
-                    ascending: true,
-                });
+        const rows: T[] = [];
 
+        for (const { data, error } of results) {
             if (error) {
                 throw new EventAnalyticsError(
                     error.message,
@@ -715,7 +664,7 @@ export async function loadEventReportDataset(
         ? await loadOptionalRowsIn<ReportAssignment>({
               admin,
               table: "table_assignments",
-              columns: "registration_id, table_id",
+              columns: "*",
               column: "registration_id",
               ids: registrationIds,
               orderColumn: "registration_id",
@@ -784,14 +733,11 @@ export async function loadEventReportDataset(
             new Date(
                 current
                     ?.checked_in_at ||
-                    current
-                        ?.created_at ||
                     0,
             ).getTime();
         const nextTime =
             new Date(
                 checkIn.checked_in_at ||
-                    checkIn.created_at ||
                     0,
             ).getTime();
 
@@ -833,19 +779,27 @@ export async function loadEventReportDataset(
         const table =
             tableById.get(
                 clean(
-                    assignment.table_id,
+                    assignment.table_id ||
+                        assignment.event_table_id,
                 ),
+            );
+        // Fall back to a name carried directly on the assignment row
+        // when the table_id reference doesn't resolve against this
+        // event's tables (matches the fallback lib/badges.ts uses).
+        const tableName =
+            clean(
+                table?.table_name ||
+                    assignment.table_name ||
+                    assignment.table_label,
             );
 
         if (
             registrationId &&
-            table
+            tableName
         ) {
             tableByRegistration.set(
                 registrationId,
-                clean(
-                    table.table_name,
-                ),
+                tableName,
             );
         }
     }
@@ -930,9 +884,7 @@ export async function loadEventReportDataset(
                     checkedInAt:
                         clean(
                             checkIn
-                                ?.checked_in_at ||
-                                checkIn
-                                    ?.created_at,
+                                ?.checked_in_at,
                         ),
                     assignedTable:
                         tableByRegistration.get(

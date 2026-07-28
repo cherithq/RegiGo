@@ -254,6 +254,12 @@ export async function POST(
                     160,
                 ) ||
                 null,
+            dietary_request:
+                clean(
+                    body.dietaryRequest,
+                    500,
+                ) ||
+                null,
             selected_ticket_quantity:
                 partySize(
                     body.quantity,
@@ -479,6 +485,12 @@ export async function PATCH(
                     clean(
                         body.department,
                         160,
+                    ) ||
+                    null,
+                dietary_request:
+                    clean(
+                        body.dietaryRequest,
+                        500,
                     ) ||
                     null,
                 selected_ticket_quantity:

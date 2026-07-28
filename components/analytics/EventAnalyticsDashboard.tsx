@@ -6,7 +6,6 @@ import {
     Building2,
     CheckCircle2,
     Clock3,
-    Download,
     FileBarChart,
     FileDown,
     Loader2,
@@ -368,8 +367,12 @@ export default function EventAnalyticsDashboard({
 
             <section className="flex flex-col gap-4 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:flex-row lg:items-center lg:justify-between">
                 <div>
+                    <p className="text-sm font-bold text-slate-400">
+                        {data.event.event_name || "Event"}
+                    </p>
+
                     <span
-                        className={`inline-flex rounded-full px-4 py-2 text-xs font-black ${
+                        className={`mt-2 inline-flex rounded-full px-4 py-2 text-xs font-black ${
                             invitationMode
                                 ? "bg-indigo-50 text-indigo-700"
                                 : "bg-emerald-50 text-emerald-700"
@@ -416,6 +419,17 @@ export default function EventAnalyticsDashboard({
                     Refresh
                 </button>
             </section>
+
+            <div>
+                <h3 className="text-xl font-black">
+                    Overview
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                    {invitationMode
+                        ? "Headline numbers across every invitation sent for this event."
+                        : "Headline numbers across every registration for this event."}
+                </p>
+            </div>
 
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {modeCards.map(
@@ -568,30 +582,36 @@ export default function EventAnalyticsDashboard({
                 />
             </section>
 
-            <section className="grid gap-6 lg:grid-cols-3">
-                <BreakdownCard
-                    title="Department breakdown"
-                    icon={
-                        Building2
-                    }
-                    items={
-                        data.departmentBreakdown
-                    }
-                    emptyText="No department data"
-                />
+            <section className="flex flex-wrap gap-6">
+                {data.departmentBreakdown.length > 0 && (
+                    <div className="min-w-[280px] flex-1">
+                        <BreakdownCard
+                            title="Department breakdown"
+                            icon={
+                                Building2
+                            }
+                            items={
+                                data.departmentBreakdown
+                            }
+                        />
+                    </div>
+                )}
 
-                <BreakdownCard
-                    title="Dietary requirements"
-                    icon={
-                        Utensils
-                    }
-                    items={
-                        data.dietaryBreakdown
-                    }
-                    emptyText="No dietary requirements"
-                />
+                {data.dietaryBreakdown.length > 0 && (
+                    <div className="min-w-[280px] flex-1">
+                        <BreakdownCard
+                            title="Dietary requirements"
+                            icon={
+                                Utensils
+                            }
+                            items={
+                                data.dietaryBreakdown
+                            }
+                        />
+                    </div>
+                )}
 
-                <article className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <article className="min-w-[280px] flex-1 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                     <div className="flex items-center gap-3">
                         <TableProperties className="text-[#4F46E5]" />
                         <h3 className="text-xl font-black">
@@ -836,45 +856,7 @@ export default function EventAnalyticsDashboard({
                     </Link>
                 </div>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <ExportButton
-                        href={
-                            data.reportLinks
-                                .guestCsv
-                        }
-                        label="Guest Report"
-                    />
-                    <ExportButton
-                        href={
-                            data.reportLinks
-                                .attendanceCsv
-                        }
-                        label="Attendance Report"
-                    />
-                    <ExportButton
-                        href={
-                            invitationMode
-                                ? data.reportLinks
-                                      .invitationCsv
-                                : data.reportLinks
-                                      .formCsv
-                        }
-                        label={
-                            invitationMode
-                                ? "Invitation Report"
-                                : "Form Responses"
-                        }
-                    />
-                    <ExportButton
-                        href={
-                            data.reportLinks
-                                .seatingCsv
-                        }
-                        label="Seating Report"
-                    />
-                </div>
-
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
                     <a
                         href={
                             data.reportLinks
@@ -1078,28 +1060,3 @@ function SmallMetric({
     );
 }
 
-function ExportButton({
-    href,
-    label,
-}: {
-    href: string;
-    label: string;
-}) {
-    return (
-        <a
-            href={
-                href
-            }
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700"
-        >
-            <Download
-                size={
-                    16
-                }
-            />
-            {
-                label
-            }
-        </a>
-    );
-}

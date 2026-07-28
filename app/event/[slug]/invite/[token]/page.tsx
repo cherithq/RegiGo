@@ -7,8 +7,11 @@ import {
 } from "next/cache";
 import {
     createClient,
-    type SupabaseClient,
 } from "@supabase/supabase-js";
+import {
+    getPublicInvitation,
+    InvitationError,
+} from "@/lib/guest-invitations";
 
 export const dynamic =
     "force-dynamic";
@@ -119,18 +122,6 @@ type EventTableRow = {
         | null;
 };
 
-type InvitationLookup = {
-    invitation: InvitationRow;
-    table:
-        | "event_invitations"
-        | "guest_invitations";
-    tokenColumn:
-        | "token"
-        | "invitation_token"
-        | "rsvp_token"
-        | "access_token";
-};
-
 function serviceClient() {
     const url =
         process.env
@@ -182,157 +173,6 @@ function isCompatibilityError(
     );
 }
 
-async function findInvitation(
-    admin: SupabaseClient,
-    eventId: string,
-    token: string,
-): Promise<InvitationLookup | null> {
-    const tables = [
-        "event_invitations",
-        "guest_invitations",
-    ] as const;
-    const tokenColumns = [
-        "token",
-        "invitation_token",
-        "rsvp_token",
-        "access_token",
-    ] as const;
-
-    for (const table of tables) {
-        for (const tokenColumn of tokenColumns) {
-            const result =
-                await admin
-                    .from(
-                        table,
-                    )
-                    .select(
-                        "*",
-                    )
-                    .eq(
-                        "event_id",
-                        eventId,
-                    )
-                    .eq(
-                        tokenColumn,
-                        token,
-                    )
-                    .maybeSingle();
-
-            if (
-                result.error
-            ) {
-                if (
-                    isCompatibilityError(
-                        result.error,
-                    )
-                ) {
-                    continue;
-                }
-
-                throw new Error(
-                    result.error
-                        .message,
-                );
-            }
-
-            if (
-                result.data
-            ) {
-                return {
-                    invitation:
-                        result.data as unknown as InvitationRow,
-                    table,
-                    tokenColumn,
-                };
-            }
-        }
-    }
-
-    return null;
-}
-
-async function loadRegistration(
-    admin: SupabaseClient,
-    invitation: InvitationRow,
-) {
-    if (
-        !invitation.registration_id
-    ) {
-        return null;
-    }
-
-    const result =
-        await admin
-            .from(
-                "registrations",
-            )
-            .select(
-                "id, event_id, full_name, email, phone, department, rsvp_status, registration_status, payment_status, selected_ticket_quantity, table_selection_status",
-            )
-            .eq(
-                "id",
-                invitation.registration_id,
-            )
-            .maybeSingle();
-
-    if (
-        result.error
-    ) {
-        throw new Error(
-            result.error
-                .message,
-        );
-    }
-
-    return (
-        result.data ||
-        null
-    ) as unknown as
-        | RegistrationRow
-        | null;
-}
-
-async function markInvitationOpened(
-    admin: SupabaseClient,
-    lookup: InvitationLookup,
-) {
-    if (
-        lookup.invitation
-            .opened_at
-    ) {
-        return;
-    }
-
-    const result =
-        await admin
-            .from(
-                lookup.table,
-            )
-            .update({
-                opened_at:
-                    new Date()
-                        .toISOString(),
-            })
-            .eq(
-                "id",
-                lookup.invitation
-                    .id,
-            );
-
-    if (
-        result.error &&
-        !isCompatibilityError(
-            result.error,
-        )
-    ) {
-        console.error(
-            "Unable to mark invitation as opened:",
-            result.error
-                .message,
-        );
-    }
-}
-
 async function updateRsvp(
     formData: FormData,
 ) {
@@ -361,6 +201,15 @@ async function updateRsvp(
         )
             .trim()
             .toLowerCase();
+    const declineReason =
+        String(
+            formData.get(
+                "declineReason",
+            ) ||
+                "",
+        )
+            .trim()
+            .slice(0, 500);
     const rawPartySize =
         Number(
             formData.get(
@@ -400,51 +249,35 @@ async function updateRsvp(
         );
     }
 
-    const admin =
-        serviceClient();
-    const eventResult =
-        await admin
-            .from(
-                "events",
-            )
-            .select(
-                "id",
-            )
-            .eq(
-                "event_slug",
-                slug,
-            )
-            .maybeSingle();
+    let invitation;
 
-    if (
-        eventResult.error ||
-        !eventResult.data
-    ) {
+    try {
+        const result =
+            await getPublicInvitation(
+                {
+                    slug,
+                    token,
+                },
+            );
+        invitation =
+            result.invitation;
+    } catch (error) {
         redirect(
             `/event/${encodeURIComponent(
                 slug,
             )}/invite/${encodeURIComponent(
                 token,
             )}?error=${encodeURIComponent(
-                "The event could not be found.",
+                error instanceof
+                    InvitationError
+                    ? error.message
+                    : "The invitation is invalid or has expired.",
             )}`,
         );
     }
 
-    const lookup =
-        await findInvitation(
-            admin,
-            String(
-                eventResult.data
-                    .id,
-            ),
-            token,
-        );
-
     if (
-        !lookup ||
-        !lookup.invitation
-            .registration_id
+        !invitation.registration_id
     ) {
         redirect(
             `/event/${encodeURIComponent(
@@ -456,6 +289,16 @@ async function updateRsvp(
             )}`,
         );
     }
+
+    const admin =
+        serviceClient();
+    const eventJoined =
+        Array.isArray(
+            invitation.events,
+        )
+            ? invitation
+                  .events[0]
+            : invitation.events;
 
     const registrationStatus =
         response ===
@@ -483,13 +326,11 @@ async function updateRsvp(
             })
             .eq(
                 "id",
-                lookup.invitation
-                    .registration_id,
+                invitation.registration_id,
             )
             .eq(
                 "event_id",
-                eventResult.data
-                    .id,
+                eventJoined?.id,
             );
 
     if (
@@ -511,21 +352,26 @@ async function updateRsvp(
     const invitationUpdate =
         await admin
             .from(
-                lookup.table,
+                "event_invitations",
             )
             .update({
                 status:
                     response,
-                rsvp_status:
-                    response,
                 responded_at:
                     new Date()
                         .toISOString(),
+                ...(response ===
+                "declined"
+                    ? {
+                          decline_reason:
+                              declineReason ||
+                              null,
+                      }
+                    : {}),
             })
             .eq(
                 "id",
-                lookup.invitation
-                    .id,
+                invitation.id,
             );
 
     if (
@@ -718,23 +564,50 @@ export default async function InvitePage({
     const admin =
         serviceClient();
 
-    const eventResult =
-        await admin
-            .from(
-                "events",
-            )
-            .select(
-                "id, event_name, event_slug, event_date, event_time, venue, description",
-            )
-            .eq(
-                "event_slug",
-                slug,
-            )
-            .maybeSingle();
+    let invitation;
+
+    try {
+        const result =
+            await getPublicInvitation(
+                {
+                    slug,
+                    token,
+                    markOpened: true,
+                },
+            );
+        invitation =
+            result.invitation;
+    } catch (error) {
+        return (
+            <ErrorState
+                title="Invitation not found"
+                description={
+                    error instanceof
+                    InvitationError
+                        ? error.message
+                        : "This invitation link is invalid, expired or no longer available."
+                }
+            />
+        );
+    }
+
+    const eventJoined =
+        Array.isArray(
+            invitation.events,
+        )
+            ? invitation
+                  .events[0]
+            : invitation.events;
+    const registrationJoined =
+        Array.isArray(
+            invitation.registrations,
+        )
+            ? invitation
+                  .registrations[0]
+            : invitation.registrations;
 
     if (
-        eventResult.error ||
-        !eventResult.data
+        !eventJoined
     ) {
         return (
             <ErrorState
@@ -744,34 +617,8 @@ export default async function InvitePage({
         );
     }
 
-    const event =
-        eventResult.data as unknown as EventRow;
-    const lookup =
-        await findInvitation(
-            admin,
-            event.id,
-            token,
-        );
-
     if (
-        !lookup
-    ) {
-        return (
-            <ErrorState
-                title="Invitation not found"
-                description="This invitation link is invalid, expired or no longer available."
-            />
-        );
-    }
-
-    const registration =
-        await loadRegistration(
-            admin,
-            lookup.invitation,
-        );
-
-    if (
-        !registration
+        !registrationJoined
     ) {
         return (
             <ErrorState
@@ -781,10 +628,10 @@ export default async function InvitePage({
         );
     }
 
-    void markInvitationOpened(
-        admin,
-        lookup,
-    );
+    const event =
+        eventJoined as unknown as EventRow;
+    const registration =
+        registrationJoined as unknown as RegistrationRow;
 
     const [
         paymentAddonResult,
@@ -1191,6 +1038,19 @@ export default async function InvitePage({
                                 name="response"
                                 value="declined"
                             />
+
+                            <label className="mb-3 block">
+                                <span className="mb-2 block text-sm font-bold text-slate-500">
+                                    Let the organiser know why (optional)
+                                </span>
+                                <textarea
+                                    name="declineReason"
+                                    rows={2}
+                                    maxLength={500}
+                                    placeholder="e.g. Scheduling conflict"
+                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                />
+                            </label>
 
                             <button
                                 type="submit"

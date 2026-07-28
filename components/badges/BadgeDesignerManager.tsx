@@ -4,9 +4,15 @@ import {
     Building2,
     CalendarDays,
     CheckCircle2,
+    ChevronDown,
+    ChevronsDown,
+    ChevronsUp,
+    ChevronUp,
     Clock3,
+    Eye,
     Image as ImageIcon,
     Landmark,
+    Layers,
     Loader2,
     Mail,
     MapPin,
@@ -51,6 +57,7 @@ type BadgeElement = {
     lineOrientation?: "horizontal" | "vertical";
     imageUrl?: string;
     fill?: boolean;
+    opacity?: number;
 };
 type Template = {
     id: string;
@@ -148,11 +155,12 @@ function newTemplate(): Template {
             { id: id(), type: "line", x: 71.7, y: 0, width: 0.6, height: 45, lineOrientation: "vertical", dashed: true, color: "#94A3B8", borderWidth: 1.2 },
             { id: id(), type: "text", staticText: "SCAN TO CHECK IN", x: 72, y: 4, width: 28, height: 4, fontSize: 5.5, fontWeight: "bold", align: "center", color: "#94A3B8" },
             { id: id(), type: "qr", key: "qr_code", x: 77, y: 9, width: 18, height: 18 },
-            { id: id(), type: "text", staticText: "• ADMIT ONE •", x: 72, y: 28, width: 28, height: 15, fontSize: 8, fontWeight: "bold", align: "center", color: "#FFFFFF", rotation: 90 },
 
-            // Main body
-            { id: id(), type: "ticket_color", x: 7, y: 6, width: 22, height: 7 },
-            { id: id(), type: "text", key: "ticket_name", x: 7, y: 6, width: 22, height: 7, fontSize: 9, fontWeight: "bold", align: "center", color: "#FFFFFF" },
+            // Main body — the ticket-type chip is an outline in the ticket's
+            // own colour, with the label text tinted to match (see
+            // drawElement in lib/badges.ts), so it reads well on any colour.
+            { id: id(), type: "ticket_color", x: 7, y: 6, width: 22, height: 7, fill: false, borderWidth: 1.2 },
+            { id: id(), type: "text", key: "ticket_name", x: 7, y: 6, width: 22, height: 7, fontSize: 9, fontWeight: "bold", align: "center" },
             { id: id(), type: "text", key: "event_name", x: 31, y: 6, width: 37, height: 7, fontSize: 10, fontWeight: "bold", align: "left", color: "#4F46E5" },
             { id: id(), type: "text", key: "full_name", x: 7, y: 16, width: 62, height: 13, fontSize: 21, fontWeight: "bold", align: "left", color: "#0F172A" },
             { id: id(), type: "text", key: "event_date", x: 7, y: 31, width: 20, height: 6, fontSize: 8, fontWeight: "normal", align: "left", color: "#64748B" },
@@ -203,8 +211,36 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
         return (data?.guests || []).filter((guest) => !clean || [guest.full_name, guest.email, guest.department].filter(Boolean).join(" ").toLowerCase().includes(clean));
     }, [data, query]);
 
+    function elementLabel(element: BadgeElement) {
+        if (element.type === "qr") return "QR Code";
+        if (element.type === "ticket_color") return "Ticket Colour";
+        if (element.type === "image") return "Image";
+        if (element.type === "line") return "Line";
+        if (element.type === "rectangle") return "Rectangle";
+        return element.key ? fieldMap.get(element.key)?.label || element.key : "Static Text";
+    }
+
     function changeTemplate<K extends keyof Template>(key: K, value: Template[K]) {
         setTemplate((current) => ({ ...current, [key]: value }));
+    }
+
+    // Paint order follows array order — the last element is drawn on top,
+    // both in the live canvas and in the printed PDF (see drawElement in
+    // lib/badges.ts), so reordering here is what "layering" means.
+    function moveLayer(targetId: string, direction: "forward" | "backward" | "front" | "back") {
+        setTemplate((current) => {
+            const elements = [...current.elements];
+            const index = elements.findIndex((item) => item.id === targetId);
+            if (index === -1) return current;
+
+            const [item] = elements.splice(index, 1);
+            if (direction === "front") elements.push(item);
+            else if (direction === "back") elements.unshift(item);
+            else if (direction === "forward") elements.splice(Math.min(index + 1, elements.length), 0, item);
+            else elements.splice(Math.max(index - 1, 0), 0, item);
+
+            return { ...current, elements };
+        });
     }
 
     function changeElement(changes: Partial<BadgeElement>) {
@@ -231,6 +267,39 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                 ...current,
                 elements: current.elements.map((item) =>
                     item.id === element.id ? { ...item, x: nextX, y: nextY } : item
+                ),
+            }));
+        }
+
+        function onUp() {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+        }
+
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }
+
+    function startResize(event: React.MouseEvent, element: BadgeElement) {
+        event.preventDefault();
+        event.stopPropagation();
+        setElementId(element.id);
+
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const originalWidth = element.width;
+        const originalHeight = element.height;
+
+        function onMove(moveEvent: MouseEvent) {
+            const deltaWidthMm = (moveEvent.clientX - startX) / 5;
+            const deltaHeightMm = (moveEvent.clientY - startY) / 5;
+            const nextWidth = Math.max(5, Math.round((originalWidth + deltaWidthMm) * 2) / 2);
+            const nextHeight = Math.max(5, Math.round((originalHeight + deltaHeightMm) * 2) / 2);
+
+            setTemplate((current) => ({
+                ...current,
+                elements: current.elements.map((item) =>
+                    item.id === element.id ? { ...item, width: nextWidth, height: nextHeight } : item
                 ),
             }));
         }
@@ -345,22 +414,69 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
         }
     }
 
-    async function removeTemplate() {
-        if (!template.id || !window.confirm(`Delete ${template.template_name}?`)) return;
-        setWorking("delete");
+    async function deleteTemplate(target: Template) {
+        if (!target.id || !window.confirm(`Delete ${target.template_name}?`)) return;
+        setWorking(`delete-${target.id}`);
+        setMessage("");
         try {
             const response = await fetch(`/api/events/${eventId}/badges`, {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ templateId: template.id }),
+                body: JSON.stringify({ templateId: target.id }),
             });
             const result = await readJson(response);
             if (!response.ok) throw new Error(result.error || "Unable to remove template.");
             setMessage(result.message);
-            setTemplate(newTemplate());
+            if (template.id === target.id) setTemplate(newTemplate());
             await reload();
         } catch (error) {
             setMessage(error instanceof Error ? error.message : "Unable to remove template.");
+        } finally {
+            setWorking("");
+        }
+    }
+
+    async function previewTemplate() {
+        const previewWindow = window.open("about:blank", "_blank");
+        if (previewWindow) {
+            previewWindow.document.write(
+                "<title>Preparing preview...</title><p style='font-family:Arial;padding:24px'>Preparing badge preview...</p>",
+            );
+        }
+
+        setWorking("preview");
+        setMessage("");
+
+        try {
+            const response = await fetch(`/api/events/${eventId}/badges/preview`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    template: {
+                        badgeWidthMm: template.badge_width_mm,
+                        badgeHeightMm: template.badge_height_mm,
+                        backgroundColor: template.background_color,
+                        elements: template.elements,
+                    },
+                }),
+            });
+
+            if (!response.ok) {
+                const result = await readJson(response);
+                throw new Error(result.error || "Unable to preview the badge.");
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            if (previewWindow) {
+                previewWindow.location.href = url;
+            } else {
+                window.location.href = url;
+            }
+        } catch (error) {
+            previewWindow?.close();
+            setMessage(error instanceof Error ? error.message : "Unable to preview the badge.");
         } finally {
             setWorking("");
         }
@@ -438,24 +554,34 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                             {data.templates.map((item) => {
                                 const active = template.id === item.id;
                                 return (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        onClick={() => { setTemplate(item); setElementId(null); }}
-                                        className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] text-white shadow-md" : "bg-slate-50 text-slate-700 hover:bg-slate-100"}`}
-                                    >
-                                        <span className="flex items-center justify-between gap-2">
-                                            <span className="truncate">{item.template_name}</span>
-                                            {item.is_default && (
-                                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${active ? "bg-white/20" : "bg-white text-slate-500"}`}>
-                                                    Default
-                                                </span>
-                                            )}
-                                        </span>
-                                        <span className={`mt-1 block text-xs font-bold ${active ? "text-white/80" : "text-slate-400"}`}>
-                                            {item.badge_width_mm} × {item.badge_height_mm} mm
-                                        </span>
-                                    </button>
+                                    <div key={item.id} className={`flex items-stretch gap-1 rounded-2xl transition ${active ? "bg-gradient-to-r from-[#4F46E5] to-[#EC4899] shadow-md" : "bg-slate-50 hover:bg-slate-100"}`}>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTemplate(item); setElementId(null); }}
+                                            className={`min-w-0 flex-1 rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "text-white" : "text-slate-700"}`}
+                                        >
+                                            <span className="flex items-center justify-between gap-2">
+                                                <span className="truncate">{item.template_name}</span>
+                                                {item.is_default && (
+                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${active ? "bg-white/20" : "bg-white text-slate-500"}`}>
+                                                        Default
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className={`mt-1 block text-xs font-bold ${active ? "text-white/80" : "text-slate-400"}`}>
+                                                {item.badge_width_mm} × {item.badge_height_mm} mm
+                                            </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void deleteTemplate(item)}
+                                            disabled={working === `delete-${item.id}`}
+                                            title={`Delete ${item.template_name}`}
+                                            className={`shrink-0 rounded-2xl px-3 transition disabled:opacity-50 ${active ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-red-600"}`}
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </div>
                                 );
                             })}
                             {data.templates.length === 0 && (
@@ -467,6 +593,48 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                         <button type="button" onClick={() => { setTemplate(newTemplate()); setElementId(null); }} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 font-black text-slate-700 transition hover:bg-slate-200">
                             <Plus size={16} /> New Template
                         </button>
+                    </div>
+
+                    <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+                        <h2 className="flex items-center gap-2 text-lg font-black">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#F7F5FF] text-[#4F46E5]"><Layers size={15} /></span>
+                            Layers
+                        </h2>
+                        <p className="mt-1 text-xs font-semibold text-slate-400">
+                            Top of the list sits in front. Overlapping elements? Pick them here.
+                        </p>
+                        <div className="mt-4 space-y-1.5">
+                            {[...template.elements].reverse().map((element, reversedIndex) => {
+                                const selected = element.id === elementId;
+                                const isFront = reversedIndex === 0;
+                                const isBack = reversedIndex === template.elements.length - 1;
+                                return (
+                                    <div
+                                        key={element.id}
+                                        className={`flex items-center gap-1 rounded-xl px-2 py-1.5 transition ${selected ? "bg-[#F7F5FF] ring-1 ring-[#4F46E5]/30" : "hover:bg-slate-50"}`}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => setElementId(element.id)}
+                                            className="min-w-0 flex-1 truncate text-left text-xs font-black text-slate-700"
+                                        >
+                                            {elementLabel(element)}
+                                        </button>
+                                        <button type="button" title="Bring forward" disabled={isFront} onClick={() => moveLayer(element.id, "forward")} className="rounded-lg p-1 text-slate-400 transition hover:bg-white hover:text-[#4F46E5] disabled:opacity-30">
+                                            <ChevronUp size={14} />
+                                        </button>
+                                        <button type="button" title="Send backward" disabled={isBack} onClick={() => moveLayer(element.id, "backward")} className="rounded-lg p-1 text-slate-400 transition hover:bg-white hover:text-[#4F46E5] disabled:opacity-30">
+                                            <ChevronDown size={14} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                            {template.elements.length === 0 && (
+                                <p className="rounded-2xl bg-slate-50 p-4 text-xs font-semibold leading-5 text-slate-500">
+                                    No elements yet — add one below.
+                                </p>
+                            )}
+                        </div>
                     </div>
 
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -542,7 +710,9 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                             <button type="button" onClick={() => void save()} disabled={working === "save"} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white shadow-md transition hover:opacity-90 disabled:opacity-50">
                                 {working === "save" ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Template
                             </button>
-                            {template.id && <button type="button" onClick={() => void removeTemplate()} className="inline-flex items-center gap-2 rounded-2xl bg-red-50 px-5 py-3 font-black text-red-600 transition hover:bg-red-100"><Trash2 size={16} /> Remove</button>}
+                            <button type="button" onClick={() => void previewTemplate()} disabled={working === "preview"} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-black text-white transition hover:bg-slate-800 disabled:opacity-50">
+                                {working === "preview" ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />} Preview
+                            </button>
                         </div>
                     </div>
 
@@ -586,18 +756,28 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                                 element.type === "rectangle" && element.dashed
                                                     ? "dashed"
                                                     : undefined,
+                                            opacity: element.type === "image" ? element.opacity ?? 1 : undefined,
                                         }}
                                     >
                                         {element.type === "qr" && (
                                             <span className="flex h-full w-full items-center justify-center bg-slate-100"><QrCode className="h-4/5 w-4/5 text-slate-400" /></span>
                                         )}
                                         {element.type === "ticket_color" && (
-                                            <span
-                                                className="flex h-full w-full items-center justify-center gap-1 text-[9px] font-black uppercase tracking-wide text-white"
-                                                style={{ background: "linear-gradient(90deg,#4F46E5,#EC4899,#F59E0B)" }}
-                                            >
-                                                <Palette size={11} /> Ticket Colour
-                                            </span>
+                                            element.fill === false ? (
+                                                <span
+                                                    className="flex h-full w-full items-center justify-center gap-1 rounded-md bg-white text-[9px] font-black uppercase tracking-wide text-[#4F46E5]"
+                                                    style={{ border: "2px solid", borderImage: "linear-gradient(90deg,#4F46E5,#EC4899,#F59E0B) 1" }}
+                                                >
+                                                    <Palette size={11} /> Ticket Colour
+                                                </span>
+                                            ) : (
+                                                <span
+                                                    className="flex h-full w-full items-center justify-center gap-1 text-[9px] font-black uppercase tracking-wide text-white"
+                                                    style={{ background: "linear-gradient(90deg,#4F46E5,#EC4899,#F59E0B)" }}
+                                                >
+                                                    <Palette size={11} /> Ticket Colour
+                                                </span>
+                                            )
                                         )}
                                         {element.type === "image" && (
                                             element.imageUrl ? (
@@ -613,6 +793,12 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                                     <ImageIcon className="h-2/5 w-2/5" />
                                                 </span>
                                             )
+                                        )}
+                                        {element.type === "image" && selected && (
+                                            <span
+                                                onMouseDown={(event) => startResize(event, element)}
+                                                className="absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-[#EC4899] shadow"
+                                            />
                                         )}
                                         {element.type === "line" && (
                                             element.lineOrientation === "vertical" ? (
@@ -640,12 +826,19 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                                     whiteSpace: "nowrap",
                                                 }}
                                             >
-                                                {sample}
+                                                {element.key === "ticket_name" ? (
+                                                    <span
+                                                        className="font-black"
+                                                        style={{ backgroundImage: "linear-gradient(90deg,#4F46E5,#EC4899,#F59E0B)", WebkitBackgroundClip: "text", color: "transparent" }}
+                                                    >
+                                                        {sample}
+                                                    </span>
+                                                ) : sample}
                                             </span>
                                         )}
                                         {selected && (
                                             <span className="pointer-events-none absolute -top-6 left-0 whitespace-nowrap rounded-md bg-[#EC4899] px-2 py-0.5 text-[10px] font-black text-white">
-                                                {element.type === "qr" ? "QR Code" : element.type === "ticket_color" ? "Ticket Colour" : element.type === "image" ? "Image" : element.type === "line" ? "Line" : element.type === "rectangle" ? "Rectangle" : element.key ? fieldMap.get(element.key)?.label || element.key : "Static Text"}
+                                                {elementLabel(element)}
                                             </span>
                                         )}
                                     </button>
@@ -674,9 +867,21 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                 )}
 
                                 {selectedElement.type === "ticket_color" && (
-                                    <p className="rounded-xl bg-indigo-50 p-3 text-xs font-bold leading-5 text-[#4F46E5]">
-                                        This swatch automatically fills with each guest&rsquo;s ticket type colour when badges are printed — no colour to set here.
-                                    </p>
+                                    <div className="space-y-2">
+                                        <p className="rounded-xl bg-indigo-50 p-3 text-xs font-bold leading-5 text-[#4F46E5]">
+                                            This swatch automatically fills or outlines with each guest&rsquo;s ticket type colour when badges are printed — no colour to set here.
+                                        </p>
+                                        <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-sm font-black text-slate-700">
+                                            <input type="checkbox" checked={selectedElement.fill !== false} onChange={(event) => changeElement({ fill: event.target.checked })} className="accent-[#4F46E5]" />
+                                            Filled
+                                        </label>
+                                        {selectedElement.fill === false && (
+                                            <label className="block text-xs font-black text-slate-500">
+                                                Border width (mm)
+                                                <input type="number" step="0.1" value={selectedElement.borderWidth ?? 1.2} onChange={(event) => changeElement({ borderWidth: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-[#4F46E5]" />
+                                            </label>
+                                        )}
+                                    </div>
                                 )}
 
                                 {selectedElement.type === "image" && (
@@ -708,6 +913,18 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                                 }}
                                             />
                                         </label>
+                                        <label className="block text-xs font-black text-slate-500">
+                                            Opacity — {Math.round((selectedElement.opacity ?? 1) * 100)}%
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={1}
+                                                step={0.01}
+                                                value={selectedElement.opacity ?? 1}
+                                                onChange={(event) => changeElement({ opacity: Number(event.target.value) })}
+                                                className="mt-1 w-full accent-[#4F46E5]"
+                                            />
+                                        </label>
                                     </div>
                                 )}
 
@@ -736,10 +953,26 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                             <input type="checkbox" checked={selectedElement.fill !== false} onChange={(event) => changeElement({ fill: event.target.checked })} className="accent-[#4F46E5]" />
                                             Filled
                                         </label>
+                                        {selectedElement.fill !== false && (
+                                            <label className="block text-xs font-black text-slate-500">
+                                                Fill colour — e.g. the torn-ticket stub
+                                                <input type="color" value={selectedElement.backgroundColor || "#FFFFFF"} onChange={(event) => changeElement({ backgroundColor: event.target.value })} className="mt-1 h-11 w-full cursor-pointer rounded-xl border border-slate-200 p-2" />
+                                            </label>
+                                        )}
                                         <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-sm font-black text-slate-700">
                                             <input type="checkbox" checked={Boolean(selectedElement.dashed)} onChange={(event) => changeElement({ dashed: event.target.checked })} className="accent-[#4F46E5]" />
                                             Dashed border
                                         </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className="block text-xs font-black text-slate-500">
+                                                Border colour
+                                                <input type="color" value={selectedElement.borderColor || "#CBD5E1"} onChange={(event) => changeElement({ borderColor: event.target.value })} className="mt-1 h-11 w-full cursor-pointer rounded-xl border border-slate-200 p-2" />
+                                            </label>
+                                            <label className="block text-xs font-black text-slate-500">
+                                                Border width (mm)
+                                                <input type="number" step="0.1" min={0} value={selectedElement.borderWidth ?? 0} onChange={(event) => changeElement({ borderWidth: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-[#4F46E5]" />
+                                            </label>
+                                        </div>
                                     </div>
                                 )}
 
@@ -768,12 +1001,37 @@ export default function BadgeDesignerManager({ eventId }: { eventId: string }) {
                                             <select value={selectedElement.align || "left"} onChange={(event) => changeElement({ align: event.target.value as "left" | "center" | "right" })} className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-[#4F46E5]">
                                                 <option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option>
                                             </select>
-                                            <input type="color" value={selectedElement.color || "#0F172A"} onChange={(event) => changeElement({ color: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 p-2" />
+                                            {selectedElement.key === "ticket_name" ? (
+                                                <p className="rounded-xl bg-indigo-50 p-3 text-xs font-bold leading-5 text-[#4F46E5]">
+                                                    This label automatically takes its colour from each guest&rsquo;s ticket type — set in the Tickets section — so there&rsquo;s no colour to choose here.
+                                                </p>
+                                            ) : (
+                                                <input type="color" value={selectedElement.color || "#0F172A"} onChange={(event) => changeElement({ color: event.target.value })} className="h-11 w-full rounded-xl border border-slate-200 p-2" />
+                                            )}
                                         </div>
                                     </div>
                                 )}
 
-                                <button type="button" onClick={() => { changeTemplate("elements", template.elements.filter((item) => item.id !== selectedElement.id)); setElementId(null); }} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-black text-red-600 transition hover:bg-red-100"><Trash2 size={15} /> Delete Element</button>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button type="button" onClick={() => moveLayer(selectedElement.id, "front")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100">
+                                        <ChevronsUp size={14} /> Bring to Front
+                                    </button>
+                                    <button type="button" onClick={() => moveLayer(selectedElement.id, "back")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100">
+                                        <ChevronsDown size={14} /> Send to Back
+                                    </button>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!window.confirm(`Delete this ${elementLabel(selectedElement).toLowerCase()} element?`)) return;
+                                        changeTemplate("elements", template.elements.filter((item) => item.id !== selectedElement.id));
+                                        setElementId(null);
+                                    }}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-black text-red-600 transition hover:bg-red-100"
+                                >
+                                    <Trash2 size={15} /> Delete Element
+                                </button>
                             </div>
                         )}
                     </div>

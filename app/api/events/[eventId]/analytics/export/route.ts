@@ -134,6 +134,21 @@ function timestamp(
     );
 }
 
+// These already have a dedicated column in every guest report, so a
+// registration form field reusing one of these keys (e.g. a "Department"
+// question) would otherwise show up twice with identical values.
+const reservedFieldKeys =
+    new Set([
+        "full_name",
+        "name",
+        "email",
+        "phone",
+        "mobile",
+        "department",
+        "dietary_request",
+        "dietary",
+    ]);
+
 function customFieldColumns(
     dataset:
         EventReportDataset,
@@ -145,6 +160,11 @@ function customFieldColumns(
             ) =>
                 Boolean(
                     field.field_key,
+                ) &&
+                !reservedFieldKeys.has(
+                    String(
+                        field.field_key,
+                    ).toLowerCase(),
                 ),
         )
         .map(
@@ -198,13 +218,115 @@ function customValue(
         "";
 }
 
+function formFieldKeys(
+    dataset:
+        EventReportDataset,
+) {
+    return new Set(
+        dataset.fields
+            .filter(
+                (
+                    field,
+                ) =>
+                    Boolean(
+                        field.field_key,
+                    ),
+            )
+            .map(
+                (
+                    field,
+                ) =>
+                    String(
+                        field.field_key,
+                    ).toLowerCase(),
+            ),
+    );
+}
+
+// Invitation-only events have no public form — department/dietary are
+// entered directly by the admin, so they're always relevant there. For
+// registration-mode events, only show them when the event's own form
+// actually asks for them; otherwise every guest has a blank value and the
+// column is just clutter.
+function includeDepartmentColumn(
+    dataset:
+        EventReportDataset,
+) {
+    return (
+        dataset.mode ===
+            "invitation_only" ||
+        formFieldKeys(
+            dataset,
+        ).has(
+            "department",
+        )
+    );
+}
+
+function includeDietaryColumn(
+    dataset:
+        EventReportDataset,
+) {
+    return (
+        dataset.mode ===
+            "invitation_only" ||
+        [
+            "dietary_request",
+            "dietary",
+        ].some(
+            (
+                key,
+            ) =>
+                formFieldKeys(
+                    dataset,
+                ).has(
+                    key,
+                ),
+        )
+    );
+}
+
+// Only relevant when the event actually has seating tables configured —
+// otherwise every guest is "Unassigned" and the column adds nothing.
+function includeTableColumn(
+    dataset:
+        EventReportDataset,
+) {
+    return (
+        dataset.tables
+            .length > 0
+    );
+}
+
+// Registration-based events collect answers through a configurable
+// registration form, so their guest report surfaces those form fields.
+// Invitation/RSVP-based events have no public form — guests are curated
+// by the admin — so their report surfaces the RSVP/invitation timeline
+// instead. Showing the other mode's columns would just be empty clutter,
+// which is what made these reports read as "wrong" when printed.
 function guestTable(
     dataset:
         EventReportDataset,
     includeCustom = true,
 ) {
+    const invitationMode =
+        dataset.mode ===
+        "invitation_only";
+    const showDepartment =
+        includeDepartmentColumn(
+            dataset,
+        );
+    const showDietary =
+        includeDietaryColumn(
+            dataset,
+        );
+    const showTable =
+        includeTableColumn(
+            dataset,
+        );
     const customFields =
-        includeCustom
+        includeCustom &&
+        !invitationMode
             ? customFieldColumns(
                   dataset,
               )
@@ -215,19 +337,42 @@ function guestTable(
             "Full Name",
             "Email",
             "Phone",
-            "Department",
-            "Dietary Requirements",
-            "Registration Status",
-            "RSVP Status",
-            "Guest Quantity",
+            ...(showDepartment
+                ? [
+                      "Department",
+                  ]
+                : []),
+            ...(showDietary
+                ? [
+                      "Dietary Requirements",
+                  ]
+                : []),
+            ...(invitationMode
+                ? [
+                      "RSVP Status",
+                      "Invitation Status",
+                      "Invitation Sent At",
+                      "Invitation Opened At",
+                      "Invitation Responded At",
+                  ]
+                : [
+                      "Registration Status",
+                  ]),
+            // Party size only matters when guests RSVP for a group invite —
+            // public registration is always one form submission per guest.
+            ...(invitationMode
+                ? [
+                      "Guest Quantity",
+                  ]
+                : []),
             "Registered At",
             "Check-In Status",
             "Checked-In At",
-            "Assigned Table",
-            "Invitation Status",
-            "Invitation Sent At",
-            "Invitation Opened At",
-            "Invitation Responded At",
+            ...(showTable
+                ? [
+                      "Assigned Table",
+                  ]
+                : []),
             ...customFields.map(
                 (
                     field,
@@ -243,11 +388,38 @@ function guestTable(
                     guest.fullName,
                     guest.email,
                     guest.phone,
-                    guest.department,
-                    guest.dietaryRequest,
-                    guest.registrationStatus,
-                    guest.rsvpStatus,
-                    guest.guestQuantity,
+                    ...(showDepartment
+                        ? [
+                              guest.department,
+                          ]
+                        : []),
+                    ...(showDietary
+                        ? [
+                              guest.dietaryRequest,
+                          ]
+                        : []),
+                    ...(invitationMode
+                        ? [
+                              guest.rsvpStatus,
+                              guest.invitationStatus,
+                              timestamp(
+                                  guest.invitationSentAt,
+                              ),
+                              timestamp(
+                                  guest.invitationOpenedAt,
+                              ),
+                              timestamp(
+                                  guest.invitationRespondedAt,
+                              ),
+                          ]
+                        : [
+                              guest.registrationStatus,
+                          ]),
+                    ...(invitationMode
+                        ? [
+                              guest.guestQuantity,
+                          ]
+                        : []),
                     timestamp(
                         guest.registeredAt,
                     ),
@@ -257,17 +429,11 @@ function guestTable(
                     timestamp(
                         guest.checkedInAt,
                     ),
-                    guest.assignedTable,
-                    guest.invitationStatus,
-                    timestamp(
-                        guest.invitationSentAt,
-                    ),
-                    timestamp(
-                        guest.invitationOpenedAt,
-                    ),
-                    timestamp(
-                        guest.invitationRespondedAt,
-                    ),
+                    ...(showTable
+                        ? [
+                              guest.assignedTable,
+                          ]
+                        : []),
                     ...customFields.map(
                         (
                             field,
@@ -286,16 +452,42 @@ function attendanceTable(
     dataset:
         EventReportDataset,
 ) {
+    const invitationMode =
+        dataset.mode ===
+        "invitation_only";
+    const showDepartment =
+        includeDepartmentColumn(
+            dataset,
+        );
+    const showTable =
+        includeTableColumn(
+            dataset,
+        );
+
     return {
         headers: [
             "Full Name",
             "Email",
             "Phone",
-            "Department",
+            ...(showDepartment
+                ? [
+                      "Department",
+                  ]
+                : []),
             "Check-In Status",
             "Checked-In At",
-            "Assigned Table",
-            "Guest Quantity",
+            ...(showTable
+                ? [
+                      "Assigned Table",
+                  ]
+                : []),
+            // Party size only matters when guests RSVP for a group invite —
+            // public registration is always one form submission per guest.
+            ...(invitationMode
+                ? [
+                      "Guest Quantity",
+                  ]
+                : []),
         ],
         rows:
             dataset.guests.map(
@@ -305,15 +497,27 @@ function attendanceTable(
                     guest.fullName,
                     guest.email,
                     guest.phone,
-                    guest.department,
+                    ...(showDepartment
+                        ? [
+                              guest.department,
+                          ]
+                        : []),
                     guest.checkedIn
                         ? "Checked In"
                         : "Not Checked In",
                     timestamp(
                         guest.checkedInAt,
                     ),
-                    guest.assignedTable,
-                    guest.guestQuantity,
+                    ...(showTable
+                        ? [
+                              guest.assignedTable,
+                          ]
+                        : []),
+                    ...(invitationMode
+                        ? [
+                              guest.guestQuantity,
+                          ]
+                        : []),
                 ],
             ),
     };
@@ -541,18 +745,26 @@ function allCsv(
                     dataset.guests
                         .length,
                 ],
-                [
-                    "Total Guest Quantity",
-                    dataset.guests.reduce(
-                        (
-                            total,
-                            guest,
-                        ) =>
-                            total +
-                            guest.guestQuantity,
-                        0,
-                    ),
-                ],
+                // Party size only matters when guests RSVP for a group
+                // invite — public registration is always one form
+                // submission per guest.
+                ...(dataset.mode ===
+                "invitation_only"
+                    ? [
+                          [
+                              "Total Guest Quantity",
+                              dataset.guests.reduce(
+                                  (
+                                      total,
+                                      guest,
+                                  ) =>
+                                      total +
+                                      guest.guestQuantity,
+                                  0,
+                              ),
+                          ],
+                      ]
+                    : []),
                 [
                     "Checked In",
                     dataset.guests.filter(
@@ -573,26 +785,16 @@ function allCsv(
                 ],
             ],
         },
+        // The full guest report already carries check-in, table, and
+        // (for invitation-mode events) invitation/RSVP columns, so a
+        // separate attendance/invitation section would just repeat the
+        // same data under a different heading.
         {
             title:
                 "FULL GUEST REPORT",
             ...guestTable(
                 dataset,
                 true,
-            ),
-        },
-        {
-            title:
-                "ATTENDANCE REPORT",
-            ...attendanceTable(
-                dataset,
-            ),
-        },
-        {
-            title:
-                "INVITATION REPORT",
-            ...invitationTable(
-                dataset,
             ),
         },
         {
@@ -719,14 +921,6 @@ function printableHtml(
             dataset,
             true,
         );
-    const attendance =
-        attendanceTable(
-            dataset,
-        );
-    const invitation =
-        invitationTable(
-            dataset,
-        );
     const seating =
         seatingTable(
             dataset,
@@ -818,16 +1012,6 @@ function printableHtml(
         guest.rows,
     )}
     ${htmlTable(
-        "Attendance Report",
-        attendance.headers,
-        attendance.rows,
-    )}
-    ${htmlTable(
-        "Invitation Report",
-        invitation.headers,
-        invitation.rows,
-    )}
-    ${htmlTable(
         "Seating Report",
         seating.headers,
         seating.rows,
@@ -858,6 +1042,40 @@ export async function GET(
             new URL(
                 request.url,
             );
+        const attendance =
+            String(
+                url.searchParams.get(
+                    "attendance",
+                ) ||
+                    "all",
+            )
+                .trim()
+                .toLowerCase();
+
+        if (
+            attendance ===
+            "checked_in"
+        ) {
+            dataset.guests =
+                dataset.guests.filter(
+                    (
+                        guest,
+                    ) =>
+                        guest.checkedIn,
+                );
+        } else if (
+            attendance ===
+            "not_checked_in"
+        ) {
+            dataset.guests =
+                dataset.guests.filter(
+                    (
+                        guest,
+                    ) =>
+                        !guest.checkedIn,
+                );
+        }
+
         const report =
             cleanReport(
                 url.searchParams.get(

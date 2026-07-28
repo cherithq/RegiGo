@@ -51,6 +51,7 @@ type GuestRow = {
     email: string;
     phone: string | null;
     department: string | null;
+    dietary_request: string | null;
     selected_ticket_quantity:
         | number
         | null;
@@ -88,6 +89,7 @@ type EditGuestDraft = {
     email: string;
     phone: string;
     department: string;
+    dietaryRequest: string;
     partySize: string;
 };
 
@@ -393,6 +395,9 @@ export default function InvitationManager({
             department:
                 guest.department ||
                 "",
+            dietaryRequest:
+                guest.dietary_request ||
+                "",
             partySize:
                 String(
                     Math.max(
@@ -444,6 +449,8 @@ export default function InvitationManager({
                                     editingGuest.phone,
                                 department:
                                     editingGuest.department,
+                                dietaryRequest:
+                                    editingGuest.dietaryRequest,
                                 quantity:
                                     Number(
                                         editingGuest.partySize,
@@ -890,6 +897,13 @@ export default function InvitationManager({
                                                                 }
                                                             </span>
                                                         )}
+                                                        {guest.dietary_request && (
+                                                            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-700">
+                                                                {
+                                                                    guest.dietary_request
+                                                                }
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-5 py-5 align-top">
@@ -1120,6 +1134,22 @@ export default function InvitationManager({
                                     setEditingGuest({
                                         ...editingGuest,
                                         department:
+                                            value,
+                                    })
+                                }
+                            />
+
+                            <EditField
+                                label="Dietary Requirements"
+                                value={
+                                    editingGuest.dietaryRequest
+                                }
+                                onChange={(
+                                    value,
+                                ) =>
+                                    setEditingGuest({
+                                        ...editingGuest,
+                                        dietaryRequest:
                                             value,
                                     })
                                 }

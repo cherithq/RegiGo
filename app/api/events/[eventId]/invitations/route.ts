@@ -110,7 +110,7 @@ export async function GET(
             await admin
                 .from("registrations")
                 .select(
-                    "id, full_name, email, phone, department, selected_ticket_quantity, registration_status, rsvp_status, invitation_sent_at, invitation_opened_at, rsvp_responded_at, created_at",
+                    "id, full_name, email, phone, department, dietary_request, selected_ticket_quantity, registration_status, rsvp_status, invitation_sent_at, invitation_opened_at, rsvp_responded_at, created_at",
                 )
                 .eq("event_id", eventId)
                 .order("created_at", {

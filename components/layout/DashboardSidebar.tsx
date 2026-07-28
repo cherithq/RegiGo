@@ -326,8 +326,14 @@ export default function DashboardSidebar() {
         }, [eventId]);
 
     useEffect(() => {
+        // `loadContext` only changes identity when the event id segment of
+        // the URL changes, but permissions/add-ons can change without the
+        // event id changing (e.g. toggling an add-on on the Settings &
+        // Add-ons page then navigating to another tab of the same event).
+        // Re-run on every path change so the sidebar doesn't show stale
+        // module state after such a change.
         void loadContext();
-    }, [loadContext]);
+    }, [loadContext, pathname]);
 
     useEffect(() => {
         setMobileOpen(false);
@@ -776,8 +782,8 @@ export default function DashboardSidebar() {
                                           Puzzle,
                                       exact:
                                           true,
-                                      platformAdminOnly:
-                                          true,
+                                      permission:
+                                          "canManageEvent",
                                   },
                                   {
                                       href:

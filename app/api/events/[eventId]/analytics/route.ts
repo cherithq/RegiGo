@@ -895,6 +895,7 @@ export async function GET(
                         "registered",
                         "confirmed",
                         "approved",
+                        "checked_in",
                     ].includes(
                         guest.registrationStatus,
                     ),
@@ -962,30 +963,23 @@ export async function GET(
                         }),
                     ),
                 ),
+            // Registration events don't have a meaningful RSVP-style status
+            // split (almost everything ends up "Confirmed"), so the
+            // breakdown here tracks attendance instead — Checked In and Not
+            // Checked In are mutually exclusive and sum to the whole, which
+            // is what BreakdownCard's bars assume.
             statusBreakdown: [
-                {
-                    label:
-                        "Confirmed",
-                    value:
-                        confirmed,
-                },
-                {
-                    label:
-                        "Pending",
-                    value:
-                        pending,
-                },
-                {
-                    label:
-                        "Cancelled / Declined",
-                    value:
-                        cancelled,
-                },
                 {
                     label:
                         "Checked In",
                     value:
                         checkedIn,
+                },
+                {
+                    label:
+                        "Not Checked In",
+                    value:
+                        notCheckedIn,
                 },
             ],
             fields:

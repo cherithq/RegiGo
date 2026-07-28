@@ -53,6 +53,7 @@ export type BadgeElement = {
     lineOrientation?: "horizontal" | "vertical";
     imageUrl?: string;
     fill?: boolean;
+    opacity?: number;
 };
 
 export const BADGE_MERGE_FIELDS = [
@@ -60,7 +61,7 @@ export const BADGE_MERGE_FIELDS = [
     ["email", "Email", "alex@example.com"],
     ["phone", "Phone", "+65 9123 4567"],
     ["department", "Department", "Engineering"],
-    ["ticket_name", "Ticket Type", "VIP"],
+    ["ticket_name", "Ticket Type", "General Admission"],
     ["table_name", "Table", "Table 8"],
     ["event_name", "Event Name", "Annual Dinner"],
     ["event_date", "Event Date", "23 Jul 2026"],
@@ -157,6 +158,7 @@ export function cleanBadgeElements(value: unknown): BadgeElement[] {
             lineOrientation: raw.lineOrientation === "vertical" ? "vertical" : "horizontal",
             imageUrl: typeof raw.imageUrl === "string" ? raw.imageUrl.slice(0, 2000) : undefined,
             fill: raw.fill !== false,
+            opacity: clamp(n(raw.opacity, 1), 0, 1),
         };
     }).slice(0, 100);
 }
@@ -253,14 +255,19 @@ async function drawElement(args: {
         return;
     }
     if (element.type === "ticket_color") {
-        page.drawRectangle({ x, y, width, height, color: hexToRgb(data.ticket_colour || "#94A3B8") });
+        const tint = data.ticket_colour || "#94A3B8";
+        if (element.fill === false) {
+            page.drawRectangle({ x, y, width, height, borderColor: hexToRgb(tint), borderWidth: element.borderWidth || 1 });
+        } else {
+            page.drawRectangle({ x, y, width, height, color: hexToRgb(tint) });
+        }
         return;
     }
     if (element.type === "image") {
         if (!element.imageUrl) return;
         const image = await embedRemoteImage(pdf, element.imageUrl, imageCache);
         if (!image) return;
-        page.drawImage(image, { x, y, width, height, rotate: degrees(element.rotation || 0) });
+        page.drawImage(image, { x, y, width, height, rotate: degrees(element.rotation || 0), opacity: element.opacity ?? 1 });
         return;
     }
 
@@ -269,7 +276,9 @@ async function drawElement(args: {
     if (!text) return;
 
     const rotation = element.rotation || 0;
-    const color = hexToRgb(element.color || "#0F172A");
+    // The ticket-type label always takes its colour from the ticket type
+    // itself (set in the Tickets section), not from a static element colour.
+    const color = hexToRgb(element.key === "ticket_name" ? (data.ticket_colour || "#0F172A") : (element.color || "#0F172A"));
 
     if (rotation === 0) {
         const size = fitText(font, text, width, element.fontSize || 12);

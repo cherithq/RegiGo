@@ -169,6 +169,8 @@ export async function POST(
                             "phone",
                             "mobile",
                             "department",
+                            "dietary_request",
+                            "dietary",
                             "quantity",
                             "selected_ticket_quantity",
                         ]);
@@ -219,6 +221,13 @@ export async function POST(
                             clean(
                                 record.department,
                                 160,
+                            ) ||
+                            null,
+                        dietary_request:
+                            clean(
+                                record.dietary_request ??
+                                    record.dietary,
+                                500,
                             ) ||
                             null,
                         selected_ticket_quantity:
@@ -323,6 +332,8 @@ export async function POST(
                             row.phone,
                         department:
                             row.department,
+                        dietary_request:
+                            row.dietary_request,
                         selected_ticket_quantity:
                             row.selected_ticket_quantity,
                         custom_answers:

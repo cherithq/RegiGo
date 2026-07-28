@@ -1,5 +1,6 @@
 import Link from "next/link";
 import DeleteEventButton from "@/components/events/DeleteEventButton";
+import EventStatusToggle from "@/components/events/EventStatusToggle";
 import {
     ArrowLeft,
     BadgeCheck,
@@ -756,17 +757,29 @@ export default async function EventOverviewPage({
                                 the sidebar.
                             </p>
 
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <EventInfo
-                                    icon={
-                                        BadgeCheck
-                                    }
-                                    label={
-                                        formatStatus(
-                                            event.status,
-                                        )
-                                    }
-                                />
+                            <div className="mt-6 flex flex-wrap items-center gap-3">
+                                {isPlatformAdmin ||
+                                isCompanyAdmin ? (
+                                    <EventStatusToggle
+                                        eventId={
+                                            eventId
+                                        }
+                                        initialStatus={
+                                            event.status
+                                        }
+                                    />
+                                ) : (
+                                    <EventInfo
+                                        icon={
+                                            BadgeCheck
+                                        }
+                                        label={
+                                            formatStatus(
+                                                event.status,
+                                            )
+                                        }
+                                    />
+                                )}
 
                                 {event.event_date && (
                                     <EventInfo
