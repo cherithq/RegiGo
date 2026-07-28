@@ -1,8 +1,8 @@
 import Link from "next/link";
 import DeleteEventButton from "@/components/events/DeleteEventButton";
 import EventStatusToggle from "@/components/events/EventStatusToggle";
+import BackButton from "@/components/layout/BackButton";
 import {
-    ArrowLeft,
     BadgeCheck,
     BarChart3,
     CalendarDays,
@@ -712,15 +712,9 @@ export default async function EventOverviewPage({
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
             <div className="mx-auto max-w-7xl">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <Link
-                        href="/dashboard/events"
-                        className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5]"
-                    >
-                        <ArrowLeft
-                            size={16}
-                        />
+                    <BackButton href="/dashboard/events">
                         Back to Events
-                    </Link>
+                    </BackButton>
 
                     {(isPlatformAdmin ||
                         isCompanyAdmin) && (

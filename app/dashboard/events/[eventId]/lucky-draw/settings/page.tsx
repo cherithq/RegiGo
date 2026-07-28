@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {
-    ArrowLeft,
     ExternalLink,
     ImageIcon,
     MonitorPlay,
     Palette,
 } from "lucide-react";
 import LuckyDrawAudienceBackgroundSettings from "@/components/lucky-draw/LuckyDrawAudienceBackgroundSettings";
+import BackButton from "@/components/layout/BackButton";
 
 export const dynamic =
     "force-dynamic";
@@ -32,17 +32,12 @@ export default async function LuckyDrawSettingsPage({
                     <div className="absolute bottom-0 right-40 h-64 w-64 rounded-full bg-[#4F46E5]/10 blur-3xl" />
 
                     <div className="relative z-10">
-                        <Link
+                        <BackButton
                             href={`/dashboard/events/${eventId}`}
-                            className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#F7F5FF] px-4 py-3 text-sm font-black text-[#4F46E5]"
+                            variant="subtle"
                         >
-                            <ArrowLeft
-                                size={
-                                    17
-                                }
-                            />
                             Back to Event
-                        </Link>
+                        </BackButton>
 
                         <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                             <Palette

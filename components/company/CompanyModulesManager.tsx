@@ -46,16 +46,19 @@ type CompanyRow = {
     current_plan_id?:
         | string
         | null;
-    custom_sender_name?:
-        | string
-        | null;
-    custom_sender_reply_to?:
-        | string
-        | null;
     custom_sender_status?:
         | string
         | null;
     custom_sender_review_note?:
+        | string
+        | null;
+    custom_smtp_host?:
+        | string
+        | null;
+    custom_smtp_username?:
+        | string
+        | null;
+    custom_smtp_from_address?:
         | string
         | null;
 };
@@ -95,18 +98,21 @@ type Company = {
             string,
             boolean
         >;
-    customSenderName:
-        | string
-        | null;
-    customSenderReplyTo:
-        | string
-        | null;
     customSenderStatus:
         | "none"
         | "pending"
         | "approved"
         | "rejected";
     customSenderReviewNote:
+        | string
+        | null;
+    customSmtpHost:
+        | string
+        | null;
+    customSmtpUsername:
+        | string
+        | null;
+    customSmtpFromAddress:
         | string
         | null;
 };
@@ -502,7 +508,7 @@ export default function CompanyModulesManager() {
                             "companies",
                         )
                         .select(
-                            "id, company_name, company_slug, status, current_plan_id, custom_sender_name, custom_sender_reply_to, custom_sender_status, custom_sender_review_note",
+                            "id, company_name, company_slug, status, current_plan_id, custom_sender_status, custom_sender_review_note, custom_smtp_host, custom_smtp_username, custom_smtp_from_address",
                         )
                         .order(
                             "company_name",
@@ -720,12 +726,6 @@ export default function CompanyModulesManager() {
                                     ),
                                 ),
                             },
-                            customSenderName:
-                                company.custom_sender_name ||
-                                null,
-                            customSenderReplyTo:
-                                company.custom_sender_reply_to ||
-                                null,
                             customSenderStatus:
                                 company.custom_sender_status ===
                                     "pending" ||
@@ -737,6 +737,15 @@ export default function CompanyModulesManager() {
                                     : "none",
                             customSenderReviewNote:
                                 company.custom_sender_review_note ||
+                                null,
+                            customSmtpHost:
+                                company.custom_smtp_host ||
+                                null,
+                            customSmtpUsername:
+                                company.custom_smtp_username ||
+                                null,
+                            customSmtpFromAddress:
+                                company.custom_smtp_from_address ||
                                 null,
                         }),
                     );
@@ -1181,7 +1190,7 @@ export default function CompanyModulesManager() {
                                 <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <p className="text-sm font-black uppercase tracking-wide text-slate-500">
-                                            Custom Sender Request
+                                            Custom Domain Sending Request
                                         </p>
 
                                         <span
@@ -1201,16 +1210,45 @@ export default function CompanyModulesManager() {
                                         </span>
                                     </div>
 
-                                    <p className="mt-3 text-sm font-semibold text-slate-700">
-                                        {
-                                            selectedCompany.customSenderName
-                                        }{" "}
-                                        &lt;
-                                        {
-                                            selectedCompany.customSenderReplyTo
-                                        }
-                                        &gt;
-                                    </p>
+                                    {selectedCompany.customSmtpHost && (
+                                        <div className="mt-3 rounded-xl bg-white p-4 text-sm text-slate-700">
+                                            <p className="font-black text-slate-500">
+                                                Own-domain SMTP requested
+                                            </p>
+                                            <p className="mt-1">
+                                                Host:{" "}
+                                                <span className="font-semibold">
+                                                    {
+                                                        selectedCompany.customSmtpHost
+                                                    }
+                                                </span>
+                                            </p>
+                                            <p>
+                                                Username:{" "}
+                                                <span className="font-semibold">
+                                                    {
+                                                        selectedCompany.customSmtpUsername
+                                                    }
+                                                </span>
+                                            </p>
+                                            <p>
+                                                From address:{" "}
+                                                <span className="font-semibold">
+                                                    {
+                                                        selectedCompany.customSmtpFromAddress
+                                                    }
+                                                </span>
+                                            </p>
+                                            <p className="mt-2 text-xs text-slate-400">
+                                                Password is stored encrypted
+                                                and never shown here. It was
+                                                already test-connected when
+                                                the company submitted this
+                                                request, and will be
+                                                re-verified on approval.
+                                            </p>
+                                        </div>
+                                    )}
 
                                     {selectedCompany.customSenderStatus ===
                                         "pending" && (

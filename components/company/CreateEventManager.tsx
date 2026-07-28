@@ -1,7 +1,6 @@
 "use client";
 
 import {
-    ArrowLeft,
     Building2,
     CalendarDays,
     Check,
@@ -16,7 +15,7 @@ import {
     Sparkles,
     Users,
 } from "lucide-react";
-import Link from "next/link";
+import BackButton from "@/components/layout/BackButton";
 import {
     useRouter,
 } from "next/navigation";
@@ -608,15 +607,9 @@ export default function CreateEventManager() {
             className="space-y-7"
         >
             <div className="flex items-center justify-between gap-4">
-                <Link
-                    href="/dashboard/events"
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm"
-                >
-                    <ArrowLeft
-                        size={16}
-                    />
+                <BackButton href="/dashboard/events">
                     Back to Events
-                </Link>
+                </BackButton>
             </div>
 
             <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm md:p-10">

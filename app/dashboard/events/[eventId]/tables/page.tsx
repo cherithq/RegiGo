@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowLeft, Table2, Users } from "lucide-react";
+import { Table2, Users } from "lucide-react";
 import { requirePermission } from "@/lib/permissions";
 import { getSupabaseAdminClient } from "@/lib/guest-invitations";
 import { loadAllRows } from "@/lib/event-analytics-server";
 import TableForm from "@/components/forms/TableForm";
 import TableListManager from "@/components/tables/TableListManager";
+import BackButton from "@/components/layout/BackButton";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -101,13 +102,9 @@ export default async function TablesPage({
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
             <div className="mx-auto max-w-7xl space-y-5 md:space-y-8">
-                <Link
-                    href={`/dashboard/events/${eventId}`}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm transition hover:text-[#EC4899]"
-                >
-                    <ArrowLeft size={16} />
+                <BackButton href={`/dashboard/events/${eventId}`}>
                     Back to Event
-                </Link>
+                </BackButton>
 
                 <section className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm md:rounded-[2rem] md:p-8 lg:p-10">
                     <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#EC4899]/10 blur-3xl md:h-56 md:w-56" />

@@ -33,6 +33,7 @@ import {
     Gift,
     Globe2,
     Home,
+    Landmark,
     ListTodo,
     LogOut,
     Mail,
@@ -887,6 +888,17 @@ export default function DashboardSidebar() {
                                 "Company Plans",
                             icon:
                                 Building2,
+                            exact: true,
+                            platformAdminOnly:
+                                true,
+                        },
+                        {
+                            href:
+                                "/dashboard/companies",
+                            label:
+                                "Companies",
+                            icon:
+                                Landmark,
                             exact: true,
                             platformAdminOnly:
                                 true,

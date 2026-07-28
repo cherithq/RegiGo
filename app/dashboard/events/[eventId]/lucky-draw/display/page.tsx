@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowLeft, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
 import LuckyDrawAudienceDisplay from "@/components/lucky-draw/LuckyDrawAudienceDisplay";
+import BackButton from "@/components/layout/BackButton";
 
 type Registration = {
     id: string;
@@ -169,13 +170,13 @@ export default async function LuckyDrawDisplayPage({
     return (
         <main className="min-h-screen bg-slate-950 text-white">
             <div className="absolute left-6 top-6 z-50 flex flex-wrap gap-3">
-                <Link
+                <BackButton
                     href={`/dashboard/events/${eventId}`}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-black text-white backdrop-blur transition hover:bg-white/20"
+                    variant="dark"
+                    className="px-5"
                 >
-                    <ArrowLeft size={18} />
                     Back to Event
-                </Link>
+                </BackButton>
 
                 <Link
                     href={`/dashboard/events/${eventId}/lucky-draw/settings`}

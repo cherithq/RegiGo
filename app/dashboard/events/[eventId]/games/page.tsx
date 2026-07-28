@@ -1,8 +1,7 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import TapTournamentControl from "@/components/games/TapTournamentControl";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import BackButton from "@/components/layout/BackButton";
 
 export const dynamic = "force-dynamic";
 
@@ -65,13 +64,12 @@ export default async function GamesTournamentPage({
     return (
         <main className="min-h-screen bg-[#F7F5FF] p-5 text-slate-950 md:p-8">
             <div className="mx-auto max-w-7xl">
-                <Link
+                <BackButton
                     href={`/dashboard/events/${eventId}`}
-                    className="mb-5 inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#4F46E5] shadow-sm"
+                    className="mb-5"
                 >
-                    <ArrowLeft size={16} />
                     Back to Event
-                </Link>
+                </BackButton>
 
                 <TapTournamentControl
                     eventId={String(event.id)}

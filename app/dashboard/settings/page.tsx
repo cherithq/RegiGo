@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-    ArrowLeft,
     ArrowRight,
     Building2,
     CalendarDays,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import BackButton from "@/components/layout/BackButton";
 
 export default async function DashboardSettingsPage() {
     const supabaseServer = await createSupabaseServerClient();
@@ -54,13 +54,9 @@ export default async function DashboardSettingsPage() {
 
     return (
         <div className="space-y-8">
-            <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 text-sm font-black text-[#4F46E5] hover:text-[#EC4899]"
-            >
-                <ArrowLeft size={16} />
+            <BackButton href="/dashboard">
                 Back to Dashboard
-            </Link>
+            </BackButton>
 
             <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm lg:p-10">
                 <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-[#EC4899]/10 blur-3xl" />

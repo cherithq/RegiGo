@@ -77,10 +77,13 @@ RegiGo`,
 
 type CompanySender = {
     id: string;
-    custom_sender_name: string | null;
-    custom_sender_reply_to: string | null;
     custom_sender_status: "none" | "pending" | "approved" | "rejected";
     custom_sender_review_note: string | null;
+    custom_smtp_host?: string | null;
+    custom_smtp_port?: number | null;
+    custom_smtp_secure?: boolean | null;
+    custom_smtp_username?: string | null;
+    custom_smtp_from_address?: string | null;
 } | null;
 
 export default function EmailCentre({
@@ -98,12 +101,6 @@ export default function EmailCentre({
     );
     const [message, setMessage] = useState("");
 
-    const [senderName, setSenderName] = useState(
-        company?.custom_sender_name || ""
-    );
-    const [senderReplyTo, setSenderReplyTo] = useState(
-        company?.custom_sender_reply_to || ""
-    );
     const [senderStatus, setSenderStatus] = useState(
         company?.custom_sender_status || "none"
     );
@@ -112,6 +109,21 @@ export default function EmailCentre({
     );
     const [senderMessage, setSenderMessage] = useState("");
     const [senderSaving, setSenderSaving] = useState(false);
+
+    const [smtpHost, setSmtpHost] = useState(company?.custom_smtp_host || "");
+    const [smtpPort, setSmtpPort] = useState(
+        company?.custom_smtp_port ? String(company.custom_smtp_port) : "587"
+    );
+    const [smtpSecure, setSmtpSecure] = useState(
+        Boolean(company?.custom_smtp_secure)
+    );
+    const [smtpUsername, setSmtpUsername] = useState(
+        company?.custom_smtp_username || ""
+    );
+    const [smtpPassword, setSmtpPassword] = useState("");
+    const [smtpFromAddress, setSmtpFromAddress] = useState(
+        company?.custom_smtp_from_address || ""
+    );
 
     async function submitSenderRequest(e: React.FormEvent) {
         e.preventDefault();
@@ -127,8 +139,12 @@ export default function EmailCentre({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     companyId: company.id,
-                    senderName,
-                    replyTo: senderReplyTo,
+                    smtpHost,
+                    smtpPort: Number(smtpPort),
+                    smtpSecure,
+                    smtpUsername,
+                    smtpPassword,
+                    smtpFromAddress,
                 }),
             });
             const result = await response.json();
@@ -141,6 +157,7 @@ export default function EmailCentre({
 
             setSenderStatus("pending");
             setSenderReviewNote("");
+            setSmtpPassword("");
             setSenderMessage(
                 result.message || "Custom sender request submitted."
             );
@@ -332,12 +349,13 @@ export default function EmailCentre({
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 className="text-xl font-black">
-                                Custom Sender
+                                Custom Domain Sending
                             </h2>
                             <p className="mt-1 text-sm text-slate-500">
-                                Request a custom sender name and reply-to
-                                address for this company&apos;s emails. A
-                                RegiGo admin reviews every request.
+                                Connect your own domain&apos;s mail server so
+                                emails send directly from your own address
+                                instead of RegiGo&apos;s. A RegiGo admin
+                                reviews every request.
                             </p>
                         </div>
                         <SenderStatusBadge status={senderStatus} />
@@ -345,9 +363,9 @@ export default function EmailCentre({
 
                     {senderStatus === "approved" && (
                         <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                            Emails currently send as &quot;
-                            {company.custom_sender_name}&quot; with replies
-                            going to {company.custom_sender_reply_to}.
+                            Emails currently send directly from{" "}
+                            {company.custom_smtp_from_address} via your own
+                            mail server ({company.custom_smtp_host}).
                         </p>
                     )}
 
@@ -368,43 +386,110 @@ export default function EmailCentre({
 
                     <form
                         onSubmit={submitSenderRequest}
-                        className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end"
+                        className="mt-5 space-y-5"
                     >
-                        <label className="block">
-                            <span className="mb-2 block text-sm font-black text-slate-700">
-                                Sender name
-                            </span>
-                            <input
-                                value={senderName}
-                                onChange={(e) =>
-                                    setSenderName(e.target.value)
-                                }
-                                placeholder="Acme Events"
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                            />
-                        </label>
+                        <div className="grid gap-4 rounded-2xl border border-slate-200 p-4 md:grid-cols-2">
+                            <label className="block">
+                                <span className="mb-2 block text-sm font-black text-slate-700">
+                                    SMTP host
+                                </span>
+                                <input
+                                    value={smtpHost}
+                                    onChange={(e) =>
+                                        setSmtpHost(e.target.value)
+                                    }
+                                    placeholder="smtp.gmail.com"
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                                />
+                            </label>
 
-                        <label className="block">
-                            <span className="mb-2 block text-sm font-black text-slate-700">
-                                Reply-to email
-                            </span>
-                            <input
-                                type="email"
-                                value={senderReplyTo}
-                                onChange={(e) =>
-                                    setSenderReplyTo(e.target.value)
-                                }
-                                placeholder="contact@acmeevents.com"
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                            />
-                        </label>
+                            <label className="block">
+                                <span className="mb-2 block text-sm font-black text-slate-700">
+                                    SMTP port
+                                </span>
+                                <input
+                                    value={smtpPort}
+                                    onChange={(e) =>
+                                        setSmtpPort(e.target.value)
+                                    }
+                                    placeholder="587"
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="mb-2 block text-sm font-black text-slate-700">
+                                    SMTP username
+                                </span>
+                                <input
+                                    value={smtpUsername}
+                                    onChange={(e) =>
+                                        setSmtpUsername(e.target.value)
+                                    }
+                                    placeholder="mailer@acmeevents.com"
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                                />
+                            </label>
+
+                            <label className="block">
+                                <span className="mb-2 block text-sm font-black text-slate-700">
+                                    SMTP password
+                                </span>
+                                <input
+                                    type="password"
+                                    value={smtpPassword}
+                                    onChange={(e) =>
+                                        setSmtpPassword(e.target.value)
+                                    }
+                                    placeholder={
+                                        company.custom_smtp_host
+                                            ? "Leave blank to keep the saved password"
+                                            : "App password or SMTP password"
+                                    }
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                                />
+                            </label>
+
+                            <label className="block md:col-span-2">
+                                <span className="mb-2 block text-sm font-black text-slate-700">
+                                    From address (must be on your own domain)
+                                </span>
+                                <input
+                                    type="email"
+                                    value={smtpFromAddress}
+                                    onChange={(e) =>
+                                        setSmtpFromAddress(e.target.value)
+                                    }
+                                    placeholder="events@acmeevents.com"
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                                />
+                            </label>
+
+                            <label className="flex items-center gap-3 md:col-span-2">
+                                <input
+                                    type="checkbox"
+                                    checked={smtpSecure}
+                                    onChange={(e) =>
+                                        setSmtpSecure(e.target.checked)
+                                    }
+                                    className="h-5 w-5 rounded border-slate-300"
+                                />
+                                <span className="text-sm font-semibold text-slate-600">
+                                    Use TLS/SSL (usually on for port 465)
+                                </span>
+                            </label>
+                        </div>
 
                         <button
                             type="submit"
                             disabled={
                                 senderSaving ||
-                                !senderName.trim() ||
-                                !senderReplyTo.trim()
+                                !smtpHost.trim() ||
+                                !smtpPort.trim() ||
+                                !smtpUsername.trim() ||
+                                !smtpFromAddress.trim() ||
+                                (!smtpPassword.trim() &&
+                                    !company.custom_smtp_host)
                             }
                             className="rounded-xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-3 font-black text-white disabled:opacity-60"
                         >

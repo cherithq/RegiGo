@@ -4,6 +4,14 @@ import {
     assertCompanyScope,
     getCompanyActor,
 } from "@/lib/company-module-server";
+import {
+    buildCompanySmtpTransporter,
+    type ResolvedCompanySmtp,
+} from "@/lib/company-sender";
+import {
+    decryptSmtpPassword,
+    encryptSmtpPassword,
+} from "@/lib/company-smtp-crypto";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -50,30 +58,91 @@ export async function POST(request: Request) {
 
         assertCompanyScope({ actor, companyId });
 
-        const senderName = text(body.senderName, 160);
-        const replyTo = text(body.replyTo, 320).toLowerCase();
+        const smtpHost = text(body.smtpHost, 255);
+        const smtpUsername = text(body.smtpUsername, 255);
+        const smtpPassword =
+            typeof body.smtpPassword === "string"
+                ? body.smtpPassword.trim()
+                : "";
+        const smtpFromAddress = text(body.smtpFromAddress, 320).toLowerCase();
+        const smtpPort = Number(body.smtpPort);
+        const smtpSecure = Boolean(body.smtpSecure);
 
-        if (senderName.length < 2) {
+        if (!smtpHost) {
+            throw new CompanyModuleError("Enter your SMTP server host.");
+        }
+
+        if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
             throw new CompanyModuleError(
-                "Enter a sender name with at least 2 characters.",
+                "Enter a valid SMTP port (1-65535).",
             );
         }
 
-        if (!isValidEmail(replyTo)) {
+        if (!smtpUsername) {
+            throw new CompanyModuleError("Enter your SMTP username.");
+        }
+
+        if (!isValidEmail(smtpFromAddress)) {
             throw new CompanyModuleError(
-                "Enter a valid reply-to email address.",
+                "Enter a valid from-address on your own domain.",
+            );
+        }
+
+        let passwordToVerify = smtpPassword;
+        let encryptedPassword: string;
+
+        if (!passwordToVerify) {
+            const { data: existing } = await actor.admin
+                .from("companies")
+                .select("custom_smtp_password_encrypted")
+                .eq("id", companyId)
+                .maybeSingle();
+
+            if (!existing?.custom_smtp_password_encrypted) {
+                throw new CompanyModuleError("Enter your SMTP password.");
+            }
+
+            encryptedPassword = existing.custom_smtp_password_encrypted;
+            passwordToVerify = decryptSmtpPassword(encryptedPassword);
+        } else {
+            encryptedPassword = encryptSmtpPassword(passwordToVerify);
+        }
+
+        const smtpConfig: ResolvedCompanySmtp = {
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            username: smtpUsername,
+            password: passwordToVerify,
+            fromAddress: smtpFromAddress,
+        };
+
+        try {
+            const transporter = buildCompanySmtpTransporter(smtpConfig);
+            await transporter.verify();
+        } catch (verifyError) {
+            throw new CompanyModuleError(
+                `Could not connect to that SMTP server: ${
+                    verifyError instanceof Error
+                        ? verifyError.message
+                        : "Unknown error"
+                }`,
             );
         }
 
         const { error } = await actor.admin
             .from("companies")
             .update({
-                custom_sender_name: senderName,
-                custom_sender_reply_to: replyTo,
                 custom_sender_status: "pending",
                 custom_sender_requested_at: new Date().toISOString(),
                 custom_sender_reviewed_at: null,
                 custom_sender_review_note: null,
+                custom_smtp_host: smtpHost,
+                custom_smtp_port: smtpPort,
+                custom_smtp_secure: smtpSecure,
+                custom_smtp_username: smtpUsername,
+                custom_smtp_password_encrypted: encryptedPassword,
+                custom_smtp_from_address: smtpFromAddress,
             })
             .eq("id", companyId);
 
@@ -84,7 +153,7 @@ export async function POST(request: Request) {
         return reply({
             success: true,
             message:
-                "Custom sender request submitted. A RegiGo admin will review it shortly.",
+                "Custom domain sending request submitted and verified. A RegiGo admin will review it shortly.",
         });
     } catch (error) {
         return fail(error);
@@ -111,12 +180,48 @@ export async function PATCH(request: Request) {
         }
 
         if (action !== "approve" && action !== "reject") {
-            throw new CompanyModuleError(
-                "Choose a valid review action.",
-            );
+            throw new CompanyModuleError("Choose a valid review action.");
         }
 
         const reviewNote = text(body.reviewNote, 500);
+
+        if (action === "approve") {
+            const { data: company } = await actor.admin
+                .from("companies")
+                .select(
+                    "custom_smtp_host, custom_smtp_port, custom_smtp_secure, custom_smtp_username, custom_smtp_password_encrypted, custom_smtp_from_address",
+                )
+                .eq("id", companyId)
+                .maybeSingle();
+
+            if (!company?.custom_smtp_host) {
+                throw new CompanyModuleError(
+                    "This company has not submitted SMTP details to approve.",
+                );
+            }
+
+            try {
+                const transporter = buildCompanySmtpTransporter({
+                    host: company.custom_smtp_host,
+                    port: Number(company.custom_smtp_port),
+                    secure: Boolean(company.custom_smtp_secure),
+                    username: company.custom_smtp_username || "",
+                    password: decryptSmtpPassword(
+                        company.custom_smtp_password_encrypted || "",
+                    ),
+                    fromAddress: company.custom_smtp_from_address || "",
+                });
+                await transporter.verify();
+            } catch (verifyError) {
+                throw new CompanyModuleError(
+                    `Could not verify this company's SMTP server before approving: ${
+                        verifyError instanceof Error
+                            ? verifyError.message
+                            : "Unknown error"
+                    }`,
+                );
+            }
+        }
 
         const { error } = await actor.admin
             .from("companies")
@@ -136,7 +241,7 @@ export async function PATCH(request: Request) {
             success: true,
             message:
                 action === "approve"
-                    ? "Custom sender approved. Future emails for this company will use it."
+                    ? "Custom domain sending approved. Future emails for this company will send from their own domain."
                     : "Custom sender request rejected.",
         });
     } catch (error) {

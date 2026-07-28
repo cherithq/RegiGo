@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import QRCode from "qrcode";
 import { getSupabaseAdminClient } from "@/lib/guest-invitations";
-import { resolveCompanySender } from "@/lib/company-sender";
+import {
+    buildCompanySmtpTransporter,
+    resolveCompanySender,
+} from "@/lib/company-sender";
 
 type EmailTemplate = {
     subject: string | null;
@@ -141,6 +144,10 @@ async function runEmailWorker(req: Request) {
         await transporter.verify();
 
         const results: Array<Record<string, unknown>> = [];
+        const companyTransporters = new Map<
+            string,
+            ReturnType<typeof buildCompanySmtpTransporter>
+        >();
 
         for (const job of jobs) {
             try {
@@ -276,7 +283,7 @@ async function runEmailWorker(req: Request) {
                     templateValues,
                 );
 
-                const fromAddress =
+                const defaultFromAddress =
                     process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || smtpUser;
                 const defaultFromName = process.env.EMAIL_FROM_NAME || "RegiGo";
                 const sender = await resolveCompanySender({
@@ -284,6 +291,24 @@ async function runEmailWorker(req: Request) {
                     companyId: event.company_id,
                     defaultFromName,
                 });
+
+                let activeTransporter = transporter;
+                let fromAddress = defaultFromAddress;
+
+                if (sender.smtp && event.company_id) {
+                    if (!companyTransporters.has(event.company_id)) {
+                        companyTransporters.set(
+                            event.company_id,
+                            buildCompanySmtpTransporter(sender.smtp),
+                        );
+                    }
+
+                    activeTransporter = companyTransporters.get(
+                        event.company_id,
+                    )!;
+                    fromAddress = sender.smtp.fromAddress;
+                }
+
                 const qrCid = "qrpass@regigo";
                 const attachments = qrBase64
                     ? [
@@ -310,11 +335,8 @@ async function runEmailWorker(req: Request) {
                     </div>
                   `;
 
-                await transporter.sendMail({
+                await activeTransporter.sendMail({
                     from: `"${sender.fromName}" <${fromAddress}>`,
-                    ...(sender.replyTo
-                        ? { replyTo: sender.replyTo }
-                        : {}),
                     to: job.recipient_email,
                     subject,
                     html: `<!DOCTYPE html>

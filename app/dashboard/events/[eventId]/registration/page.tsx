@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-    ArrowLeft,
     ClipboardList,
     Eye,
     ListChecks,
@@ -12,6 +11,7 @@ import RegistrationFormSettings from "@/components/forms/RegistrationFormSetting
 import {
     getRegistrationBuilderContext,
 } from "@/lib/registration-builder";
+import BackButton from "@/components/layout/BackButton";
 
 export const dynamic =
     "force-dynamic";
@@ -52,15 +52,12 @@ export default async function RegistrationBuilderPage({
                 <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
                     <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
                     <div className="relative z-10">
-                        <Link
+                        <BackButton
                             href={`/dashboard/events/${eventId}`}
-                            className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#F7F5FF] px-4 py-3 text-sm font-black text-[#4F46E5]"
+                            variant="subtle"
                         >
-                            <ArrowLeft
-                                size={17}
-                            />
                             Back to Event
-                        </Link>
+                        </BackButton>
 
                         <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
                             <ClipboardList

@@ -3,7 +3,10 @@ import nodemailer from "nodemailer";
 import QRCode from "qrcode";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requirePermission } from "@/lib/permissions";
-import { resolveCompanySender } from "@/lib/company-sender";
+import {
+    buildCompanySmtpTransporter,
+    resolveCompanySender,
+} from "@/lib/company-sender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -518,6 +521,11 @@ export async function POST(request: Request) {
             defaultFromName,
         });
 
+        const activeTransporter = sender.smtp
+            ? buildCompanySmtpTransporter(sender.smtp)
+            : transporter;
+        const fromAddress = sender.smtp?.fromAddress || smtpUser;
+
         const results: {
             registrationId: string;
             email: string;
@@ -603,11 +611,8 @@ export async function POST(request: Request) {
                     eventName,
                 });
 
-                await transporter.sendMail({
-                    from: `"${sender.fromName}" <${smtpUser}>`,
-                    ...(sender.replyTo
-                        ? { replyTo: sender.replyTo }
-                        : {}),
+                await activeTransporter.sendMail({
+                    from: `"${sender.fromName}" <${fromAddress}>`,
                     to: registration.email!,
                     subject,
                     html,

@@ -11,7 +11,10 @@ import {
     replaceTemplateVariables,
     requireInvitationManager,
 } from "@/lib/guest-invitations";
-import { resolveCompanySender } from "@/lib/company-sender";
+import {
+    buildCompanySmtpTransporter,
+    resolveCompanySender,
+} from "@/lib/company-sender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -369,14 +372,22 @@ RSVP deadline: {{rsvp_deadline}}
 Regards,
 RegiGo`;
 
-        const { transporter, fromAddress, fromName } =
-            createSmtpTransport();
+        const {
+            transporter: platformTransporter,
+            fromAddress: platformFromAddress,
+            fromName,
+        } = createSmtpTransport();
 
         const sender = await resolveCompanySender({
             admin,
             companyId: event.company_id,
             defaultFromName: fromName,
         });
+
+        const transporter = sender.smtp
+            ? buildCompanySmtpTransporter(sender.smtp)
+            : platformTransporter;
+        const fromAddress = sender.smtp?.fromAddress || platformFromAddress;
 
         const siteUrl = getSiteUrl();
         const expiresAt = invitationExpiry(event);
@@ -513,9 +524,6 @@ RegiGo`;
 
                 await transporter.sendMail({
                     from: `"${sender.fromName}" <${fromAddress}>`,
-                    ...(sender.replyTo
-                        ? { replyTo: sender.replyTo }
-                        : {}),
                     to: guest.email,
                     subject,
                     html: buildInvitationEmailHtml({

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {
-    ArrowLeft,
     MailCheck,
 } from "lucide-react";
 import { requirePermission } from "@/lib/permissions";
 import { getSupabaseAdminClient } from "@/lib/guest-invitations";
 import BulkEmailButton from "@/components/guests/BulkEmailButton";
 import GuestsManager from "@/components/guests/GuestsManager";
+import BackButton from "@/components/layout/BackButton";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -228,13 +228,9 @@ export default async function GuestsPage({
             <div className="mx-auto max-w-7xl">
                 <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                        <Link
-                            href={`/dashboard/events/${eventId}`}
-                            className="inline-flex items-center gap-2 font-bold text-[#4F46E5] transition hover:text-[#EC4899]"
-                        >
-                            <ArrowLeft size={18} />
+                        <BackButton href={`/dashboard/events/${eventId}`}>
                             Back to Event
-                        </Link>
+                        </BackButton>
 
                         <h1 className="mt-5 text-4xl font-black tracking-tight text-slate-950">
                             Guests
