@@ -2,6 +2,7 @@ import "server-only";
 
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
     EventAddonError,
@@ -11,6 +12,7 @@ import {
     getPublicInvitation,
     getSiteUrl,
 } from "@/lib/guest-invitations";
+import { activateQrPassIfReady } from "@/lib/qr-pass-activation";
 
 export class PaymentError extends Error {
     status: number;
@@ -378,6 +380,343 @@ export function checkoutUrls({
         cancel:
             `${base}${route}/tickets?cancelled=1`,
     };
+}
+
+export function registrationCheckoutUrls({
+    slug,
+    registrationId,
+}: {
+    slug: string;
+    registrationId: string;
+}) {
+    const base = getSiteUrl();
+    const route =
+        `/event/${encodeURIComponent(
+            slug,
+        )}/register`;
+    const registrationParam =
+        `registration=${encodeURIComponent(
+            registrationId,
+        )}`;
+
+    return {
+        success:
+            `${base}${route}/payment/success` +
+            `?session_id={CHECKOUT_SESSION_ID}&${registrationParam}`,
+        cancel:
+            `${base}${route}/payment/cancelled` +
+            `?${registrationParam}`,
+    };
+}
+
+function directChargeApplicationFee({
+    requestedFee,
+    total,
+}: {
+    requestedFee: number;
+    total: number;
+}) {
+    if (
+        !Number.isInteger(requestedFee) ||
+        requestedFee <= 0 ||
+        total <= 1
+    ) {
+        return 0;
+    }
+
+    return Math.min(
+        requestedFee,
+        total - 1,
+    );
+}
+
+export type TicketCheckoutTicket = {
+    description?: string | null;
+    [key: string]: unknown;
+};
+
+export type TicketCheckoutCompany = {
+    id: string;
+    stripe_connected_account_id?: string | null;
+    stripe_charges_enabled?: boolean | null;
+};
+
+export async function createTicketCheckoutSession({
+    admin,
+    eventId,
+    company,
+    usesPlatformStripeAccount,
+    registrationId,
+    recipientEmail,
+    ticketTypeId,
+    quantity,
+    ticket,
+    successUrl,
+    cancelUrl,
+    buildFreeSuccessUrl,
+}: {
+    admin: SupabaseClient;
+    eventId: string;
+    company: TicketCheckoutCompany;
+    usesPlatformStripeAccount: boolean;
+    registrationId: string;
+    recipientEmail: string | null;
+    ticketTypeId: string;
+    quantity: number;
+    ticket: TicketCheckoutTicket;
+    successUrl: string;
+    cancelUrl: string;
+    buildFreeSuccessUrl: (orderId: string) => string;
+}): Promise<{
+    url: string;
+    orderId: string;
+    free: boolean;
+    sessionId?: string;
+}> {
+    let orderId: string | null = null;
+
+    try {
+        const expiresAt = new Date(
+            Date.now() + 30 * 60 * 1000,
+        );
+
+        const {
+            data: rows,
+            error: orderError,
+        } = await admin.rpc(
+            "regigo_create_ticket_order_v1",
+            {
+                p_event_id: eventId,
+                p_registration_id: registrationId,
+                p_ticket_type_id: ticketTypeId,
+                p_quantity: quantity,
+                p_expires_at:
+                    expiresAt.toISOString(),
+            },
+        );
+
+        if (orderError) {
+            throw new PaymentError(
+                orderError.message,
+                409,
+            );
+        }
+
+        const order = Array.isArray(rows)
+            ? rows[0]
+            : rows;
+
+        if (!order?.order_id) {
+            throw new PaymentError(
+                "The ticket order could not be created.",
+                500,
+            );
+        }
+
+        orderId = String(order.order_id);
+
+        if (Number(order.total_cents) === 0) {
+            const { error: paidError } =
+                await admin.rpc(
+                    "regigo_mark_ticket_order_paid_v2",
+                    {
+                        p_order_id: orderId,
+                        p_checkout_session_id: null,
+                        p_payment_intent_id: null,
+                        p_stripe_event_id:
+                            `free_${orderId}`,
+                        p_stripe_account_id: null,
+                    },
+                );
+
+            if (paidError) {
+                throw new PaymentError(
+                    paidError.message,
+                );
+            }
+
+            await activateQrPassIfReady({
+                admin,
+                registrationId,
+            });
+
+            return {
+                free: true,
+                orderId,
+                url: buildFreeSuccessUrl(orderId),
+            };
+        }
+
+        const connectedAccountId =
+            company.stripe_connected_account_id ||
+            null;
+
+        if (
+            !usesPlatformStripeAccount &&
+            !connectedAccountId
+        ) {
+            throw new PaymentError(
+                "The event company has not connected its Stripe account.",
+                503,
+            );
+        }
+
+        if (
+            !usesPlatformStripeAccount &&
+            !company.stripe_charges_enabled
+        ) {
+            throw new PaymentError(
+                "The event company's Stripe account is not ready to accept payments.",
+                503,
+            );
+        }
+
+        const stripe = getStripe();
+
+        const metadata: Record<string, string> = {
+            regigo_order_id: orderId,
+            regigo_event_id: String(eventId),
+            regigo_company_id: String(company.id),
+            regigo_registration_id:
+                String(registrationId),
+            regigo_ticket_type_id:
+                String(ticketTypeId),
+            regigo_payment_recipient:
+                usesPlatformStripeAccount
+                    ? "platform_company"
+                    : String(connectedAccountId),
+        };
+
+        const paymentIntentData:
+            Stripe.Checkout.SessionCreateParams.PaymentIntentData =
+            {
+                metadata,
+            };
+
+        if (!usesPlatformStripeAccount) {
+            const applicationFee =
+                directChargeApplicationFee({
+                    requestedFee: Number(
+                        order.platform_fee_cents ||
+                            0,
+                    ),
+                    total: Number(
+                        order.total_cents,
+                    ),
+                });
+
+            if (applicationFee > 0) {
+                paymentIntentData.application_fee_amount =
+                    applicationFee;
+            }
+        }
+
+        const sessionParams:
+            Stripe.Checkout.SessionCreateParams =
+            {
+                mode: "payment",
+                client_reference_id: orderId,
+                customer_email:
+                    recipientEmail || undefined,
+                line_items: [
+                    {
+                        quantity,
+                        price_data: {
+                            currency: String(
+                                order.currency,
+                            ).toLowerCase(),
+                            unit_amount: Number(
+                                order.unit_price_cents,
+                            ),
+                            product_data: {
+                                name: String(
+                                    order.ticket_name,
+                                ),
+                                description:
+                                    ticket.description ||
+                                    undefined,
+                            },
+                        },
+                    },
+                ],
+                metadata,
+                payment_intent_data:
+                    paymentIntentData,
+                success_url: successUrl,
+                cancel_url: cancelUrl,
+                expires_at: Math.floor(
+                    expiresAt.getTime() / 1000,
+                ),
+            };
+
+        const requestOptions: Stripe.RequestOptions =
+            {
+                idempotencyKey:
+                    `regigo-ticket-order-${orderId}`,
+                ...(usesPlatformStripeAccount
+                    ? {}
+                    : {
+                          stripeAccount:
+                              connectedAccountId!,
+                      }),
+            };
+
+        const session =
+            await stripe.checkout.sessions.create(
+                sessionParams,
+                requestOptions,
+            );
+
+        if (!session.url) {
+            throw new PaymentError(
+                "Stripe did not return a Checkout URL.",
+                500,
+            );
+        }
+
+        const { error: attachError } =
+            await admin.rpc(
+                "regigo_attach_checkout_session_v2",
+                {
+                    p_order_id: orderId,
+                    p_checkout_session_id:
+                        session.id,
+                    p_stripe_account_id:
+                        usesPlatformStripeAccount
+                            ? null
+                            : connectedAccountId,
+                },
+            );
+
+        if (attachError) {
+            throw new PaymentError(
+                attachError.message,
+            );
+        }
+
+        return {
+            free: false,
+            orderId,
+            url: session.url,
+            sessionId: session.id,
+        };
+    } catch (error) {
+        if (orderId) {
+            try {
+                await admin.rpc(
+                    "regigo_cancel_ticket_order_v1",
+                    {
+                        p_order_id: orderId,
+                        p_status: "cancelled",
+                    },
+                );
+            } catch {
+                // Preserve the original checkout error.
+            }
+        }
+
+        throw error;
+    }
 }
 
 export async function refreshConnectedAccount({

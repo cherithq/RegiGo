@@ -7,6 +7,7 @@ import {
 import {
     syncStripeAccountFromWebhook,
 } from "@/lib/company-stripe-connect";
+import { activateQrPassIfReady } from "@/lib/qr-pass-activation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,6 +112,33 @@ async function assertOrderStripeAccount({
             `Stripe account mismatch for order ${order.order_number}.`,
         );
     }
+}
+
+async function activatePublicRegistrationTicket({
+    admin,
+    orderId,
+}: {
+    admin: ReturnType<typeof getPaymentAdmin>;
+    orderId: string;
+}) {
+    const { data: order } = await admin
+        .from("orders")
+        .select("registration_id")
+        .eq("id", orderId)
+        .maybeSingle();
+
+    if (!order?.registration_id) {
+        return;
+    }
+
+    // Applies to both public-registration and invite/RSVP orders — the
+    // helper only activates once payment AND any required table selection
+    // are both satisfied, so it's safe to call regardless of flow or
+    // whichever requirement finishes first.
+    await activateQrPassIfReady({
+        admin,
+        registrationId: order.registration_id,
+    });
 }
 
 export async function POST(request: Request) {
@@ -255,6 +283,13 @@ export async function POST(request: Request) {
                         error.message,
                     );
                 }
+
+                await activatePublicRegistrationTicket(
+                    {
+                        admin,
+                        orderId,
+                    },
+                );
 
                 state = "processed";
             }

@@ -7,6 +7,9 @@ import {
 import {
     getRegistrationTableSelectionSnapshot,
 } from "@/lib/registration-table-selection";
+import {
+    activateQrPassIfReady,
+} from "@/lib/qr-pass-activation";
 
 export const runtime =
     "nodejs";
@@ -309,6 +312,17 @@ export async function POST(
                     409,
                 );
             }
+
+            await activateQrPassIfReady(
+                {
+                    admin:
+                        snapshot.admin,
+                    registrationId:
+                        snapshot
+                            .registration
+                            .id,
+                },
+            );
         } else if (
             action ===
             "release"

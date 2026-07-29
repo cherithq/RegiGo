@@ -92,6 +92,7 @@ export default async function RegisterPage({
         ticketsResult,
         formResult,
         addonResult,
+        stripeAddonResult,
         tableSettingsResult,
         tableCountResult,
     ] =
@@ -151,6 +152,23 @@ export default async function RegisterPage({
                 .eq(
                     "addon_key",
                     "guest_table_selection",
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "event_addons",
+                )
+                .select(
+                    "enabled",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .eq(
+                    "addon_key",
+                    "stripe_payments",
                 )
                 .maybeSingle(),
 
@@ -308,6 +326,33 @@ export default async function RegisterPage({
             tableCountResult.count ||
                 0,
         ) > 0;
+    const stripePaymentsEnabled =
+        stripeAddonResult.data
+            ?.enabled ===
+        true;
+    const visibleTickets = (
+        ticketsResult.data ||
+        []
+    ).filter((ticket) => {
+        if (
+            stripePaymentsEnabled
+        ) {
+            return true;
+        }
+
+        return [
+            "price_cents",
+            "amount_cents",
+            "unit_amount",
+        ].every(
+            (key) =>
+                !(
+                    Number(
+                        ticket[key],
+                    ) > 0
+                ),
+        );
+    });
 
     return (
         <main
@@ -480,8 +525,7 @@ export default async function RegisterPage({
                                     []
                                 }
                                 tickets={
-                                    ticketsResult.data ||
-                                    []
+                                    visibleTickets
                                 }
                             />
                         </div>

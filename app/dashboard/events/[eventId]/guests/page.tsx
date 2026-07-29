@@ -257,6 +257,11 @@ export default async function GuestsPage({
 
                         <BulkEmailButton
                             eventId={eventId}
+                            type="event_update"
+                        />
+
+                        <BulkEmailButton
+                            eventId={eventId}
                             type="thank_you"
                             checkedInOnly={true}
                         />

@@ -5,6 +5,7 @@ import {
     CheckCircle2,
     Clock3,
     Loader2,
+    QrCode,
     TableProperties,
     XCircle,
 } from "lucide-react";
@@ -24,6 +25,7 @@ type Order = {
 type Result = {
     order: Order;
     tableSelectionUrl: string | null;
+    qrPassUrl?: string | null;
 };
 
 async function readJson(response: Response) {
@@ -49,15 +51,9 @@ function money(cents: number, currency: string) {
 }
 
 export default function PaymentResult({
-    slug,
-    token,
-    sessionId,
-    freeOrder,
+    statusUrl,
 }: {
-    slug: string;
-    token: string;
-    sessionId: string | null;
-    freeOrder: string | null;
+    statusUrl: string;
 }) {
     const [result, setResult] =
         useState<Result | null>(null);
@@ -66,23 +62,10 @@ export default function PaymentResult({
     const order = result?.order || null;
 
     const load = useCallback(async () => {
-        const query = sessionId
-            ? `session_id=${encodeURIComponent(
-                  sessionId,
-              )}`
-            : `free_order=${encodeURIComponent(
-                  freeOrder || "",
-              )}`;
-
         try {
-            const response = await fetch(
-                `/api/public/events/${encodeURIComponent(
-                    slug,
-                )}/invite/${encodeURIComponent(
-                    token,
-                )}/order-status?${query}`,
-                { cache: "no-store" },
-            );
+            const response = await fetch(statusUrl, {
+                cache: "no-store",
+            });
             const payload = await readJson(response);
 
             if (!response.ok) {
@@ -101,7 +84,7 @@ export default function PaymentResult({
                     : "Unable to check the order.",
             );
         }
-    }, [freeOrder, sessionId, slug, token]);
+    }, [statusUrl]);
 
     useEffect(() => {
         void load();
@@ -172,10 +155,24 @@ export default function PaymentResult({
                         )}
                     </p>
 
+                    {result?.qrPassUrl && (
+                        <Link
+                            href={result.qrPassUrl}
+                            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg"
+                        >
+                            <QrCode size={18} />
+                            View QR Pass
+                        </Link>
+                    )}
+
                     {result?.tableSelectionUrl && (
                         <Link
                             href={result.tableSelectionUrl}
-                            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg"
+                            className={
+                                result?.qrPassUrl
+                                    ? "mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F7F5FF] px-5 py-4 font-black text-[#4F46E5]"
+                                    : "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg"
+                            }
                         >
                             <TableProperties size={18} />
                             Choose Table

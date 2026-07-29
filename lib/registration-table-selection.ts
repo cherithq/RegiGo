@@ -91,10 +91,6 @@ export async function getRegistrationTableSelectionContext({
             "qr_token",
             token,
         )
-        .eq(
-            "is_active",
-            true,
-        )
         .maybeSingle();
 
     if (

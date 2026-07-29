@@ -3,6 +3,42 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+const emailTypeInfo: Record<
+    string,
+    { label: string; description: string }
+> = {
+    confirmation: {
+        label: "Confirmation",
+        description:
+            "Sent automatically as soon as a guest registers. For a paid ticket, it's held and sent only once payment is confirmed — not before. An admin can also resend it to one guest anytime from the Guest List page.",
+    },
+    reminder: {
+        label: "Reminder",
+        description:
+            "Sent automatically to every guest the day before the event (once per event). An admin can also send it early anytime using the “Send Reminder to All Guests” button on the Guest List page.",
+    },
+    update: {
+        label: "Event Update",
+        description:
+            "Sent automatically to every guest of a published event whenever an admin changes the date, time, or venue in Settings. An admin can also send it manually using the “Send Event Update” button on the Guest List page.",
+    },
+    thank_you: {
+        label: "Thank You",
+        description:
+            "Never sent automatically. An admin sends this using the “Send Thank You to Checked-In Guests” button on the Guest List page, and only to guests who actually checked in.",
+    },
+    qr_pass: {
+        label: "QR Pass",
+        description:
+            "Not sent by anything in RegiGo today — saving one here has no effect. The QR code is delivered as part of the Confirmation email instead.",
+    },
+    custom: {
+        label: "Custom",
+        description:
+            "Not sent automatically or by any existing button. Use this to keep a reference template for your own records or a future integration.",
+    },
+};
+
 const starterTemplates = [
     {
         template_name: "Registration Confirmation",
@@ -603,12 +639,31 @@ export default function EmailCentre({
                                 <option value="confirmation">
                                     Confirmation
                                 </option>
-                                <option value="qr_pass">QR Pass</option>
-                                <option value="reminder">Reminder</option>
-                                <option value="update">Event Update</option>
-                                <option value="thank_you">Thank You</option>
-                                <option value="custom">Custom</option>
+                                <option value="reminder">
+                                    Reminder
+                                </option>
+                                <option value="thank_you">
+                                    Thank You
+                                </option>
+                                <option value="update">
+                                    Event Update
+                                </option>
+                                <option value="qr_pass">
+                                    QR Pass
+                                </option>
+                                <option value="custom">
+                                    Custom
+                                </option>
                             </select>
+
+                            <p className="mt-2 rounded-xl bg-[#F7F5FF] px-4 py-3 text-sm leading-6 text-slate-600">
+                                {(
+                                    emailTypeInfo[
+                                        selected.email_type ||
+                                            "custom"
+                                    ] || emailTypeInfo.custom
+                                ).description}
+                            </p>
                         </div>
                     </div>
 

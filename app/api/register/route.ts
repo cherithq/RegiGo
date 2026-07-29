@@ -4,6 +4,12 @@ import {
 import {
     createClient,
 } from "@supabase/supabase-js";
+import {
+    PaymentError,
+    createTicketCheckoutSession,
+    isPlatformCompany,
+    registrationCheckoutUrls,
+} from "@/lib/stripe-payments";
 
 export const runtime =
     "nodejs";
@@ -577,6 +583,14 @@ export async function POST(
             );
         const qrToken =
             crypto.randomUUID();
+        const paymentRequired =
+            paymentStatus ===
+            "pending";
+        const tableSelectionRequired =
+            tableFlowAllowed &&
+            tableSettings
+                ?.selection_required ===
+                true;
 
         const {
             error: qrError,
@@ -592,7 +606,8 @@ export async function POST(
                 qr_token:
                     qrToken,
                 is_active:
-                    true,
+                    !paymentRequired &&
+                    !tableSelectionRequired,
             });
 
         if (qrError) {
@@ -616,36 +631,6 @@ export async function POST(
                 },
             );
         }
-
-        const {
-            error:
-                emailJobError,
-        } = await admin
-            .from("email_jobs")
-            .insert({
-                event_id:
-                    eventId,
-                registration_id:
-                    registrationId,
-                recipient_email:
-                    email,
-                email_type:
-                    "confirmation",
-                status:
-                    "pending",
-                attempts: 0,
-                last_error:
-                    null,
-                sent_at:
-                    null,
-            });
-
-        const emailTriggered =
-            emailJobError
-                ? false
-                : await triggerEmailWorker(
-                      request,
-                  );
 
         const slug =
             String(
@@ -679,6 +664,246 @@ export async function POST(
                   )}/tables`
                 : null;
 
+        if (paymentRequired) {
+            const [
+                stripeAddonResult,
+                companyResult,
+            ] = await Promise.all([
+                admin
+                    .from(
+                        "event_addons",
+                    )
+                    .select(
+                        "enabled",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    )
+                    .eq(
+                        "addon_key",
+                        "stripe_payments",
+                    )
+                    .maybeSingle(),
+
+                admin
+                    .from(
+                        "companies",
+                    )
+                    .select(
+                        "id, stripe_connected_account_id, stripe_charges_enabled",
+                    )
+                    .eq(
+                        "id",
+                        event.company_id,
+                    )
+                    .maybeSingle(),
+            ]);
+
+            const company =
+                companyResult.data;
+            const stripeAddonEnabled =
+                stripeAddonResult
+                    .data
+                    ?.enabled ===
+                true;
+            const usesPlatform =
+                Boolean(
+                    company,
+                ) &&
+                isPlatformCompany(
+                    company!.id,
+                );
+            const companyReady =
+                Boolean(
+                    company,
+                ) &&
+                (
+                    usesPlatform ||
+                    (
+                        Boolean(
+                            company!
+                                .stripe_connected_account_id,
+                        ) &&
+                        Boolean(
+                            company!
+                                .stripe_charges_enabled,
+                        )
+                    )
+                );
+
+            if (
+                !stripeAddonEnabled ||
+                !companyReady
+            ) {
+                await admin
+                    .from(
+                        "qr_tickets",
+                    )
+                    .delete()
+                    .eq(
+                        "registration_id",
+                        registrationId,
+                    );
+                await admin
+                    .from(
+                        "registrations",
+                    )
+                    .delete()
+                    .eq(
+                        "id",
+                        registrationId,
+                    );
+
+                return NextResponse.json(
+                    {
+                        error:
+                            "Ticket payments are not set up for this event yet. Please contact the event organiser.",
+                    },
+                    {
+                        status: 503,
+                    },
+                );
+            }
+
+            const urls =
+                registrationCheckoutUrls(
+                    {
+                        slug,
+                        registrationId,
+                    },
+                );
+
+            try {
+                const result =
+                    await createTicketCheckoutSession(
+                        {
+                            admin,
+                            eventId,
+                            company:
+                                company!,
+                            usesPlatformStripeAccount:
+                                usesPlatform,
+                            registrationId,
+                            recipientEmail:
+                                email,
+                            ticketTypeId:
+                                ticketTypeId!,
+                            quantity:
+                                selectedQuantity,
+                            ticket:
+                                ticket!,
+                            successUrl:
+                                urls.success,
+                            cancelUrl:
+                                urls.cancel,
+                            buildFreeSuccessUrl:
+                                (
+                                    orderId,
+                                ) =>
+                                    `${
+                                        urls.success.split(
+                                            "?",
+                                        )[0]
+                                    }` +
+                                    `?free_order=${encodeURIComponent(
+                                        orderId,
+                                    )}` +
+                                    `&registration=${encodeURIComponent(
+                                        registrationId,
+                                    )}`,
+                        },
+                    );
+
+                return NextResponse.json(
+                    {
+                        success: true,
+                        registrationId,
+                        checkoutUrl:
+                            result.url,
+                        tableSelectionUrl,
+                    },
+                );
+            } catch (
+                checkoutError
+            ) {
+                await admin
+                    .from(
+                        "qr_tickets",
+                    )
+                    .delete()
+                    .eq(
+                        "registration_id",
+                        registrationId,
+                    );
+                await admin
+                    .from(
+                        "registrations",
+                    )
+                    .delete()
+                    .eq(
+                        "id",
+                        registrationId,
+                    );
+
+                return NextResponse.json(
+                    {
+                        error:
+                            checkoutError instanceof
+                            Error
+                                ? checkoutError.message
+                                : "Unable to start payment.",
+                    },
+                    {
+                        status:
+                            checkoutError instanceof
+                            PaymentError
+                                ? checkoutError.status
+                                : 500,
+                    },
+                );
+            }
+        }
+
+        // When table selection is still required, the confirmation email
+        // (and its QR pass) is deferred until the guest completes it — see
+        // activateQrPassIfReady, called from the table-selection confirm
+        // route once the table is assigned.
+        const emailJobError =
+            tableSelectionRequired
+                ? null
+                : (
+                      await admin
+                          .from(
+                              "email_jobs",
+                          )
+                          .insert({
+                              event_id:
+                                  eventId,
+                              registration_id:
+                                  registrationId,
+                              recipient_email:
+                                  email,
+                              email_type:
+                                  "confirmation",
+                              status:
+                                  "pending",
+                              attempts: 0,
+                              last_error:
+                                  null,
+                              sent_at:
+                                  null,
+                          })
+                  ).error;
+
+        const emailTriggered =
+            tableSelectionRequired ||
+            emailJobError
+                ? false
+                : await triggerEmailWorker(
+                      request,
+                  );
+
         return NextResponse.json({
             success: true,
             registrationId,
@@ -697,6 +922,15 @@ export async function POST(
     } catch (error) {
         if (registrationId) {
             try {
+                await admin
+                    .from(
+                        "qr_tickets",
+                    )
+                    .delete()
+                    .eq(
+                        "registration_id",
+                        registrationId,
+                    );
                 await admin
                     .from(
                         "registrations",

@@ -64,6 +64,8 @@ export default function DeleteEventButton({
     compact =
         false,
     eventSlug,
+    showWebsiteLink =
+        true,
 }: {
     eventId: string;
     eventName?:
@@ -76,6 +78,7 @@ export default function DeleteEventButton({
     eventSlug?:
         | string
         | null;
+    showWebsiteLink?: boolean;
 }) {
     const router =
         useRouter();
@@ -273,7 +276,7 @@ export default function DeleteEventButton({
         ).trim();
 
     const websiteAction =
-        compact ? (
+        compact && showWebsiteLink ? (
             cleanEventSlug ? (
                 <Link
                     href={`/event/${encodeURIComponent(

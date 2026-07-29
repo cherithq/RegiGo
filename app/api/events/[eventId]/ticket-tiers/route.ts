@@ -178,6 +178,7 @@ export async function GET(
             ticketsResult,
             ordersResult,
             companyResult,
+            stripeAddonResult,
         ] = await Promise.all([
             admin
                 .from("ticket_types")
@@ -208,6 +209,12 @@ export async function GET(
                     configuration.event
                         .company_id,
                 )
+                .maybeSingle(),
+            admin
+                .from("event_addons")
+                .select("enabled")
+                .eq("event_id", eventId)
+                .eq("addon_key", "stripe_payments")
                 .maybeSingle(),
         ]);
 
@@ -274,6 +281,9 @@ export async function GET(
                         recipientCompany
                             ?.stripe_payouts_enabled,
                     ),
+                stripePaymentsAddonEnabled:
+                    stripeAddonResult.data
+                        ?.enabled === true,
             },
             tickets:
                 ticketsResult.data || [],

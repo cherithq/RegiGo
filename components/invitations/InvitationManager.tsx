@@ -2,6 +2,8 @@
 
 import {
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     Clock3,
     Loader2,
     Mail,
@@ -97,6 +99,8 @@ type Filter =
     | "all"
     | InvitationStatus;
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+
 async function readJson(response: Response) {
     const text = await response.text();
 
@@ -157,6 +161,8 @@ export default function InvitationManager({
         deletingGuestId,
         setDeletingGuestId,
     ] = useState("");
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     const reload = useCallback(async () => {
         setLoading(true);
@@ -268,6 +274,41 @@ export default function InvitationManager({
             return matchesFilter && matchesQuery;
         });
     }, [data, filter, query]);
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(
+            filteredGuests.length / pageSize,
+        ),
+    );
+    const currentPage = Math.min(
+        page,
+        totalPages,
+    );
+    const firstGuestIndex =
+        (currentPage - 1) * pageSize;
+    const paginatedGuests =
+        filteredGuests.slice(
+            firstGuestIndex,
+            firstGuestIndex + pageSize,
+        );
+    const firstVisibleGuest =
+        filteredGuests.length === 0
+            ? 0
+            : firstGuestIndex + 1;
+    const lastVisibleGuest =
+        firstGuestIndex +
+        paginatedGuests.length;
+
+    useEffect(() => {
+        setPage(1);
+    }, [query, filter, pageSize]);
+
+    useEffect(() => {
+        if (page > totalPages) {
+            setPage(totalPages);
+        }
+    }, [page, totalPages]);
 
     const allVisibleSelected =
         filteredGuests.length > 0 &&
@@ -583,6 +624,77 @@ export default function InvitationManager({
         }
     }
 
+    async function deleteSelected() {
+        if (selected.length === 0) {
+            setMessage(
+                "Select at least one guest.",
+            );
+            return;
+        }
+
+        if (
+            !window.confirm(
+                `Delete ${selected.length} selected guest${
+                    selected.length === 1
+                        ? ""
+                        : "s"
+                }? Their invitations and event registrations will be permanently removed.`,
+            )
+        ) {
+            return;
+        }
+
+        setWorking("delete");
+        setMessage("");
+
+        try {
+            const response =
+                await fetch(
+                    `/api/events/${eventId}/invitations/guests`,
+                    {
+                        method:
+                            "DELETE",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body:
+                            JSON.stringify({
+                                registrationIds:
+                                    selected,
+                            }),
+                    },
+                );
+            const result =
+                await readJson(
+                    response,
+                );
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error ||
+                        "Unable to delete the selected guests.",
+                );
+            }
+
+            setSelected([]);
+            setMessage(
+                result.message ||
+                    "Selected guests deleted.",
+            );
+            await reload();
+        } catch (error) {
+            setMessage(
+                error instanceof
+                    Error
+                    ? error.message
+                    : "Unable to delete the selected guests.",
+            );
+        } finally {
+            setWorking("");
+        }
+    }
+
     if (loading && !data) {
         return (
             <div className="flex min-h-[380px] items-center justify-center rounded-[2rem] border border-slate-200 bg-white">
@@ -780,6 +892,25 @@ export default function InvitationManager({
                         )}
                         Cancel Pending
                     </button>
+
+                    <button
+                        type="button"
+                        onClick={() =>
+                            void deleteSelected()
+                        }
+                        disabled={Boolean(working)}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg disabled:opacity-50"
+                    >
+                        {working === "delete" ? (
+                            <Loader2
+                                size={16}
+                                className="animate-spin"
+                            />
+                        ) : (
+                            <Trash2 size={16} />
+                        )}
+                        Delete Selected
+                    </button>
                 </div>
             </section>
 
@@ -841,7 +972,7 @@ export default function InvitationManager({
                                     </td>
                                 </tr>
                             ) : (
-                                filteredGuests.map(
+                                paginatedGuests.map(
                                     (guest) => {
                                         const status =
                                             guest
@@ -1033,6 +1164,109 @@ export default function InvitationManager({
                         </tbody>
                     </table>
                 </div>
+
+                {filteredGuests.length > 0 && (
+                    <div className="flex flex-col gap-4 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+                        <p className="text-sm font-black text-slate-700">
+                            Showing {firstVisibleGuest}–{lastVisibleGuest} of{" "}
+                            {filteredGuests.length} matching guest
+                            {filteredGuests.length === 1 ? "" : "s"}
+                        </p>
+
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <label className="flex items-center gap-2 text-sm font-bold text-slate-500">
+                                Rows per page
+                                <select
+                                    value={pageSize}
+                                    onChange={(event) =>
+                                        setPageSize(
+                                            Number(
+                                                event
+                                                    .target
+                                                    .value,
+                                            ),
+                                        )
+                                    }
+                                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none transition focus:border-[#4F46E5]"
+                                >
+                                    {PAGE_SIZE_OPTIONS.map(
+                                        (size) => (
+                                            <option
+                                                key={
+                                                    size
+                                                }
+                                                value={
+                                                    size
+                                                }
+                                            >
+                                                {size}
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </label>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setPage(
+                                            (
+                                                current,
+                                            ) =>
+                                                Math.max(
+                                                    1,
+                                                    current -
+                                                        1,
+                                                ),
+                                        )
+                                    }
+                                    disabled={
+                                        currentPage <=
+                                        1
+                                    }
+                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-[#4F46E5] hover:text-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    <ChevronLeft
+                                        size={16}
+                                    />
+                                    Previous
+                                </button>
+
+                                <span className="min-w-[92px] text-center text-sm font-black text-slate-600">
+                                    Page {currentPage}{" "}
+                                    of {totalPages}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setPage(
+                                            (
+                                                current,
+                                            ) =>
+                                                Math.min(
+                                                    totalPages,
+                                                    current +
+                                                        1,
+                                                ),
+                                        )
+                                    }
+                                    disabled={
+                                        currentPage >=
+                                        totalPages
+                                    }
+                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-[#4F46E5] hover:text-[#4F46E5] disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Next
+                                    <ChevronRight
+                                        size={16}
+                                    />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </section>
 
             {editingGuest && (

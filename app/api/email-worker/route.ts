@@ -42,8 +42,12 @@ function getDefaultSubject(emailType: string, eventName: string) {
         return `Your table has been assigned for ${eventName}`;
     }
 
-    if (emailType === "event_update") {
+    if (emailType === "event_update" || emailType === "update") {
         return `Event update for ${eventName}`;
+    }
+
+    if (emailType === "reminder") {
+        return `Reminder: ${eventName} is coming up`;
     }
 
     return `Registration confirmed for ${eventName}`;
@@ -59,10 +63,19 @@ You may view your QR pass here:
 {{pass_url}}`;
     }
 
-    if (emailType === "event_update") {
+    if (emailType === "event_update" || emailType === "update") {
         return `Hi {{name}},
 
 There has been an update for {{event_name}}. The latest details are below.
+
+You may view your QR pass here:
+{{pass_url}}`;
+    }
+
+    if (emailType === "reminder") {
+        return `Hi {{name}},
+
+This is a reminder that {{event_name}} is coming up soon. Your details are below.
 
 You may view your QR pass here:
 {{pass_url}}`;
@@ -74,6 +87,59 @@ Thank you for registering for {{event_name}}. Your details are below.
 
 You may view your QR pass here:
 {{pass_url}}`;
+}
+
+async function queueTomorrowReminders(
+    admin: ReturnType<typeof getSupabaseAdminClient>,
+) {
+    // The worker runs once/day (see vercel.json), so "tomorrow" is computed
+    // once per invocation from the SGT wall-clock date.
+    const sgtNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const tomorrow = new Date(sgtNow);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const tomorrowDate = tomorrow.toISOString().slice(0, 10);
+
+    const { data: events } = await admin
+        .from("events")
+        .select("id")
+        .eq("event_date", tomorrowDate)
+        .eq("status", "published");
+
+    if (!events || events.length === 0) return;
+
+    for (const event of events) {
+        const { data: existingReminder } = await admin
+            .from("email_jobs")
+            .select("id")
+            .eq("event_id", event.id)
+            .eq("email_type", "reminder")
+            .limit(1)
+            .maybeSingle();
+
+        if (existingReminder) continue;
+
+        const { data: registrations } = await admin
+            .from("registrations")
+            .select("id, email")
+            .eq("event_id", event.id);
+
+        const rows = (registrations || [])
+            .filter((registration) => registration.email)
+            .map((registration) => ({
+                event_id: event.id,
+                registration_id: registration.id,
+                recipient_email: registration.email,
+                email_type: "reminder",
+                status: "pending",
+                attempts: 0,
+                last_error: null,
+                sent_at: null,
+            }));
+
+        if (rows.length > 0) {
+            await admin.from("email_jobs").insert(rows);
+        }
+    }
 }
 
 async function runEmailWorker(req: Request) {
@@ -97,6 +163,8 @@ async function runEmailWorker(req: Request) {
         }
 
         const admin = getSupabaseAdminClient();
+
+        await queueTomorrowReminders(admin);
 
         const { data: jobs, error: jobsError } = await admin
             .from("email_jobs")

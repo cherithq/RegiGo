@@ -611,6 +611,10 @@ export async function loadEventConfiguration(
                 actor.event
                     .max_guests ??
                 null,
+            enable_ticket_types:
+                actor.event
+                    .enable_ticket_types !==
+                false,
         },
         settings: {
             enabled_modules:
@@ -933,6 +937,34 @@ export async function saveEventConfiguration({
             );
         }
 
+        const newEventDate =
+            nullableText(
+                eventInput.eventDate ??
+                    eventInput.event_date,
+                40,
+            );
+        const newEventTime =
+            nullableText(
+                eventInput.eventTime ??
+                    eventInput.event_time,
+                40,
+            );
+        const newVenue =
+            nullableText(
+                eventInput.venue,
+                300,
+            );
+        const requestedEnableTicketTypes =
+            typeof eventInput.enableTicketTypes ===
+            "boolean"
+                ? eventInput.enableTicketTypes
+                : typeof eventInput.enable_ticket_types ===
+                    "boolean"
+                  ? eventInput.enable_ticket_types
+                  : configuration
+                        .event
+                        .enable_ticket_types;
+
         const {
             error:
                 eventUpdateError,
@@ -944,22 +976,11 @@ export async function saveEventConfiguration({
                 event_slug:
                     eventSlug,
                 event_date:
-                    nullableText(
-                        eventInput.eventDate ??
-                            eventInput.event_date,
-                        40,
-                    ),
+                    newEventDate,
                 event_time:
-                    nullableText(
-                        eventInput.eventTime ??
-                            eventInput.event_time,
-                        40,
-                    ),
+                    newEventTime,
                 venue:
-                    nullableText(
-                        eventInput.venue,
-                        300,
-                    ),
+                    newVenue,
                 description:
                     nullableText(
                         eventInput.description,
@@ -970,6 +991,8 @@ export async function saveEventConfiguration({
                     maxGuests,
                 registration_open:
                     registrationOpen,
+                enable_ticket_types:
+                    requestedEnableTicketTypes,
                 updated_at:
                     new Date().toISOString(),
             })
@@ -981,6 +1004,57 @@ export async function saveEventConfiguration({
             throw new EventConfigurationError(
                 eventUpdateError.message,
             );
+        }
+
+        // Only published events realistically have registered guests, so
+        // draft-event edits never trigger an automatic update email.
+        const scheduleDetailsChanged =
+            newEventDate !==
+                (configuration.event.event_date ||
+                    null) ||
+            newEventTime !==
+                (configuration.event.event_time ||
+                    null) ||
+            newVenue !==
+                (configuration.event.venue ||
+                    null);
+
+        if (
+            status === "published" &&
+            scheduleDetailsChanged
+        ) {
+            const {
+                data: registrationsForUpdate,
+            } = await actor.admin
+                .from("registrations")
+                .select("id, email")
+                .eq("event_id", eventId);
+
+            const updateJobs = (
+                registrationsForUpdate || []
+            )
+                .filter(
+                    (registration) =>
+                        registration.email,
+                )
+                .map((registration) => ({
+                    event_id: eventId,
+                    registration_id:
+                        registration.id,
+                    recipient_email:
+                        registration.email,
+                    email_type: "update",
+                    status: "pending",
+                    attempts: 0,
+                    last_error: null,
+                    sent_at: null,
+                }));
+
+            if (updateJobs.length > 0) {
+                await actor.admin
+                    .from("email_jobs")
+                    .insert(updateJobs);
+            }
         }
 
         const {

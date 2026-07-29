@@ -108,6 +108,9 @@ type SidebarContextPayload = {
               companyName:
                   | string
                   | null;
+              mode?:
+                  | "public_registration"
+                  | "invitation_only";
           }
         | null;
     modules:
@@ -133,6 +136,8 @@ type NavItem = {
     alwaysVisibleForManagers?:
         boolean;
     platformAdminOnly?:
+        boolean;
+    hideForInvitationOnly?:
         boolean;
 };
 
@@ -482,6 +487,8 @@ export default function DashboardSidebar() {
                                           true,
                                       permission:
                                           "canManageEvent",
+                                      hideForInvitationOnly:
+                                          true,
                                       moduleKeys:
                                           [
                                               "guests",
@@ -947,6 +954,15 @@ export default function DashboardSidebar() {
             item.platformAdminOnly &&
             !context.profile
                 .isPlatformAdmin
+        ) {
+            return false;
+        }
+
+        if (
+            item.hideForInvitationOnly &&
+            context.event
+                ?.mode ===
+                "invitation_only"
         ) {
             return false;
         }

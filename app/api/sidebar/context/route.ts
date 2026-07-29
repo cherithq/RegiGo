@@ -7,6 +7,7 @@ import {
     loadEffectiveCompanyPermissions,
     loadEffectiveModules,
 } from "@/lib/company-module-server";
+import { normalizeAnalyticsMode } from "@/lib/event-analytics-server";
 
 export const runtime =
     "nodejs";
@@ -76,6 +77,9 @@ export async function GET(
                   companyName:
                       | string
                       | null;
+                  mode:
+                      | "public_registration"
+                      | "invitation_only";
               }
             | null = null;
 
@@ -170,18 +174,54 @@ export async function GET(
                 }
             }
 
-            const {
-                data: eventCompany,
-            } = await actor.admin
-                .from("companies")
-                .select(
-                    "company_name",
-                )
-                .eq(
-                    "id",
-                    companyId,
-                )
-                .maybeSingle();
+            const [
+                eventCompanyResult,
+                eventSettingsResult,
+                invitationCountResult,
+            ] = await Promise.all([
+                actor.admin
+                    .from("companies")
+                    .select(
+                        "company_name",
+                    )
+                    .eq(
+                        "id",
+                        companyId,
+                    )
+                    .maybeSingle(),
+
+                actor.admin
+                    .from(
+                        "event_settings",
+                    )
+                    .select(
+                        "registration_mode, registration_is_open",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    )
+                    .maybeSingle(),
+
+                actor.admin
+                    .from(
+                        "event_invitations",
+                    )
+                    .select(
+                        "id",
+                        {
+                            count: "exact",
+                            head: true,
+                        },
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    ),
+            ]);
+
+            const eventCompany =
+                eventCompanyResult.data;
 
             event = {
                 id:
@@ -201,6 +241,24 @@ export async function GET(
                               eventCompany.company_name,
                           )
                         : null,
+                mode: normalizeAnalyticsMode(
+                    {
+                        storedMode:
+                            eventSettingsResult
+                                .data
+                                ?.registration_mode,
+                        registrationOpen:
+                            eventSettingsResult
+                                .data
+                                ?.registration_is_open !==
+                            false,
+                        invitationCount:
+                            Number(
+                                invitationCountResult.count ||
+                                    0,
+                            ),
+                    },
+                ),
             };
         }
 

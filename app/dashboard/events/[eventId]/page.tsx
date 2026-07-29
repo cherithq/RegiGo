@@ -20,7 +20,6 @@ import {
     MapPin,
     Mic2,
     Palette,
-    Printer,
     QrCode,
     ScanLine,
     Settings,
@@ -28,7 +27,6 @@ import {
     Sparkles,
     TableProperties,
     Trophy,
-    UserRoundCheck,
     Users,
     Utensils,
 } from "lucide-react";
@@ -48,6 +46,7 @@ import {
     loadEffectiveModules,
 } from "@/lib/company-module-server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { normalizeAnalyticsMode } from "@/lib/event-analytics-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -242,6 +241,8 @@ export default async function EventOverviewPage({
         checkedInResult,
         ticketResult,
         eventTableIdsResult,
+        eventSettingsResult,
+        invitationCountResult,
     ] = await Promise.all([
         admin
             .from("registrations")
@@ -283,7 +284,53 @@ export default async function EventOverviewPage({
                 "event_id",
                 eventId,
             ),
+
+        // Fetched to compute the registration mode the same way the
+        // sidebar does, so the Guest List card hides for invitation-only
+        // events exactly like the sidebar's "Guest List" link does.
+        admin
+            .from("event_settings")
+            .select(
+                "registration_mode, registration_is_open",
+            )
+            .eq(
+                "event_id",
+                eventId,
+            )
+            .maybeSingle(),
+
+        admin
+            .from("event_invitations")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq(
+                "event_id",
+                eventId,
+            ),
     ]);
+
+    const registrationMode =
+        normalizeAnalyticsMode({
+            storedMode:
+                eventSettingsResult
+                    .data
+                    ?.registration_mode,
+            registrationOpen:
+                eventSettingsResult
+                    .data
+                    ?.registration_is_open !==
+                false,
+            invitationCount:
+                Number(
+                    invitationCountResult.count ||
+                        0,
+                ),
+        });
+    const isInvitationOnly =
+        registrationMode ===
+        "invitation_only";
 
     const eventTableIds = (
         eventTableIdsResult.data || []
@@ -336,7 +383,8 @@ export default async function EventOverviewPage({
                     canAccessModule(
                         "guests",
                         canManageEvent,
-                    ),
+                    ) &&
+                    !isInvitationOnly,
             },
             {
                 moduleKey:
@@ -472,26 +520,9 @@ export default async function EventOverviewPage({
             },
             {
                 moduleKey:
-                    "scanner",
-                title:
-                    "Manual Check-In",
-                description:
-                    "Search and check in guests when QR scanning is unavailable.",
-                href:
-                    `/dashboard/events/${eventId}/scanner`,
-                icon:
-                    UserRoundCheck,
-                allowed:
-                    canAccessModule(
-                        "scanner",
-                        canScan,
-                    ),
-            },
-            {
-                moduleKey:
                     "checkin_printing",
                 title:
-                    "Check-in Printing",
+                    "Check-in & Printing",
                 description:
                     "Run the browser print station and print badges after check-in.",
                 href:
@@ -500,6 +531,27 @@ export default async function EventOverviewPage({
                 allowed:
                     canAccessModule(
                         "checkin_printing",
+                        canScan,
+                    ) ||
+                    canAccessModule(
+                        "direct_printing",
+                        canScan,
+                    ),
+            },
+            {
+                moduleKey:
+                    "badges",
+                title:
+                    "Badge Designer",
+                description:
+                    "Design and print badges using guest and QR data.",
+                href:
+                    `/dashboard/events/${eventId}/badges`,
+                icon:
+                    BadgeCheck,
+                allowed:
+                    canAccessModule(
+                        "badges",
                         canManageEvent,
                     ),
             },
@@ -525,21 +577,14 @@ export default async function EventOverviewPage({
                 description:
                     "Manage tournament rounds, players and live progression.",
                 href:
-                    `/dashboard/events/${eventId}/games/tournament`,
+                    `/dashboard/events/${eventId}/games`,
                 icon: Trophy,
                 allowed:
                     canAccessModule(
                         "tournament",
-                        canManageEvent,
+                        canScan,
                     ),
             },
-        ] satisfies ModuleCardItem[]
-    ).filter(
-        (item) => item.allowed,
-    );
-
-    const reportCards = (
-        [
             {
                 moduleKey:
                     "analytics",
@@ -628,39 +673,6 @@ export default async function EventOverviewPage({
             },
             {
                 moduleKey:
-                    "badges",
-                title:
-                    "Badge Designer",
-                description:
-                    "Design and print badges using guest and QR data.",
-                href:
-                    `/dashboard/events/${eventId}/badges`,
-                icon:
-                    BadgeCheck,
-                allowed:
-                    canAccessModule(
-                        "badges",
-                        canManageEvent,
-                    ),
-            },
-            {
-                moduleKey:
-                    "direct_printing",
-                title:
-                    "Direct Badge Printing",
-                description:
-                    "Manage direct printer delivery when the add-on is enabled.",
-                href:
-                    `/dashboard/events/${eventId}/direct-printing`,
-                icon: Printer,
-                allowed:
-                    canAccessModule(
-                        "direct_printing",
-                        canManageEvent,
-                    ),
-            },
-            {
-                moduleKey:
                     "addons",
                 title:
                     "Settings & Add-ons",
@@ -669,13 +681,10 @@ export default async function EventOverviewPage({
                 href:
                     `/dashboard/events/${eventId}/settings`,
                 icon: Settings,
+                // Matches the sidebar's "Settings & Add-ons" link, which
+                // has no module gate — only the permission check applies.
                 allowed:
-                    isPlatformAdmin ||
-                    isCompanyAdmin ||
-                    canAccessModule(
-                        "addons",
-                        canManageEvent,
-                    ),
+                    canManageEvent,
             },
             {
                 moduleKey:
@@ -702,8 +711,6 @@ export default async function EventOverviewPage({
         managementCards.length >
             0 ||
         eventDayCards.length >
-            0 ||
-        reportCards.length >
             0 ||
         administrationCards.length >
             0;
@@ -914,32 +921,9 @@ export default async function EventOverviewPage({
                     <WorkspaceSection
                         eyebrow="Event Day"
                         title="Live Event Tools"
-                        description="Check-in, badge printing, lucky draw and tournament operations."
+                        description="Check-in, badge printing, lucky draw, tournament and analytics operations."
                     >
                         {eventDayCards.map(
-                            ({
-                                moduleKey,
-                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                allowed,
-                                ...item
-                            }) => (
-                                <ModuleCard
-                                    key={`${moduleKey}-${item.title}`}
-                                    {...item}
-                                />
-                            ),
-                        )}
-                    </WorkspaceSection>
-                )}
-
-                {reportCards.length >
-                    0 && (
-                    <WorkspaceSection
-                        eyebrow="Insights"
-                        title="Reports & Analytics"
-                        description="Monitor registration and attendance performance."
-                    >
-                        {reportCards.map(
                             ({
                                 moduleKey,
                                 // eslint-disable-next-line @typescript-eslint/no-unused-vars

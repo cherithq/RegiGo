@@ -9,6 +9,7 @@ import {
     Plus,
     RefreshCw,
     Save,
+    SlidersHorizontal,
     Ticket,
     Trash2,
     WalletCards,
@@ -76,6 +77,7 @@ type Payload = {
         connected: boolean;
         chargesEnabled: boolean;
         payoutsEnabled: boolean;
+        stripePaymentsAddonEnabled: boolean;
     };
     tickets: TicketRow[];
     orders: OrderRow[];
@@ -1230,6 +1232,42 @@ export default function TicketPaymentsManager({
                                     </Link>
                                 </div>
                             </div>
+
+                            {hasPaidTickets &&
+                                !data
+                                    .paymentRecipient
+                                    .stripePaymentsAddonEnabled && (
+                                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+                                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <p className="font-black">
+                                                    Enable Stripe Ticket
+                                                    Payments for this
+                                                    event
+                                                </p>
+                                                <p className="mt-1 text-sm font-semibold opacity-80">
+                                                    Guests can&apos;t
+                                                    check out for a
+                                                    paid ticket until
+                                                    this add-on is
+                                                    turned on.
+                                                </p>
+                                            </div>
+
+                                            <Link
+                                                href={`/dashboard/events/${eventId}/settings`}
+                                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
+                                            >
+                                                <SlidersHorizontal
+                                                    size={
+                                                        16
+                                                    }
+                                                />
+                                                Event Settings
+                                            </Link>
+                                        </div>
+                                    </div>
+                                )}
                         </section>
                     )}
 

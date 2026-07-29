@@ -148,6 +148,7 @@ export default function DynamicRegistrationForm({
             let data: {
                 error?: string;
                 passUrl?: string;
+                checkoutUrl?: string;
             } = {};
 
             try {
@@ -160,6 +161,11 @@ export default function DynamicRegistrationForm({
 
             if (!response.ok) {
                 throw new Error(data.error || "Registration failed.");
+            }
+
+            if (data.checkoutUrl) {
+                window.location.href = data.checkoutUrl;
+                return;
             }
 
             if (!data.passUrl) {

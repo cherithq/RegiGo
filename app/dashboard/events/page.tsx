@@ -34,6 +34,7 @@ type EventItem = {
     max_guests: number | null;
     registration_open: boolean | null;
     created_at: string | null;
+    isInvitationOnly: boolean;
 };
 
 export default async function EventsPage({
@@ -88,6 +89,28 @@ export default async function EventsPage({
         throw new Error(error.message);
     }
 
+    const eventIds = (data || []).map(
+        (event) => event.id,
+    );
+    const invitationOnlyEventIds = new Set<string>();
+
+    if (eventIds.length > 0) {
+        const { data: settingsRows, error: settingsError } = await db
+            .from("event_settings")
+            .select("event_id, registration_mode")
+            .in("event_id", eventIds);
+
+        if (settingsError) {
+            throw new Error(settingsError.message);
+        }
+
+        for (const row of settingsRows || []) {
+            if (row.registration_mode === "invitation_only") {
+                invitationOnlyEventIds.add(row.event_id);
+            }
+        }
+    }
+
     const companyNameById = new Map<string, string>();
 
     if (isPlatformAdmin) {
@@ -115,13 +138,20 @@ export default async function EventsPage({
         }
     }
 
-    const allEvents = ((data || []) as Omit<EventItem, "company_name">[]).map(
+    const allEvents = (
+        (data || []) as Omit<
+            EventItem,
+            "company_name" | "isInvitationOnly"
+        >[]
+    ).map(
         (event) => ({
             ...event,
             company_name:
                 (event.company_id &&
                     companyNameById.get(event.company_id)) ||
                 null,
+            isInvitationOnly:
+                invitationOnlyEventIds.has(event.id),
         }),
     );
 
@@ -419,6 +449,9 @@ function EventCard({
                         }
                         eventSlug={
                             event.event_slug
+                        }
+                        showWebsiteLink={
+                            !event.isInvitationOnly
                         }
                         compact
                     />

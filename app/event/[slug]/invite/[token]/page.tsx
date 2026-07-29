@@ -12,6 +12,10 @@ import {
     getPublicInvitation,
     InvitationError,
 } from "@/lib/guest-invitations";
+import {
+    Check,
+    Lock,
+} from "lucide-react";
 
 export const dynamic =
     "force-dynamic";
@@ -33,6 +37,30 @@ type PageProps = {
     }>;
 };
 
+type EventBrandingRow = {
+    hero_title:
+        | string
+        | null;
+    hero_subtitle:
+        | string
+        | null;
+    primary_color:
+        | string
+        | null;
+    secondary_color:
+        | string
+        | null;
+    background_color:
+        | string
+        | null;
+    banner_background_url:
+        | string
+        | null;
+    banner_overlay_opacity:
+        | number
+        | null;
+};
+
 type EventRow = {
     id: string;
     event_name:
@@ -52,6 +80,10 @@ type EventRow = {
         | null;
     description:
         | string
+        | null;
+    event_branding?:
+        | EventBrandingRow
+        | EventBrandingRow[]
         | null;
 };
 
@@ -633,8 +665,25 @@ export default async function InvitePage({
     const registration =
         registrationJoined as unknown as RegistrationRow;
 
+    const branding =
+        Array.isArray(
+            event.event_branding,
+        )
+            ? event.event_branding[0]
+            : event.event_branding;
+    const primaryColor =
+        branding?.primary_color ||
+        "#4F46E5";
+    const secondaryColor =
+        branding?.secondary_color ||
+        "#EC4899";
+    const backgroundColor =
+        branding?.background_color ||
+        "#F7F5FF";
+
     const [
         paymentAddonResult,
+        tableAddonResult,
         ticketCountResult,
         tableSettingsResult,
         tableCountResult,
@@ -655,6 +704,23 @@ export default async function InvitePage({
                 .eq(
                     "addon_key",
                     "stripe_payments",
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "event_addons",
+                )
+                .select(
+                    "*",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
+                )
+                .eq(
+                    "addon_key",
+                    "guest_table_selection",
                 )
                 .maybeSingle(),
 
@@ -739,6 +805,18 @@ export default async function InvitePage({
             true ||
         paymentAddonData?.is_enabled ===
             true;
+    const tableAddonData =
+        tableAddonResult.data as unknown as
+            | Record<
+                  string,
+                  unknown
+              >
+            | null;
+    const tableAddonEnabled =
+        tableAddonData?.enabled ===
+            true ||
+        tableAddonData?.is_enabled ===
+            true;
     const ticketCount =
         ticketCountResult.count ||
         0;
@@ -796,6 +874,7 @@ export default async function InvitePage({
               }
             | null;
     const tableSelectionAvailable =
+        tableAddonEnabled &&
         tableSettings
             ?.allow_rsvp_selection !==
             false &&
@@ -858,36 +937,67 @@ export default async function InvitePage({
         )}/invite/${encodeURIComponent(
             token,
         )}`;
-    const paymentPath =
-        `${invitePath}/payment`;
+    const ticketsPath =
+        `${invitePath}/tickets`;
     const tablesPath =
         `${invitePath}/tables`;
 
     return (
-        <main className="min-h-screen bg-[#F7F5FF] px-4 py-8 text-slate-950 sm:px-6 sm:py-12">
+        <main
+            className="min-h-screen px-4 py-8 text-slate-950 sm:px-6 sm:py-12"
+            style={{
+                backgroundColor:
+                    backgroundColor,
+            }}
+        >
             <div className="mx-auto max-w-3xl space-y-6">
-                <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-9">
-                    <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#EC4899]/10 blur-3xl" />
-                    <div className="pointer-events-none absolute -bottom-20 left-10 h-56 w-56 rounded-full bg-[#4F46E5]/10 blur-3xl" />
+                <section
+                    className="relative overflow-hidden rounded-[2rem] p-6 text-white shadow-sm sm:p-9"
+                    style={{
+                        backgroundImage:
+                            branding
+                                ?.banner_background_url
+                                ? `url(${branding.banner_background_url})`
+                                : `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                        backgroundSize:
+                            "cover",
+                        backgroundPosition:
+                            "center",
+                    }}
+                >
+                    {branding
+                        ?.banner_background_url && (
+                        <div
+                            className="absolute inset-0 bg-black"
+                            style={{
+                                opacity:
+                                    branding
+                                        ?.banner_overlay_opacity ??
+                                    0.45,
+                            }}
+                        />
+                    )}
 
                     <div className="relative z-10">
-                        <div className="inline-flex rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
+                        <div className="inline-flex rounded-full bg-white/20 px-4 py-2 text-sm font-black backdrop-blur">
                             Personal Invitation
                         </div>
 
                         <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-5xl">
-                            {event.event_name ||
+                            {branding
+                                ?.hero_title ||
+                                event.event_name ||
                                 "Event Invitation"}
                         </h1>
 
-                        <p className="mt-3 text-lg font-bold text-slate-600">
+                        <p className="mt-3 text-lg font-bold text-white/90">
                             Welcome,{" "}
                             {registration.full_name ||
                                 "Guest"}
                         </p>
 
                         {event.description && (
-                            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500 sm:text-base">
+                            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/80 sm:text-base">
                                 {
                                     event.description
                                 }
@@ -1062,46 +1172,105 @@ export default async function InvitePage({
                     </div>
                 </section>
 
-                {accepted && (
-                    <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                        <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4F46E5]">
-                            Next Step
-                        </p>
+                {accepted && (() => {
+                    const ticketStepRelevant =
+                        paymentEnabled &&
+                        ticketCount >
+                            0;
+                    const ticketStepStatus:
+                        | "current"
+                        | "done"
+                        | null =
+                        !ticketStepRelevant
+                            ? null
+                            : paymentRequired
+                              ? "current"
+                              : "done";
+                    const tableStepStatus:
+                        | "current"
+                        | "done"
+                        | "locked"
+                        | null =
+                        !tableSelectionAvailable
+                            ? null
+                            : tablePaymentBlocked
+                              ? "locked"
+                              : assignedTable
+                                ? "done"
+                                : "current";
+                    const allStepsDone =
+                        (ticketStepStatus ===
+                            null ||
+                            ticketStepStatus ===
+                                "done") &&
+                        (tableStepStatus ===
+                            null ||
+                            tableStepStatus ===
+                                "done");
 
-                        <h2 className="mt-2 text-2xl font-black">
-                            Complete your event setup
-                        </h2>
+                    return (
+                        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4F46E5]">
+                                Next Steps
+                            </p>
 
-                        <div className="mt-6 space-y-4">
-                            {paymentRequired && (
-                                <ActionCard
-                                    title="Complete ticket payment"
-                                    description="Your attendance is accepted. Complete payment before continuing."
-                                    href={
-                                        paymentPath
-                                    }
-                                    buttonLabel="Continue to Payment"
-                                />
-                            )}
+                            <h2 className="mt-2 text-2xl font-black">
+                                Complete your event setup
+                            </h2>
 
-                            {!paymentRequired &&
-                                tableSelectionAvailable &&
-                                !tablePaymentBlocked && (
-                                    <ActionCard
+                            <div className="mt-6 space-y-4">
+                                {ticketStepStatus && (
+                                    <StepCard
+                                        step={1}
+                                        status={
+                                            ticketStepStatus
+                                        }
+                                        title="Choose your ticket & pay"
+                                        description={
+                                            ticketStepStatus ===
+                                            "done"
+                                                ? "Your ticket has been selected and payment is complete."
+                                                : "Pick a ticket type and complete payment to confirm your seat."
+                                        }
+                                        href={
+                                            ticketsPath
+                                        }
+                                        buttonLabel={
+                                            ticketStepStatus ===
+                                            "done"
+                                                ? "View Ticket"
+                                                : "Choose Ticket & Pay"
+                                        }
+                                    />
+                                )}
+
+                                {tableStepStatus && (
+                                    <StepCard
+                                        step={
+                                            ticketStepStatus
+                                                ? 2
+                                                : 1
+                                        }
+                                        status={
+                                            tableStepStatus
+                                        }
                                         title={
                                             assignedTable
                                                 ? "Your selected table"
                                                 : "Choose your table"
                                         }
                                         description={
-                                            assignedTable
-                                                ? `You are assigned to ${
-                                                      assignedTable.selection_label ||
-                                                      assignedTable.table_name ||
-                                                      "your selected table"
-                                                  }.`
-                                                : tableSettings?.instructions ||
-                                                  "Choose an available table for your party."
+                                            tableStepStatus ===
+                                            "locked"
+                                                ? "Complete ticket payment first to unlock table selection."
+                                                : assignedTable
+                                                  ? `You are assigned to ${
+                                                        assignedTable.selection_label ||
+                                                        assignedTable.table_name ||
+                                                        "your selected table"
+                                                    }.`
+                                                  : tableSettings?.instructions ||
+                                                    "Choose an available table for your party."
                                         }
                                         href={
                                             tablesPath
@@ -1114,11 +1283,7 @@ export default async function InvitePage({
                                     />
                                 )}
 
-                            {!paymentRequired &&
-                                (
-                                    !tableSelectionAvailable ||
-                                    tablePaymentBlocked
-                                ) && (
+                                {allStepsDone && (
                                     <div className="rounded-2xl bg-emerald-50 p-5">
                                         <p className="font-black text-emerald-700">
                                             Your RSVP is complete.
@@ -1129,9 +1294,10 @@ export default async function InvitePage({
                                         </p>
                                     </div>
                                 )}
-                        </div>
-                    </section>
-                )}
+                            </div>
+                        </section>
+                    );
+                })()}
 
                 <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                     <h2 className="text-lg font-black">
@@ -1199,14 +1365,14 @@ function Info({
     value: string;
 }) {
     return (
-        <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+        <div className="rounded-2xl bg-white/15 p-4 backdrop-blur">
+            <p className="text-xs font-black uppercase tracking-wide text-white/70">
                 {
                     label
                 }
             </p>
 
-            <p className="mt-2 font-black text-slate-800">
+            <p className="mt-2 font-black text-white">
                 {
                     value
                 }
@@ -1238,41 +1404,99 @@ function Detail({
     );
 }
 
-function ActionCard({
+function StepCard({
+    step,
+    status,
     title,
     description,
     href,
     buttonLabel,
 }: {
+    step: number;
+    status:
+        | "current"
+        | "done"
+        | "locked";
     title: string;
     description: string;
     href: string;
     buttonLabel: string;
 }) {
+    const containerClass =
+        status ===
+        "done"
+            ? "border-emerald-200 bg-emerald-50"
+            : status ===
+                "locked"
+              ? "border-slate-200 bg-slate-50"
+              : "border-indigo-100 bg-[#F7F5FF]";
+    const badgeClass =
+        status ===
+        "done"
+            ? "bg-emerald-600 text-white"
+            : status ===
+                "locked"
+              ? "bg-slate-300 text-white"
+              : "bg-[#4F46E5] text-white";
+
     return (
-        <div className="rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-5">
-            <h3 className="text-lg font-black text-slate-900">
-                {
-                    title
-                }
-            </h3>
-
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-                {
-                    description
-                }
-            </p>
-
-            <Link
-                href={
-                    href
-                }
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-[#4F46E5] px-5 py-3 font-black text-white sm:w-auto"
+        <div
+            className={`flex items-start gap-4 rounded-2xl border p-5 ${containerClass}`}
+        >
+            <span
+                className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black ${badgeClass}`}
             >
-                {
-                    buttonLabel
-                }
-            </Link>
+                {status ===
+                "done" ? (
+                    <Check
+                        size={
+                            18
+                        }
+                    />
+                ) : status ===
+                  "locked" ? (
+                    <Lock
+                        size={
+                            15
+                        }
+                    />
+                ) : (
+                    step
+                )}
+            </span>
+
+            <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-black text-slate-900">
+                    {
+                        title
+                    }
+                </h3>
+
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+                    {
+                        description
+                    }
+                </p>
+
+                {status !==
+                    "locked" && (
+                    <Link
+                        href={
+                            href
+                        }
+                        className={`mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-2xl px-5 py-3 font-black text-white sm:w-auto ${
+                            status ===
+                            "done"
+                                ? "bg-emerald-600"
+                                : "bg-[#4F46E5]"
+                        }`}
+                    >
+                        {
+                            buttonLabel
+                        }
+                    </Link>
+                )}
+            </div>
         </div>
     );
 }

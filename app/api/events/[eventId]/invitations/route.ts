@@ -124,36 +124,28 @@ export async function GET(
             throw new InvitationError(error.message);
         }
 
-        const registrationIds = (
-            registrations || []
-        ).map((row) => String(row.id));
+        // Every event_invitations row already carries this event's
+        // event_id, so scoping by event_id alone is sufficient — do not
+        // also filter by .in("registration_id", registrationIds): for an
+        // event with a large guest list that serializes hundreds of UUIDs
+        // into the request URL, which can exceed Supabase's gateway
+        // URL-length limit and get rejected with a raw, non-JSON
+        // "Bad Request" before it ever reaches PostgREST.
+        const { data: invitationData, error: invitationError } =
+            await admin
+                .from("event_invitations")
+                .select(
+                    "id, registration_id, status, sent_at, opened_at, responded_at, expires_at, decline_reason, updated_at",
+                )
+                .eq("event_id", eventId);
 
-        let invitationRows: Record<
-            string,
-            unknown
-        >[] = [];
-
-        if (registrationIds.length > 0) {
-            const { data, error: invitationError } =
-                await admin
-                    .from("event_invitations")
-                    .select(
-                        "id, registration_id, status, sent_at, opened_at, responded_at, expires_at, decline_reason, updated_at",
-                    )
-                    .eq("event_id", eventId)
-                    .in(
-                        "registration_id",
-                        registrationIds,
-                    );
-
-            if (invitationError) {
-                throw new InvitationError(
-                    invitationError.message,
-                );
-            }
-
-            invitationRows = data || [];
+        if (invitationError) {
+            throw new InvitationError(
+                invitationError.message,
+            );
         }
+
+        const invitationRows = invitationData || [];
 
         const invitationMap = new Map(
             invitationRows.map((item) => [

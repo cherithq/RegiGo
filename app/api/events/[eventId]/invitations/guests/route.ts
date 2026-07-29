@@ -527,6 +527,158 @@ export async function PATCH(
     }
 }
 
+async function deleteInvitationGuest({
+    admin,
+    eventId,
+    registrationId,
+}: {
+    admin: any;
+    eventId: string;
+    registrationId: string;
+}) {
+    const {
+        data: current,
+        error:
+            currentError,
+    } = await admin
+        .from(
+            "registrations",
+        )
+        .select(
+            "id, full_name, email",
+        )
+        .eq(
+            "id",
+            registrationId,
+        )
+        .eq(
+            "event_id",
+            eventId,
+        )
+        .maybeSingle();
+
+    if (currentError) {
+        throw new InvitationError(
+            currentError
+                .message,
+        );
+    }
+
+    if (!current) {
+        throw new InvitationError(
+            "The guest could not be found in this event.",
+            404,
+        );
+    }
+
+    const {
+        error:
+            rpcError,
+    } =
+        await admin.rpc(
+            "regigo_delete_invitation_guest_v1",
+            {
+                p_event_id:
+                    eventId,
+                p_registration_id:
+                    registrationId,
+            },
+        );
+
+    if (!rpcError) {
+        return;
+    }
+
+    const missingRpc =
+        [
+            "42883",
+            "PGRST202",
+            "PGRST204",
+        ].includes(
+            String(
+                rpcError.code ||
+                    "",
+            ),
+        ) ||
+        String(
+            rpcError.message ||
+                "",
+        )
+            .toLowerCase()
+            .includes(
+                "could not find the function",
+            );
+
+    if (!missingRpc) {
+        throw new InvitationError(
+            rpcError.message,
+            409,
+        );
+    }
+
+    // Compatibility fallback for projects that have not run the
+    // deletion migration yet. The invitation row is removed first,
+    // then the event registration.
+    const {
+        error:
+            invitationError,
+    } = await admin
+        .from(
+            "event_invitations",
+        )
+        .delete()
+        .eq(
+            "event_id",
+            eventId,
+        )
+        .eq(
+            "registration_id",
+            registrationId,
+        );
+
+    if (
+        invitationError &&
+        ![
+            "42P01",
+            "PGRST205",
+        ].includes(
+            String(
+                invitationError.code ||
+                    "",
+            ),
+        )
+    ) {
+        throw new InvitationError(
+            invitationError
+                .message,
+        );
+    }
+
+    const {
+        error:
+            deleteError,
+    } = await admin
+        .from(
+            "registrations",
+        )
+        .delete()
+        .eq(
+            "id",
+            registrationId,
+        )
+        .eq(
+            "event_id",
+            eventId,
+        );
+
+    if (deleteError) {
+        throw new InvitationError(
+            `${deleteError.message}. Run the invitation guest deletion migration included with this patch.`,
+            409,
+        );
+    }
+}
+
 export async function DELETE(
     request: Request,
     {
@@ -552,172 +704,92 @@ export async function DELETE(
                 string,
                 unknown
             >;
-        const registrationId =
-            clean(
-                body.registrationId,
-                80,
-            );
 
-        if (!registrationId) {
+        const registrationIds =
+            Array.isArray(
+                body.registrationIds,
+            )
+                ? Array.from(
+                      new Set(
+                          body.registrationIds
+                              .map(
+                                  (value) =>
+                                      clean(
+                                          value,
+                                          80,
+                                      ),
+                              )
+                              .filter(
+                                  Boolean,
+                              ),
+                      ),
+                  )
+                : [
+                      clean(
+                          body.registrationId,
+                          80,
+                      ),
+                  ].filter(Boolean);
+
+        if (registrationIds.length === 0) {
             throw new InvitationError(
                 "The guest record is missing.",
             );
         }
 
-        const {
-            data: current,
-            error:
-                currentError,
-        } = await admin
-            .from(
-                "registrations",
-            )
-            .select(
-                "id, full_name, email",
-            )
-            .eq(
-                "id",
-                registrationId,
-            )
-            .eq(
-                "event_id",
+        if (registrationIds.length === 1) {
+            await deleteInvitationGuest({
+                admin,
                 eventId,
-            )
-            .maybeSingle();
+                registrationId:
+                    registrationIds[0],
+            });
 
-        if (currentError) {
-            throw new InvitationError(
-                currentError
-                    .message,
-            );
-        }
-
-        if (!current) {
-            throw new InvitationError(
-                "The guest could not be found in this event.",
-                404,
-            );
-        }
-
-        const {
-            error:
-                rpcError,
-        } =
-            await admin.rpc(
-                "regigo_delete_invitation_guest_v1",
-                {
-                    p_event_id:
-                        eventId,
-                    p_registration_id:
-                        registrationId,
-                },
-            );
-
-        if (!rpcError) {
             return response({
                 success:
                     true,
-                registrationId,
+                registrationId:
+                    registrationIds[0],
                 message:
                     "Guest and invitation deleted from the event.",
             });
         }
 
-        const missingRpc =
-            [
-                "42883",
-                "PGRST202",
-                "PGRST204",
-            ].includes(
-                String(
-                    rpcError.code ||
-                        "",
-                ),
-            ) ||
-            String(
-                rpcError.message ||
-                    "",
-            )
-                .toLowerCase()
-                .includes(
-                    "could not find the function",
-                );
+        const failed: {
+            registrationId: string;
+            error: string;
+        }[] = [];
+        let deletedCount = 0;
 
-        if (!missingRpc) {
-            throw new InvitationError(
-                rpcError.message,
-                409,
-            );
-        }
-
-        // Compatibility fallback for projects that have not run the
-        // deletion migration yet. The invitation row is removed first,
-        // then the event registration.
-        const {
-            error:
-                invitationError,
-        } = await admin
-            .from(
-                "event_invitations",
-            )
-            .delete()
-            .eq(
-                "event_id",
-                eventId,
-            )
-            .eq(
-                "registration_id",
-                registrationId,
-            );
-
-        if (
-            invitationError &&
-            ![
-                "42P01",
-                "PGRST205",
-            ].includes(
-                String(
-                    invitationError.code ||
-                        "",
-                ),
-            )
-        ) {
-            throw new InvitationError(
-                invitationError
-                    .message,
-            );
-        }
-
-        const {
-            error:
-                deleteError,
-        } = await admin
-            .from(
-                "registrations",
-            )
-            .delete()
-            .eq(
-                "id",
-                registrationId,
-            )
-            .eq(
-                "event_id",
-                eventId,
-            );
-
-        if (deleteError) {
-            throw new InvitationError(
-                `${deleteError.message}. Run the invitation guest deletion migration included with this patch.`,
-                409,
-            );
+        for (const registrationId of registrationIds) {
+            try {
+                await deleteInvitationGuest({
+                    admin,
+                    eventId,
+                    registrationId,
+                });
+                deletedCount += 1;
+            } catch (error) {
+                failed.push({
+                    registrationId,
+                    error:
+                        error instanceof
+                        Error
+                            ? error.message
+                            : "Unable to delete this guest.",
+                });
+            }
         }
 
         return response({
             success:
-                true,
-            registrationId,
+                failed.length === 0,
+            deletedCount,
+            failed,
             message:
-                "Guest and invitation deleted from the event.",
+                failed.length === 0
+                    ? `${deletedCount} guest${deletedCount === 1 ? "" : "s"} deleted from the event.`
+                    : `${deletedCount} deleted, ${failed.length} failed.`,
         });
     } catch (error) {
         return handleError(

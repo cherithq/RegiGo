@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
     PaymentError,
-    getPublicTicketContext,
+    getPaymentAdmin,
 } from "@/lib/stripe-payments";
 import { activateQrPassIfReady } from "@/lib/qr-pass-activation";
 
@@ -16,22 +16,27 @@ export async function GET(
     }: {
         params: Promise<{
             slug: string;
-            token: string;
         }>;
     },
 ) {
     try {
-        const { slug, token } = await params;
-        const context = await getPublicTicketContext({
-            slug,
-            token,
-        });
+        const { slug } = await params;
+        const admin = getPaymentAdmin();
 
         const url = new URL(request.url);
+        const registrationId = url.searchParams.get(
+            "registrationId",
+        );
         const sessionId =
             url.searchParams.get("session_id");
         const freeOrder =
             url.searchParams.get("free_order");
+
+        if (!registrationId) {
+            throw new PaymentError(
+                "The registration reference is missing.",
+            );
+        }
 
         if (!sessionId && !freeOrder) {
             throw new PaymentError(
@@ -39,16 +44,28 @@ export async function GET(
             );
         }
 
-        let query = context.admin
+        const { data: event, error: eventError } =
+            await admin
+                .from("events")
+                .select("id, event_slug")
+                .eq("event_slug", slug)
+                .maybeSingle();
+
+        if (eventError || !event) {
+            throw new PaymentError(
+                eventError?.message ||
+                    "The event could not be found.",
+                eventError ? 400 : 404,
+            );
+        }
+
+        let query = admin
             .from("orders")
             .select(
                 "id, order_number, currency, total_cents, status, paid_at, order_items(ticket_name, quantity)",
             )
-            .eq(
-                "registration_id",
-                context.registration.id,
-            )
-            .eq("event_id", context.event.id);
+            .eq("registration_id", registrationId)
+            .eq("event_id", event.id);
 
         query = sessionId
             ? query.eq(
@@ -71,6 +88,13 @@ export async function GET(
             );
         }
 
+        const qrPassUrl =
+            `/event/${encodeURIComponent(
+                slug,
+            )}/pass?registration=${encodeURIComponent(
+                registrationId,
+            )}`;
+
         let tableSelectionUrl: string | null = null;
 
         if (order.status === "paid") {
@@ -78,42 +102,58 @@ export async function GET(
             // check before the Stripe webhook has landed — idempotent, so
             // safe even if the webhook already activated the pass.
             await activateQrPassIfReady({
-                admin: context.admin,
-                registrationId: context.registration.id,
+                admin,
+                registrationId,
             });
 
+            const [
+                addonResult,
+                tableCountResult,
+                qrTicketResult,
+            ] = await Promise.all([
+                admin
+                    .from("event_addons")
+                    .select("enabled")
+                    .eq("event_id", event.id)
+                    .eq(
+                        "addon_key",
+                        "guest_table_selection",
+                    )
+                    .maybeSingle(),
 
-            const [addonResult, tableCountResult] =
-                await Promise.all([
-                    context.admin
-                        .from("event_addons")
-                        .select("enabled")
-                        .eq("event_id", context.event.id)
-                        .eq(
-                            "addon_key",
-                            "guest_table_selection",
-                        )
-                        .maybeSingle(),
+                admin
+                    .from("event_tables")
+                    .select("id", {
+                        count: "exact",
+                        head: true,
+                    })
+                    .eq("event_id", event.id)
+                    .eq("guest_selectable", true),
 
-                    context.admin
-                        .from("event_tables")
-                        .select("id", {
-                            count: "exact",
-                            head: true,
-                        })
-                        .eq("event_id", context.event.id)
-                        .eq("guest_selectable", true),
-                ]);
+                // Not filtered by is_active: activation can itself depend
+                // on table selection being completed first, so gating this
+                // link on an already-active ticket would be circular.
+                admin
+                    .from("qr_tickets")
+                    .select("qr_token")
+                    .eq(
+                        "registration_id",
+                        registrationId,
+                    )
+                    .eq("event_id", event.id)
+                    .maybeSingle(),
+            ]);
 
             if (
                 addonResult.data?.enabled &&
-                (tableCountResult.count || 0) > 0
+                (tableCountResult.count || 0) > 0 &&
+                qrTicketResult.data?.qr_token
             ) {
                 tableSelectionUrl =
                     `/event/${encodeURIComponent(
                         slug,
-                    )}/invite/${encodeURIComponent(
-                        token,
+                    )}/registration/${encodeURIComponent(
+                        qrTicketResult.data.qr_token,
                     )}/tables`;
             }
         }
@@ -122,6 +162,7 @@ export async function GET(
             {
                 success: true,
                 order,
+                qrPassUrl,
                 tableSelectionUrl,
             },
             {

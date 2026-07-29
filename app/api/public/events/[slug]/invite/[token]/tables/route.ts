@@ -3,6 +3,9 @@ import {
     TableSelectionError,
     getTableSelectionSnapshot,
 } from "@/lib/table-selection";
+import {
+    activateQrPassIfReady,
+} from "@/lib/qr-pass-activation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -205,6 +208,12 @@ export async function POST(
                     409,
                 );
             }
+
+            await activateQrPassIfReady({
+                admin: snapshot.admin,
+                registrationId:
+                    snapshot.registration.id,
+            });
         } else if (action === "release") {
             const { error } = await snapshot.admin.rpc(
                 "regigo_release_event_table_hold_v1",
