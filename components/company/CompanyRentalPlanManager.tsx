@@ -240,6 +240,21 @@ function planType(
         : "Annual rental";
 }
 
+// The "RegiGo" plan is the platform's own lifetime plan and never expires;
+// every other annual plan (e.g. "Project Catalyst") keeps a required end date.
+function isLifetimePlan(
+    plan:
+        | RentalPlan
+        | null,
+) {
+    return (
+        plan?.plan_name
+            .trim()
+            .toLowerCase() ===
+        "regigo"
+    );
+}
+
 function featureName(
     value: string,
 ) {
@@ -528,7 +543,10 @@ export default function CompanyRentalPlanManager() {
                                     selectedPlan.id,
                                 subscriptionEndsAt:
                                     selectedPlan.rental_type ===
-                                    "annual"
+                                        "annual" &&
+                                    !isLifetimePlan(
+                                        selectedPlan,
+                                    )
                                         ? annualEndsAt
                                         : null,
                                 eventLicenceQuantity:
@@ -840,40 +858,56 @@ export default function CompanyRentalPlanManager() {
 
                             {selectedPlan.rental_type ===
                             "annual" ? (
-                                <label className="mt-5 block">
-                                    <span className="mb-2 block text-sm font-black text-slate-700">
-                                        Subscription End Date
-                                    </span>
+                                isLifetimePlan(
+                                    selectedPlan,
+                                ) ? (
+                                    <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+                                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                            Subscription End Date
+                                        </p>
+                                        <p className="mt-2 font-black text-slate-800">
+                                            No expiry
+                                        </p>
+                                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">
+                                            The RegiGo plan never expires.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <label className="mt-5 block">
+                                        <span className="mb-2 block text-sm font-black text-slate-700">
+                                            Subscription End Date
+                                        </span>
 
-                                    <input
-                                        type="date"
-                                        required
-                                        min={
-                                            new Date()
-                                                .toISOString()
-                                                .slice(
-                                                    0,
-                                                    10,
+                                        <input
+                                            type="date"
+                                            required
+                                            min={
+                                                new Date()
+                                                    .toISOString()
+                                                    .slice(
+                                                        0,
+                                                        10,
+                                                    )
+                                            }
+                                            value={
+                                                annualEndsAt
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setAnnualEndsAt(
+                                                    event.target
+                                                        .value,
                                                 )
-                                        }
-                                        value={
-                                            annualEndsAt
-                                        }
-                                        onChange={(
-                                            event,
-                                        ) =>
-                                            setAnnualEndsAt(
-                                                event.target
-                                                    .value,
-                                            )
-                                        }
-                                        className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
-                                    />
+                                            }
+                                            className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                        />
 
-                                    <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">
-                                        The annual subscription remains active until this date.
-                                    </span>
-                                </label>
+                                        <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">
+                                            The annual subscription remains active until this date.
+                                        </span>
+                                    </label>
+                                )
                             ) : (
                                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                                     <label>

@@ -352,6 +352,7 @@ export async function GET(
                 | "manage_users"
                 | "manage_roles"
                 | "stripe_setup"
+                | "zoom_setup"
                 | "workspace_settings",
         ) => {
             if (
@@ -371,7 +372,9 @@ export async function GET(
                     key ===
                         "workspace_settings" ||
                     key ===
-                        "stripe_setup"
+                        "stripe_setup" ||
+                    key ===
+                        "zoom_setup"
                 )
             ) {
                 return false;
@@ -428,6 +431,10 @@ export async function GET(
                 canManageStripe:
                     allowed(
                         "stripe_setup",
+                    ),
+                canManageZoom:
+                    allowed(
+                        "zoom_setup",
                     ),
                 canManageWorkspace:
                     allowed(

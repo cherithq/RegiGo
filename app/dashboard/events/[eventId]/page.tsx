@@ -29,6 +29,7 @@ import {
     Trophy,
     Users,
     Utensils,
+    Video,
 } from "lucide-react";
 import type {
     LucideIcon,
@@ -620,6 +621,21 @@ export default async function EventOverviewPage({
                     canAccessModule(
                         "tournament",
                         canScan,
+                    ),
+            },
+            {
+                moduleKey:
+                    "zoom_broadcast",
+                title: "Zoom Broadcast",
+                description:
+                    "Create a Zoom meeting and send the join link to registered and RSVP'd guests.",
+                href:
+                    `/dashboard/events/${eventId}/broadcast`,
+                icon: Video,
+                allowed:
+                    canAccessModule(
+                        "zoom_broadcast",
+                        canManageEvent,
                     ),
             },
             {

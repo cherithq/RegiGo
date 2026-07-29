@@ -12,7 +12,8 @@ export type EventAddonKey =
     | "stripe_payments"
     | "guest_table_selection"
     | "badge_designer"
-    | "direct_printing";
+    | "direct_printing"
+    | "zoom_broadcast";
 
 export type EventAddonDefinition = {
     key: EventAddonKey;
@@ -57,6 +58,13 @@ export const EVENT_ADDON_DEFINITIONS: EventAddonDefinition[] =
             description:
                 "Send badge jobs directly to a supported local high-quality printer.",
             plannedRoute: null,
+        },
+        {
+            key: "zoom_broadcast",
+            name: "Zoom Broadcast",
+            description:
+                "Create a Zoom meeting and send the join link to registered and RSVP'd guests.",
+            plannedRoute: "broadcast",
         },
     ];
 

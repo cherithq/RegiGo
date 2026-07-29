@@ -62,6 +62,14 @@ const addonCatalog = [
             "Print badges using any printer installed on the event computer.",
         route: "check-in-printing",
     },
+    {
+        key: "zoom_broadcast",
+        moduleKey: "zoom_broadcast",
+        name: "Zoom Broadcast",
+        description:
+            "Create a Zoom meeting and send the join link to registered and RSVP'd guests.",
+        route: "broadcast",
+    },
 ] satisfies Array<{
     key: string;
     moduleKey: CompanyModuleKey;

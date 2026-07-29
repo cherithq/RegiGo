@@ -52,6 +52,7 @@ import {
     UserCircle,
     UserRoundCheck,
     Users,
+    Video,
     WalletCards,
     X,
 } from "lucide-react";
@@ -64,6 +65,7 @@ type PermissionKey =
     | "canManageUsers"
     | "canManageRoles"
     | "canManageStripe"
+    | "canManageZoom"
     | "canManageWorkspace"
     | "canManageEvent"
     | "canScan"
@@ -703,6 +705,22 @@ export default function DashboardSidebar() {
                                   },
                                   {
                                       href:
+                                          `/dashboard/events/${eventId}/broadcast`,
+                                      label:
+                                          "Zoom Broadcast",
+                                      icon:
+                                          Video,
+                                      exact:
+                                          true,
+                                      permission:
+                                          "canManageEvent",
+                                      moduleKeys:
+                                          [
+                                              "zoom_broadcast",
+                                          ],
+                                  },
+                                  {
+                                      href:
                                           `/dashboard/events/${eventId}/analytics`,
                                       label:
                                           "Analytics",
@@ -900,6 +918,17 @@ export default function DashboardSidebar() {
                         },
                         {
                             href:
+                                "/dashboard/zoom-setup",
+                            label:
+                                "Zoom Setup",
+                            icon:
+                                Video,
+                            exact: true,
+                            permission:
+                                "canManageZoom",
+                        },
+                        {
+                            href:
                                 "/dashboard/company-plans",
                             label:
                                 "Company Plans",
@@ -1011,6 +1040,8 @@ export default function DashboardSidebar() {
                     "canManageRoles" ||
                 item.permission ===
                     "canManageStripe" ||
+                item.permission ===
+                    "canManageZoom" ||
                 item.permission ===
                     "canManageWorkspace";
 

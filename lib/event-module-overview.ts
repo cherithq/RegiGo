@@ -41,13 +41,14 @@ export const EVENT_MODULE_GROUPS: EventModuleGroup[] =
             eyebrow: "Event Day",
             title: "Live Event Tools",
             description:
-                "Check-in, badge printing, lucky draw, tournament and analytics operations.",
+                "Check-in, badge printing, lucky draw, tournament, Zoom broadcast and analytics operations.",
             keys: [
                 "scanner",
                 "checkin_printing",
                 "badges",
                 "lucky_draw",
                 "tournament",
+                "zoom_broadcast",
                 "analytics",
             ],
         },
@@ -180,6 +181,11 @@ export const EVENT_MODULE_TEXT: Partial<
         label: "Lucky Draw Settings",
         description:
             "Manage prize and eligibility configuration.",
+    },
+    zoom_broadcast: {
+        label: "Zoom Broadcast",
+        description:
+            "Create a Zoom meeting and send the join link to registered and RSVP'd guests.",
     },
 };
 

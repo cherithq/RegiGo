@@ -22,6 +22,7 @@ import {
     TableProperties,
     UserPlus,
     Users,
+    Video,
 } from "lucide-react";
 import {
     useCallback,
@@ -127,6 +128,8 @@ const addonIcons: Record<
         BadgeCheck,
     direct_printing:
         Printer,
+    zoom_broadcast:
+        Video,
 };
 
 const hiddenModuleKeys =
@@ -139,6 +142,7 @@ const hiddenModuleKeys =
         "table_selection",
         "badges",
         "direct_printing",
+        "zoom_broadcast",
     ]);
 
 // Same mode-relevance rules the dashboard sidebar already applies to nav

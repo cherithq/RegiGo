@@ -182,6 +182,7 @@ const hiddenModuleKeys =
         "table_selection",
         "badges",
         "direct_printing",
+        "zoom_broadcast",
     ]);
 
 // Same mode-relevance rules the dashboard sidebar already applies to nav

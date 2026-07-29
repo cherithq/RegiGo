@@ -23,10 +23,12 @@ export type CompanyModuleKey =
     | "settings"
     | "lucky_draw_settings"
     | "direct_printing"
+    | "zoom_broadcast"
     | "create_events"
     | "manage_users"
     | "manage_roles"
     | "stripe_setup"
+    | "zoom_setup"
     | "workspace_settings";
 
 export type CompanyUserRole =
@@ -184,6 +186,12 @@ export const companyModuleCatalog: ModuleDefinition[] = [
         group: "Advanced",
     },
     {
+        key: "zoom_broadcast",
+        label: "Zoom Broadcast",
+        description: "Create a Zoom meeting and share the join link with registered guests.",
+        group: "Advanced",
+    },
+    {
         key: "addons",
         label: "Add-ons",
         description: "Enable optional features for each event.",
@@ -226,6 +234,12 @@ export const companyModuleCatalog: ModuleDefinition[] = [
         group: "Company Management",
     },
     {
+        key: "zoom_setup",
+        label: "Zoom Setup",
+        description: "Connect the company's own Zoom account for event broadcasts.",
+        group: "Company Management",
+    },
+    {
         key: "workspace_settings",
         label: "Workspace Settings",
         description: "Manage company-level workspace configuration.",
@@ -252,6 +266,7 @@ const organizerDefaultOff =
         "manage_users",
         "manage_roles",
         "stripe_setup",
+        "zoom_setup",
         "workspace_settings",
     ]);
 

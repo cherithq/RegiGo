@@ -53,7 +53,10 @@ function getDefaultSubject(emailType: string, eventName: string) {
     return `Registration confirmed for ${eventName}`;
 }
 
-function getDefaultBody(emailType: string) {
+function getDefaultBody(
+    emailType: string,
+    options: { hasZoomLink?: boolean } = {},
+) {
     if (emailType === "table_assignment") {
         return `Hi {{name}},
 
@@ -81,12 +84,19 @@ You may view your QR pass here:
 {{pass_url}}`;
     }
 
+    const zoomParagraph = options.hasZoomLink
+        ? `
+
+Join our live Zoom broadcast here:
+{{zoom_link}}`
+        : "";
+
     return `Hi {{name}},
 
 Thank you for registering for {{event_name}}. Your details are below.
 
 You may view your QR pass here:
-{{pass_url}}`;
+{{pass_url}}${zoomParagraph}`;
 }
 
 async function queueTomorrowReminders(
@@ -300,6 +310,13 @@ async function runEmailWorker(req: Request) {
                     tableName = table?.table_name || "-";
                 }
 
+                const { data: zoomMeeting } = await admin
+                    .from("event_zoom_meetings")
+                    .select("join_url")
+                    .eq("event_id", event.id)
+                    .maybeSingle();
+                const zoomLink = zoomMeeting?.join_url || "";
+
                 const actionUrl = passUrl;
                 let qrBase64: string | null = null;
 
@@ -331,6 +348,7 @@ async function runEmailWorker(req: Request) {
                     qr_code: "Your QR code is displayed below.",
                     qr_image: "Your QR code is displayed below.",
                     company: "RegiGo",
+                    zoom_link: zoomLink,
                 };
 
                 const { data: savedTemplate } = await admin
@@ -347,7 +365,10 @@ async function runEmailWorker(req: Request) {
                     templateValues,
                 );
                 const body = renderTemplate(
-                    template?.body || getDefaultBody(job.email_type),
+                    template?.body ||
+                        getDefaultBody(job.email_type, {
+                            hasZoomLink: Boolean(zoomLink),
+                        }),
                     templateValues,
                 );
 
@@ -471,6 +492,19 @@ async function runEmailWorker(req: Request) {
                                           </a>
                                         </td>
                                       </tr>
+                                      ${
+                                          zoomLink
+                                              ? `
+                                                <tr>
+                                                  <td align="center" style="padding-top:12px">
+                                                    <a href="${escapeHtml(zoomLink)}" style="display:inline-block;background:#EC4899;color:#ffffff;padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:bold">
+                                                      Join Zoom Meeting
+                                                    </a>
+                                                  </td>
+                                                </tr>
+                                              `
+                                              : ""
+                                      }
                                     </table>
                                   </td>
                                 </tr>

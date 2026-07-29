@@ -502,6 +502,8 @@ export async function loadEffectiveModules({
                 "badges",
             direct_printing:
                 "direct_printing",
+            zoom_broadcast:
+                "zoom_broadcast",
         };
 
     if (eventId) {
