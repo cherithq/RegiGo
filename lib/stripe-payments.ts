@@ -314,7 +314,21 @@ export async function getPublicTicketContext({
         );
     }
 
+    const { count: totalTicketCount } =
+        await admin
+            .from("ticket_types")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", event.id);
+
     const now = Date.now();
+
+    const excludedTickets: {
+        ticket_name: string;
+        reason: string;
+    }[] = [];
 
     const availableTickets = (
         tickets || []
@@ -336,15 +350,44 @@ export async function getPublicTicketContext({
                   ticket.quantity_reserved -
                   ticket.quantity_sold;
 
-        return (
+        const included =
             salesStarted &&
             salesOpen &&
             (
                 remaining == null ||
                 remaining > 0
-            )
-        );
+            );
+
+        if (!included) {
+            const reason = !salesStarted
+                ? `Sales have not started yet (opens ${ticket.sales_start}).`
+                : !salesOpen
+                  ? `Sales have closed (closed ${ticket.sales_end}).`
+                  : "Sold out.";
+
+            excludedTickets.push({
+                ticket_name:
+                    ticket.ticket_name,
+                reason,
+            });
+        }
+
+        return included;
     });
+
+    // Raw is_active=true row count vs. filtered count, so the ticket page
+    // can explain *why* it's empty (no tickets at all vs. filtered out)
+    // instead of a bare "unavailable" message — the entire ticket_types
+    // pipeline (creation form, is_active default, sales-window filtering)
+    // has no automated coverage, so this is the fastest way to diagnose a
+    // report of "I configured tickets but the guest sees none."
+    const diagnostics = {
+        totalTicketCount:
+            totalTicketCount || 0,
+        rawActiveTicketCount:
+            (tickets || []).length,
+        excludedTickets,
+    };
 
     return {
         admin,
@@ -355,6 +398,7 @@ export async function getPublicTicketContext({
         usesPlatformStripeAccount:
             isPlatformCompany(company.id),
         tickets: availableTickets,
+        diagnostics,
     };
 }
 

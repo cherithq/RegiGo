@@ -28,36 +28,97 @@ export default async function TicketSelectionPage({
                 token,
             });
 
+        const eventBrandingRaw = (
+            context.event as {
+                event_branding?:
+                    unknown;
+            }
+        ).event_branding;
+        const branding = Array.isArray(
+            eventBrandingRaw,
+        )
+            ? (
+                  eventBrandingRaw as any[]
+              )[0]
+            : (
+                  eventBrandingRaw as
+                      | any
+                      | null
+              );
+        const primaryColor =
+            branding?.primary_color ||
+            "#4F46E5";
+        const secondaryColor =
+            branding?.secondary_color ||
+            "#EC4899";
+        const backgroundColor =
+            branding?.background_color ||
+            "#F7F5FF";
+
         return (
-            <main className="min-h-screen bg-[#F7F5FF] p-5 md:p-10">
+            <main
+                className="min-h-screen p-5 md:p-10"
+                style={{
+                    backgroundColor:
+                        backgroundColor,
+                }}
+            >
                 <div className="mx-auto max-w-5xl space-y-6">
-                    <section className="rounded-[2rem] bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-8 text-white shadow-xl">
-                        <p className="text-sm font-black uppercase tracking-[0.18em] text-white/75">
-                            Ticket Selection
-                        </p>
-                        <h1 className="mt-4 text-4xl font-black">
-                            {
-                                context.event
-                                    .event_name
-                            }
-                        </h1>
-                        <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">
-                            <span className="inline-flex items-center gap-2">
-                                <CalendarDays
-                                    size={16}
-                                />
-                                {
+                    <section
+                        className="relative overflow-hidden rounded-[2rem] p-8 text-white shadow-xl"
+                        style={{
+                            backgroundImage:
+                                branding
+                                    ?.banner_background_url
+                                    ? `url(${branding.banner_background_url})`
+                                    : `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                            backgroundSize:
+                                "cover",
+                            backgroundPosition:
+                                "center",
+                        }}
+                    >
+                        {branding
+                            ?.banner_background_url && (
+                            <div
+                                className="absolute inset-0 bg-black"
+                                style={{
+                                    opacity:
+                                        branding
+                                            ?.banner_overlay_opacity ??
+                                        0.45,
+                                }}
+                            />
+                        )}
+
+                        <div className="relative z-10">
+                            <p className="text-sm font-black uppercase tracking-[0.18em] text-white/75">
+                                Ticket Selection
+                            </p>
+                            <h1 className="mt-4 text-4xl font-black">
+                                {branding
+                                    ?.hero_title ||
                                     context.event
-                                        .event_date
-                                }
-                            </span>
-                            <span className="inline-flex items-center gap-2">
-                                <CreditCard
-                                    size={16}
-                                />
-                                Secure Stripe
-                                Checkout
-                            </span>
+                                        .event_name}
+                            </h1>
+                            <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">
+                                <span className="inline-flex items-center gap-2">
+                                    <CalendarDays
+                                        size={16}
+                                    />
+                                    {
+                                        context.event
+                                            .event_date
+                                    }
+                                </span>
+                                <span className="inline-flex items-center gap-2">
+                                    <CreditCard
+                                        size={16}
+                                    />
+                                    Secure Stripe
+                                    Checkout
+                                </span>
+                            </div>
                         </div>
                     </section>
 
@@ -87,6 +148,93 @@ export default async function TicketSelectionPage({
                                 context.tickets
                             }
                         />
+
+                        {context.tickets
+                            .length === 0 &&
+                            context.diagnostics
+                                .totalTicketCount >
+                                0 && (
+                                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
+                                    <p className="font-black">
+                                        This event has{" "}
+                                        {
+                                            context
+                                                .diagnostics
+                                                .totalTicketCount
+                                        }{" "}
+                                        ticket type
+                                        {context
+                                            .diagnostics
+                                            .totalTicketCount ===
+                                        1
+                                            ? ""
+                                            : "s"}{" "}
+                                        configured, but
+                                        none are
+                                        currently
+                                        available:
+                                    </p>
+                                    <ul className="mt-2 list-disc space-y-1 pl-5 font-semibold">
+                                        {context.diagnostics.excludedTickets.map(
+                                            (
+                                                item,
+                                                index,
+                                            ) => (
+                                                <li
+                                                    key={
+                                                        index
+                                                    }
+                                                >
+                                                    {
+                                                        item.ticket_name
+                                                    }{" "}
+                                                    —{" "}
+                                                    {
+                                                        item.reason
+                                                    }
+                                                </li>
+                                            ),
+                                        )}
+                                        {context
+                                            .diagnostics
+                                            .totalTicketCount >
+                                            context
+                                                .diagnostics
+                                                .rawActiveTicketCount && (
+                                            <li>
+                                                {context
+                                                    .diagnostics
+                                                    .totalTicketCount -
+                                                    context
+                                                        .diagnostics
+                                                        .rawActiveTicketCount}{" "}
+                                                ticket
+                                                type
+                                                {context
+                                                    .diagnostics
+                                                    .totalTicketCount -
+                                                    context
+                                                        .diagnostics
+                                                        .rawActiveTicketCount ===
+                                                1
+                                                    ? ""
+                                                    : "s"}{" "}
+                                                marked
+                                                inactive
+                                                by the
+                                                organiser.
+                                            </li>
+                                        )}
+                                    </ul>
+                                    <p className="mt-3 text-xs font-bold text-amber-700">
+                                        Contact the
+                                        event organiser
+                                        to make a
+                                        ticket
+                                        available.
+                                    </p>
+                                </div>
+                            )}
                     </section>
                 </div>
             </main>
