@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
     PaymentError,
     getPublicTicketContext,
+    reconcileOrderWithStripe,
 } from "@/lib/stripe-payments";
 import { activateQrPassIfReady } from "@/lib/qr-pass-activation";
 
@@ -42,7 +43,7 @@ export async function GET(
         let query = context.admin
             .from("orders")
             .select(
-                "id, order_number, currency, total_cents, status, paid_at, order_items(ticket_name, quantity)",
+                "id, order_number, currency, total_cents, status, paid_at, stripe_checkout_session_id, stripe_account_id, order_items(ticket_name, quantity)",
             )
             .eq(
                 "registration_id",
@@ -71,6 +72,21 @@ export async function GET(
             );
         }
 
+        if (order.status !== "paid") {
+            // The Stripe webhook may be delayed, misconfigured, or never
+            // arrive at all — ask Stripe directly so the guest isn't stuck
+            // on "payment processing" forever.
+            const reconciled =
+                await reconcileOrderWithStripe({
+                    admin: context.admin,
+                    order,
+                });
+
+            if (reconciled) {
+                order.status = "paid";
+            }
+        }
+
         let tableSelectionUrl: string | null = null;
 
         if (order.status === "paid") {
@@ -81,7 +97,6 @@ export async function GET(
                 admin: context.admin,
                 registrationId: context.registration.id,
             });
-
 
             const [addonResult, tableCountResult] =
                 await Promise.all([
@@ -121,7 +136,19 @@ export async function GET(
         return NextResponse.json(
             {
                 success: true,
-                order,
+                order: {
+                    id: order.id,
+                    order_number:
+                        order.order_number,
+                    currency:
+                        order.currency,
+                    total_cents:
+                        order.total_cents,
+                    status: order.status,
+                    paid_at: order.paid_at,
+                    order_items:
+                        order.order_items,
+                },
                 tableSelectionUrl,
             },
             {

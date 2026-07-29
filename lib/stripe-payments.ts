@@ -763,6 +763,106 @@ export async function createTicketCheckoutSession({
     }
 }
 
+/**
+ * Fallback for when the Stripe webhook never lands (misconfigured/missing
+ * webhook endpoint, wrong signing secret, delayed delivery, etc.) — asks
+ * Stripe directly whether a checkout session was actually paid, and if so,
+ * runs the same "mark paid" + pass-activation steps the webhook would have
+ * run. Called from the order-status polling routes so a guest isn't stuck
+ * on "payment processing" forever just because the webhook didn't arrive.
+ * Safe to call repeatedly: no-ops if the order is already paid.
+ */
+export async function reconcileOrderWithStripe({
+    admin,
+    order,
+}: {
+    admin: SupabaseClient;
+    order: {
+        id: string;
+        status: string;
+        stripe_checkout_session_id:
+            | string
+            | null;
+        stripe_account_id:
+            | string
+            | null;
+    };
+}): Promise<boolean> {
+    if (
+        order.status === "paid" ||
+        !order.stripe_checkout_session_id
+    ) {
+        return false;
+    }
+
+    const stripe = getStripe();
+
+    let session: Stripe.Checkout.Session;
+
+    try {
+        session =
+            await stripe.checkout.sessions.retrieve(
+                order.stripe_checkout_session_id,
+                undefined,
+                order.stripe_account_id
+                    ? {
+                          stripeAccount:
+                              order.stripe_account_id,
+                      }
+                    : undefined,
+            );
+    } catch {
+        // Session not retrievable yet (or Stripe hiccup) — leave the order
+        // pending, the guest's next poll will try again.
+        return false;
+    }
+
+    if (session.payment_status !== "paid") {
+        return false;
+    }
+
+    const { error: paidError } =
+        await admin.rpc(
+            "regigo_mark_ticket_order_paid_v2",
+            {
+                p_order_id: order.id,
+                p_checkout_session_id:
+                    session.id,
+                p_payment_intent_id:
+                    typeof session.payment_intent ===
+                    "string"
+                        ? session.payment_intent
+                        : session.payment_intent
+                              ?.id || null,
+                p_stripe_event_id:
+                    `reconcile_${session.id}`,
+                p_stripe_account_id:
+                    order.stripe_account_id,
+            },
+        );
+
+    if (paidError) {
+        return false;
+    }
+
+    const { data: paidOrder } =
+        await admin
+            .from("orders")
+            .select("registration_id")
+            .eq("id", order.id)
+            .maybeSingle();
+
+    if (paidOrder?.registration_id) {
+        await activateQrPassIfReady({
+            admin,
+            registrationId:
+                paidOrder.registration_id,
+        });
+    }
+
+    return true;
+}
+
 export async function refreshConnectedAccount({
     companyId,
     accountId,

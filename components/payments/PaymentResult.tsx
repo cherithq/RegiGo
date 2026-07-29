@@ -108,6 +108,16 @@ export default function PaymentResult({
         ["failed", "cancelled", "expired"].includes(
             order.status,
         );
+    const timedOut =
+        order &&
+        order.status !== "paid" &&
+        !failed &&
+        attempts >= 12;
+
+    function retry() {
+        setAttempts(0);
+        void load();
+    }
 
     return (
         <section className="w-full max-w-xl rounded-[2rem] bg-white p-8 text-center shadow-xl">
@@ -183,7 +193,8 @@ export default function PaymentResult({
 
             {order &&
                 order.status !== "paid" &&
-                !failed && (
+                !failed &&
+                !timedOut && (
                     <>
                         <Clock3 className="mx-auto text-amber-600" />
                         <h1 className="mt-5 text-3xl font-black">
@@ -195,6 +206,29 @@ export default function PaymentResult({
                         </p>
                     </>
                 )}
+
+            {timedOut && (
+                <>
+                    <Clock3 className="mx-auto text-amber-600" />
+                    <h1 className="mt-5 text-3xl font-black">
+                        Still waiting on Stripe
+                    </h1>
+                    <p className="mt-3 text-slate-600">
+                        We stopped checking automatically.
+                        If you completed payment on
+                        Stripe&apos;s page, tap below to
+                        check again — otherwise your card
+                        was not charged.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={retry}
+                        className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg"
+                    >
+                        Check Again
+                    </button>
+                </>
+            )}
 
             {failed && (
                 <>

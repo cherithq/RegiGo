@@ -1,6 +1,7 @@
 "use client";
 
 import {
+    AlertTriangle,
     Check,
     CreditCard,
     Loader2,
@@ -42,17 +43,24 @@ export default function PublicTicketSelector({
     slug,
     token,
     tickets,
+    quantity,
 }: {
     slug: string;
     token: string;
     tickets: TicketRow[];
+    quantity: number;
 }) {
+    const eligibleTickets = tickets.filter(
+        (ticket) =>
+            quantity >=
+                ticket.min_per_order &&
+            quantity <=
+                ticket.max_per_order,
+    );
     const [selectedId, setSelectedId] =
-        useState(tickets[0]?.id || "");
-    const [quantity, setQuantity] =
         useState(
-            tickets[0]?.min_per_order ||
-                1,
+            eligibleTickets[0]?.id ||
+                "",
         );
     const [working, setWorking] =
         useState(false);
@@ -124,6 +132,12 @@ export default function PublicTicketSelector({
 
     return (
         <div className="mt-6 space-y-4">
+            <p className="text-sm font-bold text-slate-500">
+                Ticket quantity is set
+                to your party size of{" "}
+                {quantity}.
+            </p>
+
             {tickets.map((ticket) => {
                 const active =
                     selectedId === ticket.id;
@@ -134,38 +148,56 @@ export default function PublicTicketSelector({
                         : ticket.quantity_available -
                           ticket.quantity_reserved -
                           ticket.quantity_sold;
+                const eligible =
+                    quantity >=
+                        ticket.min_per_order &&
+                    quantity <=
+                        ticket.max_per_order;
+                const eligibilityNote =
+                    !eligible
+                        ? quantity <
+                          ticket.min_per_order
+                            ? `Requires at least ${ticket.min_per_order} per order.`
+                            : `Limited to ${ticket.max_per_order} per order.`
+                        : null;
 
                 return (
                     <button
                         key={ticket.id}
                         type="button"
-                        onClick={() => {
+                        disabled={
+                            !eligible
+                        }
+                        onClick={() =>
                             setSelectedId(
                                 ticket.id,
-                            );
-                            setQuantity(
-                                ticket.min_per_order,
-                            );
-                        }}
+                            )
+                        }
                         className={`w-full rounded-3xl border p-5 text-left ${
-                            active
-                                ? "border-[#4F46E5] bg-[#F7F5FF]"
-                                : "border-slate-200"
+                            !eligible
+                                ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-60"
+                                : active
+                                  ? "border-[#4F46E5] bg-[#F7F5FF]"
+                                  : "border-slate-200"
                         }`}
                     >
                         <div className="flex items-start gap-4">
                             <span
                                 className={`mt-1 flex h-6 w-6 items-center justify-center rounded-full ${
-                                    active
+                                    active &&
+                                    eligible
                                         ? "bg-[#4F46E5] text-white"
                                         : "border border-slate-300"
                                 }`}
                             >
-                                {active && (
-                                    <Check
-                                        size={14}
-                                    />
-                                )}
+                                {active &&
+                                    eligible && (
+                                        <Check
+                                            size={
+                                                14
+                                            }
+                                        />
+                                    )}
                             </span>
                             <div className="flex-1">
                                 <div className="flex items-center justify-between gap-4">
@@ -194,47 +226,23 @@ export default function PublicTicketSelector({
                                         ? "Unlimited availability"
                                         : `${Math.max(remaining, 0)} remaining`}
                                 </p>
+                                {eligibilityNote && (
+                                    <p className="mt-2 flex items-center gap-1.5 text-xs font-bold text-amber-700">
+                                        <AlertTriangle
+                                            size={
+                                                13
+                                            }
+                                        />
+                                        {
+                                            eligibilityNote
+                                        }
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </button>
                 );
             })}
-
-            {selected &&
-                selected.max_per_order > 1 && (
-                    <select
-                        value={quantity}
-                        onChange={(event) =>
-                            setQuantity(
-                                Number(
-                                    event.target
-                                        .value,
-                                ),
-                            )
-                        }
-                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 font-bold"
-                    >
-                        {Array.from(
-                            {
-                                length:
-                                    selected.max_per_order -
-                                    selected.min_per_order +
-                                    1,
-                            },
-                            (_, index) =>
-                                selected.min_per_order +
-                                index,
-                        ).map((value) => (
-                            <option
-                                key={value}
-                                value={value}
-                            >
-                                Quantity:{" "}
-                                {value}
-                            </option>
-                        ))}
-                    </select>
-                )}
 
             {message && (
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 font-bold text-slate-700">
@@ -247,8 +255,10 @@ export default function PublicTicketSelector({
                 onClick={() =>
                     void checkout()
                 }
-                disabled={working}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg"
+                disabled={
+                    working || !selected
+                }
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-4 font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
             >
                 {working ? (
                     <Loader2

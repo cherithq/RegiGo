@@ -233,15 +233,6 @@ async function updateRsvp(
         )
             .trim()
             .toLowerCase();
-    const declineReason =
-        String(
-            formData.get(
-                "declineReason",
-            ) ||
-                "",
-        )
-            .trim()
-            .slice(0, 500);
     const rawPartySize =
         Number(
             formData.get(
@@ -392,14 +383,6 @@ async function updateRsvp(
                 responded_at:
                     new Date()
                         .toISOString(),
-                ...(response ===
-                "declined"
-                    ? {
-                          decline_reason:
-                              declineReason ||
-                              null,
-                      }
-                    : {}),
             })
             .eq(
                 "id",
@@ -435,7 +418,7 @@ async function updateRsvp(
         `${path}?message=${encodeURIComponent(
             response ===
             "accepted"
-                ? "Your attendance has been confirmed."
+                ? "Thanks for responding! Complete any steps below to finish your RSVP."
                 : "Your response has been recorded.",
         )}`,
     );
@@ -1148,19 +1131,6 @@ export default async function InvitePage({
                                 name="response"
                                 value="declined"
                             />
-
-                            <label className="mb-3 block">
-                                <span className="mb-2 block text-sm font-bold text-slate-500">
-                                    Let the organiser know why (optional)
-                                </span>
-                                <textarea
-                                    name="declineReason"
-                                    rows={2}
-                                    maxLength={500}
-                                    placeholder="e.g. Scheduling conflict"
-                                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
-                                />
-                            </label>
 
                             <button
                                 type="submit"

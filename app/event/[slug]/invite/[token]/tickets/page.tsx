@@ -147,6 +147,14 @@ export default async function TicketSelectionPage({
                             tickets={
                                 context.tickets
                             }
+                            quantity={
+                                Number(
+                                    context
+                                        .registration
+                                        .selected_ticket_quantity,
+                                ) ||
+                                1
+                            }
                         />
 
                         {context.tickets
