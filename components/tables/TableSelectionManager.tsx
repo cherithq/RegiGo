@@ -48,6 +48,9 @@ type Settings = {
 type Payload = {
     settings: Settings;
     tables: TableRow[];
+    registrationMode:
+        | "invitation_only"
+        | "public_registration";
 };
 
 async function readJson(response: Response) {
@@ -177,6 +180,8 @@ export default function TableSelectionManager({
             setData({
                 settings: result.settings,
                 tables: result.tables,
+                registrationMode:
+                    result.registrationMode,
             });
             setMessage(result.message);
         } catch (error) {
@@ -358,55 +363,61 @@ export default function TableSelectionManager({
                             </p>
 
                             <div className="mt-3 space-y-3">
-                                <label className="flex items-start gap-3 rounded-xl bg-white p-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={
-                                            data.settings
-                                                .allow_registration_selection
-                                        }
-                                        onChange={(event) =>
-                                            updateSetting(
-                                                "allow_registration_selection",
-                                                event.target.checked,
-                                            )
-                                        }
-                                        className="mt-1 h-4 w-4 accent-[#4F46E5]"
-                                    />
-                                    <span>
-                                        <span className="block text-sm font-black">
-                                            After public registration
+                                {data.registrationMode ===
+                                    "public_registration" && (
+                                    <label className="flex items-start gap-3 rounded-xl bg-white p-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={
+                                                data.settings
+                                                    .allow_registration_selection
+                                            }
+                                            onChange={(event) =>
+                                                updateSetting(
+                                                    "allow_registration_selection",
+                                                    event.target.checked,
+                                                )
+                                            }
+                                            className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-black">
+                                                After public registration
+                                            </span>
+                                            <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                                Guests submit the registration form, then choose and confirm a table.
+                                            </span>
                                         </span>
-                                        <span className="mt-1 block text-xs leading-5 text-slate-500">
-                                            Guests submit the registration form, then choose and confirm a table.
-                                        </span>
-                                    </span>
-                                </label>
+                                    </label>
+                                )}
 
-                                <label className="flex items-start gap-3 rounded-xl bg-white p-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={
-                                            data.settings
-                                                .allow_rsvp_selection
-                                        }
-                                        onChange={(event) =>
-                                            updateSetting(
-                                                "allow_rsvp_selection",
-                                                event.target.checked,
-                                            )
-                                        }
-                                        className="mt-1 h-4 w-4 accent-[#4F46E5]"
-                                    />
-                                    <span>
-                                        <span className="block text-sm font-black">
-                                            After accepting an invitation RSVP
+                                {data.registrationMode ===
+                                    "invitation_only" && (
+                                    <label className="flex items-start gap-3 rounded-xl bg-white p-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={
+                                                data.settings
+                                                    .allow_rsvp_selection
+                                            }
+                                            onChange={(event) =>
+                                                updateSetting(
+                                                    "allow_rsvp_selection",
+                                                    event.target.checked,
+                                                )
+                                            }
+                                            className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-black">
+                                                After accepting an invitation RSVP
+                                            </span>
+                                            <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                                Accepted invitees see a Choose Table action on their invitation page.
+                                            </span>
                                         </span>
-                                        <span className="mt-1 block text-xs leading-5 text-slate-500">
-                                            Accepted invitees see a Choose Table action on their invitation page.
-                                        </span>
-                                    </span>
-                                </label>
+                                    </label>
+                                )}
 
                                 <label className="flex items-start gap-3 rounded-xl bg-white p-3">
                                     <input

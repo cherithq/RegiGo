@@ -12,6 +12,7 @@ import {
     getPublicInvitation,
     InvitationError,
 } from "@/lib/guest-invitations";
+import { activateQrPassIfReady } from "@/lib/qr-pass-activation";
 import {
     type RegistrationAnswerValue,
     type RegistrationField,
@@ -198,6 +199,173 @@ function serviceClient() {
             },
         },
     );
+}
+
+async function resolveNextRsvpDestination({
+    admin,
+    eventId,
+    registrationId,
+    paymentStatus,
+}: {
+    admin: ReturnType<
+        typeof serviceClient
+    >;
+    eventId: string;
+    registrationId: string;
+    paymentStatus:
+        | string
+        | null
+        | undefined;
+}): Promise<
+    "tickets" | "tables" | "pass"
+> {
+    const [
+        paymentAddonResult,
+        ticketSalesSettingsResult,
+        ticketCountResult,
+        tableAddonResult,
+        tableSettingsResult,
+        tableCountResult,
+        assignmentResult,
+    ] = await Promise.all([
+        admin
+            .from("event_addons")
+            .select("*")
+            .eq("event_id", eventId)
+            .eq(
+                "addon_key",
+                "stripe_payments",
+            )
+            .maybeSingle(),
+
+        admin
+            .from("event_ticket_settings")
+            .select("allow_rsvp_sales")
+            .eq("event_id", eventId)
+            .maybeSingle(),
+
+        admin
+            .from("ticket_types")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", eventId),
+
+        admin
+            .from("event_addons")
+            .select("*")
+            .eq("event_id", eventId)
+            .eq(
+                "addon_key",
+                "guest_table_selection",
+            )
+            .maybeSingle(),
+
+        admin
+            .from(
+                "event_table_selection_settings",
+            )
+            .select(
+                "allow_rsvp_selection",
+            )
+            .eq("event_id", eventId)
+            .maybeSingle(),
+
+        admin
+            .from("event_tables")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", eventId)
+            .eq(
+                "guest_selectable",
+                true,
+            ),
+
+        admin
+            .from("table_assignments")
+            .select("table_id")
+            .eq(
+                "registration_id",
+                registrationId,
+            )
+            .maybeSingle(),
+    ]);
+
+    const paymentAddonData =
+        paymentAddonResult.data as unknown as
+            | Record<string, unknown>
+            | null;
+    const ticketSalesAllowed =
+        ticketSalesSettingsResult.data
+            ?.allow_rsvp_sales !== false;
+    const paymentEnabled =
+        (paymentAddonData?.enabled ===
+            true ||
+            paymentAddonData?.is_enabled ===
+                true) &&
+        ticketSalesAllowed;
+    const ticketCount =
+        ticketCountResult.count || 0;
+    const normalisedPaymentStatus =
+        normaliseStatus(
+            paymentStatus,
+        ) || "not_required";
+    const paymentRequired =
+        paymentEnabled &&
+        ticketCount > 0 &&
+        ![
+            "paid",
+            "not_required",
+        ].includes(
+            normalisedPaymentStatus,
+        );
+
+    if (paymentRequired) {
+        return "tickets";
+    }
+
+    const tableAddonData =
+        tableAddonResult.data as unknown as
+            | Record<string, unknown>
+            | null;
+    const tableAddonEnabled =
+        tableAddonData?.enabled ===
+            true ||
+        tableAddonData?.is_enabled ===
+            true;
+    const tableSettings =
+        tableSettingsResult.data as unknown as
+            | {
+                  allow_rsvp_selection?:
+                      | boolean
+                      | null;
+              }
+            | null;
+    const tableSelectionAvailable =
+        tableAddonEnabled &&
+        tableSettings
+            ?.allow_rsvp_selection !==
+            false &&
+        (
+            tableCountResult.count ||
+            0
+        ) > 0;
+    const assignment =
+        assignmentResult.data as unknown as
+            | { table_id: string | null }
+            | null;
+
+    if (
+        tableSelectionAvailable &&
+        !assignment?.table_id
+    ) {
+        return "tables";
+    }
+
+    return "pass";
 }
 
 function isCompatibilityError(
@@ -595,12 +763,53 @@ async function updateRsvp(
         path,
     );
 
+    if (
+        response !==
+        "accepted"
+    ) {
+        redirect(
+            `${path}?message=${encodeURIComponent(
+                "Your response has been recorded.",
+            )}`,
+        );
+    }
+
+    // Take the guest straight to whichever step is still outstanding
+    // instead of leaving them on this page to find it themselves — a
+    // guest with nothing left to do gets their pass activated right away.
+    const destination =
+        await resolveNextRsvpDestination(
+            {
+                admin,
+                eventId:
+                    eventJoined?.id ||
+                    "",
+                registrationId:
+                    invitation.registration_id,
+                paymentStatus:
+                    registrationJoined?.payment_status,
+            },
+        );
+
+    if (destination === "tickets") {
+        redirect(`${path}/tickets`);
+    }
+
+    if (destination === "tables") {
+        redirect(`${path}/tables`);
+    }
+
+    await activateQrPassIfReady({
+        admin,
+        registrationId:
+            invitation.registration_id,
+    });
+
     redirect(
-        `${path}?message=${encodeURIComponent(
-            response ===
-            "accepted"
-                ? "Thanks for responding! Complete any steps below to finish your RSVP."
-                : "Your response has been recorded.",
+        `/event/${encodeURIComponent(
+            slug,
+        )}/pass?registration=${encodeURIComponent(
+            invitation.registration_id,
         )}`,
     );
 }
@@ -849,6 +1058,7 @@ export default async function InvitePage({
 
     const [
         paymentAddonResult,
+        ticketSalesSettingsResult,
         tableAddonResult,
         ticketCountResult,
         tableSettingsResult,
@@ -872,6 +1082,19 @@ export default async function InvitePage({
                 .eq(
                     "addon_key",
                     "stripe_payments",
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "event_ticket_settings",
+                )
+                .select(
+                    "allow_rsvp_sales",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
                 )
                 .maybeSingle(),
 
@@ -993,10 +1216,13 @@ export default async function InvitePage({
               >
             | null;
     const paymentEnabled =
-        paymentAddonData?.enabled ===
+        (paymentAddonData?.enabled ===
             true ||
-        paymentAddonData?.is_enabled ===
-            true;
+            paymentAddonData?.is_enabled ===
+                true) &&
+        ticketSalesSettingsResult.data
+            ?.allow_rsvp_sales !==
+            false;
     const tableAddonData =
         tableAddonResult.data as unknown as
             | Record<
@@ -1189,6 +1415,29 @@ export default async function InvitePage({
     const registrationFields = (
         registrationFieldsData || []
     ) as unknown as RegistrationField[];
+
+    // Guest identity is already known from the invitation — only lock a
+    // field once we actually have a value on file for it, so a guest whose
+    // phone number wasn't captured yet can still fill it in.
+    const identityLockedValues: Record<
+        string,
+        string
+    > = {};
+
+    if (registration.full_name) {
+        identityLockedValues.full_name =
+            registration.full_name;
+    }
+
+    if (registration.email) {
+        identityLockedValues.email =
+            registration.email;
+    }
+
+    if (registration.phone) {
+        identityLockedValues.phone =
+            registration.phone;
+    }
 
     const invitePath =
         `/event/${encodeURIComponent(
@@ -1392,6 +1641,9 @@ export default async function InvitePage({
                                         string,
                                         RegistrationAnswerValue
                                     >
+                                }
+                                lockedValues={
+                                    identityLockedValues
                                 }
                             />
                         )}

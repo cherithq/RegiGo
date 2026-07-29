@@ -33,6 +33,12 @@ import type {
     CompanyModuleKey,
     ModuleDefinition,
 } from "@/lib/company-modules";
+import WorkspaceSection from "@/components/layout/WorkspaceSection";
+import {
+    EVENT_MODULE_GROUPS,
+    eventModuleDisplay,
+    isEventModuleForcedOn,
+} from "@/lib/event-module-overview";
 
 type Addon = {
     key: string;
@@ -129,11 +135,30 @@ const hiddenModuleKeys =
     >([
         "addons",
         "settings",
-        "invitations",
         "payments",
         "table_selection",
         "badges",
         "direct_printing",
+    ]);
+
+// Same mode-relevance rules the dashboard sidebar already applies to nav
+// items (`hideForInvitationOnly`/`hideForPublicRegistration` in
+// components/layout/DashboardSidebar.tsx) and the overview page's
+// management cards — guest list management and the public event website
+// don't apply to invitation/RSVP events; invitations & RSVP doesn't apply
+// to public-registration events.
+const invitationOnlyHiddenModuleKeys =
+    new Set<
+        CompanyModuleKey
+    >([
+        "guests",
+        "website",
+    ]);
+const publicRegistrationHiddenModuleKeys =
+    new Set<
+        CompanyModuleKey
+    >([
+        "invitations",
     ]);
 
 async function readJson(
@@ -449,40 +474,102 @@ export default function EventConfigurationManager({
         void reload();
     }, [reload]);
 
+    // Grouped and labelled the same way as the event overview page's module
+    // cards (lib/event-module-overview.ts mirrors its three sections), so
+    // this picker's layout matches the overview page rather than the
+    // catalog's own broader category taxonomy.
     const groupedModules =
         useMemo(() => {
-            const groups =
-                new Map<
-                    string,
-                    ModuleDefinition[]
-                >();
-
-            for (const moduleItem of
+            const visibleModules = (
                 data?.moduleCatalog ||
-                []) {
-                if (
-                    hiddenModuleKeys.has(
+                []
+            ).filter(
+                (moduleItem) =>
+                    !hiddenModuleKeys.has(
                         moduleItem.key,
-                    )
-                ) {
-                    continue;
-                }
-
-                groups.set(
-                    moduleItem.group,
-                    [
-                        ...(groups.get(
-                            moduleItem.group,
-                        ) || []),
+                    ) &&
+                    !(
+                        registrationMode ===
+                            "invitation_only" &&
+                        invitationOnlyHiddenModuleKeys.has(
+                            moduleItem.key,
+                        )
+                    ) &&
+                    !(
+                        registrationMode ===
+                            "public_registration" &&
+                        publicRegistrationHiddenModuleKeys.has(
+                            moduleItem.key,
+                        )
+                    ),
+            );
+            const byKey = new Map(
+                visibleModules.map(
+                    (moduleItem) => [
+                        moduleItem.key,
                         moduleItem,
                     ],
-                );
+                ),
+            );
+            const used =
+                new Set<CompanyModuleKey>();
+            const groups: {
+                eyebrow: string;
+                title: string;
+                description: string;
+                modules: ModuleDefinition[];
+            }[] = [];
+
+            for (const group of EVENT_MODULE_GROUPS) {
+                const modules =
+                    group.keys
+                        .map((key) =>
+                            byKey.get(key),
+                        )
+                        .filter(
+                            (
+                                moduleItem,
+                            ): moduleItem is ModuleDefinition =>
+                                Boolean(
+                                    moduleItem,
+                                ),
+                        );
+
+                for (const moduleItem of modules) {
+                    used.add(moduleItem.key);
+                }
+
+                if (modules.length > 0) {
+                    groups.push({
+                        ...group,
+                        modules,
+                    });
+                }
             }
 
-            return Array.from(
-                groups.entries(),
-            );
-        }, [data]);
+            const leftover =
+                visibleModules.filter(
+                    (moduleItem) =>
+                        !used.has(
+                            moduleItem.key,
+                        ),
+                );
+
+            if (leftover.length > 0) {
+                groups.push({
+                    eyebrow: "More",
+                    title: "Other Modules",
+                    description:
+                        "Additional modules not tied to a specific event area.",
+                    modules: leftover,
+                });
+            }
+
+            return groups;
+        }, [
+            data,
+            registrationMode,
+        ]);
 
     function markChanged() {
         setSaved(false);
@@ -512,6 +599,15 @@ export default function EventConfigurationManager({
                 ] === false,
         });
         markChanged();
+    }
+
+    function moduleDisplay(
+        moduleItem: ModuleDefinition,
+    ) {
+        return eventModuleDisplay(
+            moduleItem,
+            registrationMode,
+        );
     }
 
     function toggleAddon(
@@ -1366,23 +1462,30 @@ export default function EventConfigurationManager({
                 </div>
 
                 {groupedModules.map(
-                    ([
-                        group,
-                        modules,
-                    ]) => (
-                        <section
-                            key={group}
-                            className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"
+                    (group) => (
+                        <WorkspaceSection
+                            key={
+                                group.title
+                            }
+                            eyebrow={
+                                group.eyebrow
+                            }
+                            title={
+                                group.title
+                            }
+                            description={
+                                group.description
+                            }
                         >
-                            <h3 className="text-xl font-black">
-                                {group}
-                            </h3>
-
-                            <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                {modules.map(
+                            {group.modules.map(
                                     (
                                         module,
                                     ) => {
+                                        const forcedOn =
+                                            isEventModuleForcedOn(
+                                                module.key,
+                                                registrationMode,
+                                            );
                                         const companyAllows =
                                             data
                                                 .companyModules[
@@ -1391,17 +1494,19 @@ export default function EventConfigurationManager({
                                             ] !==
                                             false;
                                         const enabled =
-                                            companyAllows &&
-                                            enabledModules[
-                                                module
-                                                    .key
-                                            ] !==
-                                                false;
+                                            forcedOn ||
+                                            (companyAllows &&
+                                                enabledModules[
+                                                    module
+                                                        .key
+                                                ] !==
+                                                    false);
                                         const canToggle =
                                             data
                                                 .access
                                                 .canManageSettings &&
-                                            companyAllows;
+                                            companyAllows &&
+                                            !forcedOn;
 
                                         return (
                                             <button
@@ -1426,12 +1531,18 @@ export default function EventConfigurationManager({
                                                 <div>
                                                     <p className="font-black">
                                                         {
-                                                            module.label
+                                                            moduleDisplay(
+                                                                module,
+                                                            )
+                                                                .label
                                                         }
                                                     </p>
                                                     <p className="mt-1 text-xs leading-5 text-slate-500">
                                                         {
-                                                            module.description
+                                                            moduleDisplay(
+                                                                module,
+                                                            )
+                                                                .description
                                                         }
                                                     </p>
                                                 </div>
@@ -1449,8 +1560,7 @@ export default function EventConfigurationManager({
                                         );
                                     },
                                 )}
-                            </div>
-                        </section>
+                        </WorkspaceSection>
                     ),
                 )}
 

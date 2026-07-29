@@ -577,3 +577,47 @@ export function normalizeAnalyticsMode({
 
     return "public_registration";
 }
+
+// Shared by any admin settings page that needs to know an event's mode to
+// decide which of a "for RSVP" / "for public registration" pair of options
+// to show — same inputs/heuristic normalizeAnalyticsMode already uses
+// elsewhere (dashboard overview, sidebar nav), just packaged as one fetch.
+export async function resolveEventRegistrationMode(
+    admin: SupabaseClient,
+    eventId: string,
+): Promise<EventAnalyticsMode> {
+    const [
+        eventSettingsResult,
+        invitationCountResult,
+    ] = await Promise.all([
+        admin
+            .from("event_settings")
+            .select(
+                "registration_mode, registration_is_open",
+            )
+            .eq("event_id", eventId)
+            .maybeSingle(),
+
+        admin
+            .from("event_invitations")
+            .select("id", {
+                count: "exact",
+                head: true,
+            })
+            .eq("event_id", eventId),
+    ]);
+
+    return normalizeAnalyticsMode({
+        storedMode:
+            eventSettingsResult.data
+                ?.registration_mode,
+        registrationOpen:
+            eventSettingsResult.data
+                ?.registration_is_open !==
+            false,
+        invitationCount: Number(
+            invitationCountResult.count ||
+                0,
+        ),
+    });
+}

@@ -182,7 +182,7 @@ function integer(
     return parsed;
 }
 
-function registrationMode(
+export function registrationMode(
     value: unknown,
     fallback:
         RegistrationMode,

@@ -683,6 +683,7 @@ export async function POST(
         if (paymentRequired) {
             const [
                 stripeAddonResult,
+                ticketSalesSettingsResult,
                 companyResult,
             ] = await Promise.all([
                 admin
@@ -699,6 +700,19 @@ export async function POST(
                     .eq(
                         "addon_key",
                         "stripe_payments",
+                    )
+                    .maybeSingle(),
+
+                admin
+                    .from(
+                        "event_ticket_settings",
+                    )
+                    .select(
+                        "allow_registration_sales",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
                     )
                     .maybeSingle(),
 
@@ -723,6 +737,11 @@ export async function POST(
                     .data
                     ?.enabled ===
                 true;
+            const ticketSalesAllowed =
+                ticketSalesSettingsResult
+                    .data
+                    ?.allow_registration_sales !==
+                false;
             const usesPlatform =
                 Boolean(
                     company,
@@ -750,6 +769,7 @@ export async function POST(
 
             if (
                 !stripeAddonEnabled ||
+                !ticketSalesAllowed ||
                 !companyReady
             ) {
                 await admin

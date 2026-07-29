@@ -277,6 +277,19 @@ export async function getPublicTicketContext({
         );
     }
 
+    const { data: ticketSettings } = await admin
+        .from("event_ticket_settings")
+        .select("allow_rsvp_sales")
+        .eq("event_id", event.id)
+        .maybeSingle();
+
+    if (ticketSettings?.allow_rsvp_sales === false) {
+        throw new PaymentError(
+            "Ticket sales are not enabled for invitation RSVP guests.",
+            403,
+        );
+    }
+
     const { data: company, error } = await admin
         .from("companies")
         .select(

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { getSiteUrl } from "@/lib/guest-invitations";
 
 /**
@@ -103,20 +104,28 @@ export async function activateQrPassIfReady({
     const secret = process.env.EMAIL_WORKER_SECRET;
 
     if (secret) {
-        try {
-            await fetch(
-                new URL("/api/email-worker", getSiteUrl()),
-                {
-                    method: "POST",
-                    cache: "no-store",
-                    headers: {
-                        "x-worker-secret": secret,
+        // Kick the worker off after the response is sent — this used to be
+        // awaited inline, which meant every caller (payment confirmation,
+        // table-selection confirm, RSVP accept) blocked on a full SMTP
+        // verify + send cycle before the guest saw their pass unlock.
+        const siteUrl = getSiteUrl();
+
+        after(async () => {
+            try {
+                await fetch(
+                    new URL("/api/email-worker", siteUrl),
+                    {
+                        method: "POST",
+                        cache: "no-store",
+                        headers: {
+                            "x-worker-secret": secret,
+                        },
                     },
-                },
-            );
-        } catch {
-            // The email worker's cron safety-net will pick this job up.
-        }
+                );
+            } catch {
+                // The email worker's cron safety-net will pick this job up.
+            }
+        });
     }
 
     return true;

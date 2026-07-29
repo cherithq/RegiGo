@@ -94,6 +94,7 @@ export default async function RegisterPage({
         formResult,
         addonResult,
         stripeAddonResult,
+        ticketSalesSettingsResult,
         tableSettingsResult,
         tableCountResult,
     ] =
@@ -170,6 +171,19 @@ export default async function RegisterPage({
                 .eq(
                     "addon_key",
                     "stripe_payments",
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "event_ticket_settings",
+                )
+                .select(
+                    "allow_registration_sales",
+                )
+                .eq(
+                    "event_id",
+                    event.id,
                 )
                 .maybeSingle(),
 
@@ -346,7 +360,11 @@ export default async function RegisterPage({
     const stripePaymentsEnabled =
         stripeAddonResult.data
             ?.enabled ===
-        true;
+            true &&
+        ticketSalesSettingsResult
+            .data
+            ?.allow_registration_sales !==
+            false;
     const visibleTickets = (
         ticketsResult.data ||
         []

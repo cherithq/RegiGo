@@ -2,6 +2,7 @@ import Link from "next/link";
 import DeleteEventButton from "@/components/events/DeleteEventButton";
 import EventStatusToggle from "@/components/events/EventStatusToggle";
 import BackButton from "@/components/layout/BackButton";
+import WorkspaceSection from "@/components/layout/WorkspaceSection";
 import {
     BadgeCheck,
     BarChart3,
@@ -24,7 +25,6 @@ import {
     ScanLine,
     Settings,
     ShieldCheck,
-    Sparkles,
     TableProperties,
     Trophy,
     Users,
@@ -33,9 +33,6 @@ import {
 import type {
     LucideIcon,
 } from "lucide-react";
-import type {
-    ReactNode,
-} from "react";
 import { redirect } from "next/navigation";
 import {
     type CompanyModuleKey,
@@ -239,17 +236,19 @@ export default async function EventOverviewPage({
     const [
         guestResult,
         checkedInResult,
-        ticketResult,
         eventTableIdsResult,
         eventSettingsResult,
         invitationCountResult,
     ] = await Promise.all([
+        // Row-level (not head:true) since RSVP-mode events need to weight
+        // each registration by party size rather than just counting rows —
+        // the mode isn't known until eventSettingsResult resolves below, so
+        // both branches are computed from the same fetch afterwards.
         admin
             .from("registrations")
-            .select("id", {
-                count: "exact",
-                head: true,
-            })
+            .select(
+                "id, selected_ticket_quantity",
+            )
             .eq(
                 "event_id",
                 eventId,
@@ -257,21 +256,7 @@ export default async function EventOverviewPage({
 
         admin
             .from("check_ins")
-            .select("id", {
-                count: "exact",
-                head: true,
-            })
-            .eq(
-                "event_id",
-                eventId,
-            ),
-
-        admin
-            .from("ticket_types")
-            .select("id", {
-                count: "exact",
-                head: true,
-            })
+            .select("id, registration_id")
             .eq(
                 "event_id",
                 eventId,
@@ -348,11 +333,61 @@ export default async function EventOverviewPage({
               .in("table_id", eventTableIds)
         : { count: 0 };
 
-    const total =
-        guestResult.count || 0;
-    const checkedIn =
-        checkedInResult.count ||
-        0;
+    const registrationRows =
+        guestResult.data || [];
+    const checkInRows =
+        checkedInResult.data || [];
+    const checkedInRegistrationIds =
+        new Set(
+            checkInRows
+                .map(
+                    (row) =>
+                        row.registration_id,
+                )
+                .filter(Boolean),
+        );
+
+    function partySize(row: {
+        selected_ticket_quantity?:
+            | number
+            | null;
+    }) {
+        const quantity = Number(
+            row.selected_ticket_quantity,
+        );
+
+        return Number.isFinite(
+            quantity,
+        ) && quantity > 0
+            ? quantity
+            : 1;
+    }
+
+    // RSVP guests each represent a party, not a single seat — an
+    // invitation-only event's headcount is the sum of declared party
+    // sizes, not the number of registration rows. Public-registration
+    // events keep counting rows (unchanged from before).
+    const total = isInvitationOnly
+        ? registrationRows.reduce(
+              (sum, row) =>
+                  sum + partySize(row),
+              0,
+          )
+        : registrationRows.length;
+    const checkedIn = isInvitationOnly
+        ? registrationRows
+              .filter((row) =>
+                  checkedInRegistrationIds.has(
+                      row.id,
+                  ),
+              )
+              .reduce(
+                  (sum, row) =>
+                      sum +
+                      partySize(row),
+                  0,
+              )
+        : checkInRows.length;
     const pending =
         Math.max(
             total - checkedIn,
@@ -895,7 +930,7 @@ export default async function EventOverviewPage({
                             tableResult.count ||
                             0
                         }
-                        text={`${ticketResult.count || 0} ticket types`}
+                        text="Assigned to a table"
                         icon={Utensils}
                     />
                 </section>
@@ -989,40 +1024,6 @@ export default async function EventOverviewPage({
     );
 }
 
-function WorkspaceSection({
-    eyebrow,
-    title,
-    description,
-    children,
-}: {
-    eyebrow: string;
-    title: string;
-    description: string;
-    children: ReactNode;
-}) {
-    return (
-        <section className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
-            <div className="mb-6">
-                <div className="inline-flex items-center gap-2 rounded-full bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5]">
-                    <Sparkles
-                        size={16}
-                    />
-                    {eyebrow}
-                </div>
-                <h2 className="mt-4 text-2xl font-black">
-                    {title}
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                    {description}
-                </p>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                {children}
-            </div>
-        </section>
-    );
-}
 
 function ModuleCard({
     title,

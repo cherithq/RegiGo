@@ -59,6 +59,18 @@ type OrderRow = {
         | null;
 };
 
+type TicketSalesSettings = {
+    allow_registration_sales: boolean;
+    allow_rsvp_sales: boolean;
+};
+
+type TicketSalesPayload = {
+    settings: TicketSalesSettings;
+    registrationMode:
+        | "invitation_only"
+        | "public_registration";
+};
+
 type Payload = {
     isPlatformAdmin: boolean;
     company: {
@@ -265,6 +277,92 @@ export default function TicketPaymentsManager({
         useState("");
     const [message, setMessage] =
         useState("");
+    const [salesSettings, setSalesSettings] =
+        useState<TicketSalesPayload | null>(
+            null,
+        );
+
+    const reloadSalesSettings =
+        useCallback(async () => {
+            try {
+                const response =
+                    await fetch(
+                        `/api/events/${eventId}/ticket-settings`,
+                        {
+                            cache: "no-store",
+                        },
+                    );
+                const result =
+                    await readJson(
+                        response,
+                    );
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.error ||
+                            "Unable to load ticket sales settings.",
+                    );
+                }
+
+                setSalesSettings(
+                    result as TicketSalesPayload,
+                );
+            } catch {
+                // Non-fatal — the toggle panel just stays hidden if this
+                // fails; the main ticket list above still works.
+            }
+        }, [eventId]);
+
+    useEffect(() => {
+        void reloadSalesSettings();
+    }, [reloadSalesSettings]);
+
+    async function updateSalesSetting(
+        key: keyof TicketSalesSettings,
+        value: boolean,
+    ) {
+        if (!salesSettings) return;
+
+        setWorking(key);
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${eventId}/ticket-settings`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+                    },
+                    body: JSON.stringify({
+                        [key]: value,
+                    }),
+                },
+            );
+            const result =
+                await readJson(response);
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error ||
+                        "Unable to save ticket sales settings.",
+                );
+            }
+
+            setSalesSettings(
+                result as TicketSalesPayload,
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to save ticket sales settings.",
+            );
+        } finally {
+            setWorking("");
+        }
+    }
 
     const reload =
         useCallback(async () => {
@@ -973,6 +1071,82 @@ export default function TicketPaymentsManager({
                 </form>
 
                 <div className="space-y-6">
+                    {salesSettings && (
+                        <section className="rounded-[2rem] border border-indigo-100 bg-[#F7F5FF] p-5 shadow-sm sm:p-6">
+                            <p className="text-sm font-black text-[#4F46E5]">
+                                Where guests can buy tickets
+                            </p>
+
+                            <div className="mt-3 space-y-3">
+                                {salesSettings.registrationMode ===
+                                    "public_registration" && (
+                                    <label className="flex items-start gap-3 rounded-xl bg-white p-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={
+                                                salesSettings
+                                                    .settings
+                                                    .allow_registration_sales
+                                            }
+                                            disabled={
+                                                working ===
+                                                "allow_registration_sales"
+                                            }
+                                            onChange={(event) =>
+                                                void updateSalesSetting(
+                                                    "allow_registration_sales",
+                                                    event.target.checked,
+                                                )
+                                            }
+                                            className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-black">
+                                                After public registration
+                                            </span>
+                                            <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                                Guests see ticket options while submitting the registration form.
+                                            </span>
+                                        </span>
+                                    </label>
+                                )}
+
+                                {salesSettings.registrationMode ===
+                                    "invitation_only" && (
+                                    <label className="flex items-start gap-3 rounded-xl bg-white p-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={
+                                                salesSettings
+                                                    .settings
+                                                    .allow_rsvp_sales
+                                            }
+                                            disabled={
+                                                working ===
+                                                "allow_rsvp_sales"
+                                            }
+                                            onChange={(event) =>
+                                                void updateSalesSetting(
+                                                    "allow_rsvp_sales",
+                                                    event.target.checked,
+                                                )
+                                            }
+                                            className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-black">
+                                                After accepting an invitation RSVP
+                                            </span>
+                                            <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                                Accepted invitees see a Choose Ticket & Pay action on their invitation page.
+                                            </span>
+                                        </span>
+                                    </label>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
                     <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                         <div className="flex items-center justify-between gap-4">
                             <div>

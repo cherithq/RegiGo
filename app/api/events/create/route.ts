@@ -13,6 +13,9 @@ import {
     getCompanyActor,
     requireCompanyPermission,
 } from "@/lib/company-module-server";
+import {
+    registrationMode as normalizeRegistrationMode,
+} from "@/lib/event-configuration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -579,16 +582,35 @@ export async function POST(
                 ? body.addons
                 : {};
 
+        // Whichever guest-access method the event is created with governs
+        // the Guest Invitations & RSVP addon and registration-open state —
+        // same forcing lib/event-configuration.ts applies when an admin
+        // later switches mode from the settings page, so a freshly created
+        // event never starts in an inconsistent state (mode set one way,
+        // addon/registration-open left the other).
+        const requestedRegistrationMode =
+            allowedModules.invitations !==
+            false
+                ? normalizeRegistrationMode(
+                      body.registrationMode,
+                      "public_registration",
+                  )
+                : "public_registration";
+
         const addonRows =
             addonCatalog.map(
                 (addon) => {
                     const enabled =
-                        requestedAddons[
-                            addon.key
-                        ] === true &&
-                        allowedModules[
-                            addon.moduleKey
-                        ] !== false;
+                        addon.key ===
+                        "guest_invitations"
+                            ? requestedRegistrationMode ===
+                              "invitation_only"
+                            : requestedAddons[
+                                  addon.key
+                              ] === true &&
+                              allowedModules[
+                                  addon.moduleKey
+                              ] !== false;
 
                     requestedModules[
                         addon.moduleKey
@@ -603,6 +625,8 @@ export async function POST(
             );
 
         const registrationOpen =
+            requestedRegistrationMode ===
+                "public_registration" &&
             body.registrationOpen !==
             false;
         const now =
@@ -690,6 +714,8 @@ export async function POST(
                         createdEventId,
                     enabled_modules:
                         requestedModules,
+                    registration_mode:
+                        requestedRegistrationMode,
                     registration_is_open:
                         registrationOpen,
                     registration_closed_message:

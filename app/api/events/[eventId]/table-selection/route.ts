@@ -3,6 +3,7 @@ import {
     TableSelectionError,
     requireTableSelectionManager,
 } from "@/lib/table-selection";
+import { resolveEventRegistrationMode } from "@/lib/event-analytics-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -203,10 +204,17 @@ async function buildPayload(eventId: string) {
         },
     );
 
+    const registrationMode =
+        await resolveEventRegistrationMode(
+            admin,
+            eventId,
+        );
+
     return {
         configuration,
         settings: settingsResult.data,
         tables,
+        registrationMode,
     };
 }
 
@@ -227,6 +235,8 @@ export async function GET(
             event: payload.configuration.event,
             settings: payload.settings,
             tables: payload.tables,
+            registrationMode:
+                payload.registrationMode,
         });
     } catch (error) {
         return handle(error);
@@ -389,6 +399,8 @@ export async function PATCH(
             message: "Table-selection settings updated.",
             settings: payload.settings,
             tables: payload.tables,
+            registrationMode:
+                payload.registrationMode,
         });
     } catch (error) {
         return handle(error);

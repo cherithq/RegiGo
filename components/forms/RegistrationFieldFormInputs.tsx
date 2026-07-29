@@ -13,12 +13,18 @@ import {
 export default function RegistrationFieldFormInputs({
     fields,
     answers = {},
+    lockedValues = {},
 }: {
     fields: RegistrationField[];
     answers?: Record<
         string,
         RegistrationAnswerValue | undefined
     >;
+    // Fields whose key appears here are rendered read-only, pre-filled with
+    // the given value, regardless of field_type — used for identity fields
+    // (name/email/phone) that are already known from an invitation and
+    // shouldn't be editable through this form.
+    lockedValues?: Record<string, string>;
 }) {
     const orderedFields = [...fields].sort(
         (a, b) =>
@@ -37,6 +43,11 @@ export default function RegistrationFieldFormInputs({
                         field={field}
                         value={
                             answers[field.field_key]
+                        }
+                        lockedValue={
+                            lockedValues[
+                                field.field_key
+                            ]
                         }
                     />
                 </FieldShell>
@@ -84,10 +95,25 @@ const inputClass =
 function FieldControl({
     field,
     value,
+    lockedValue,
 }: {
     field: RegistrationField;
     value: RegistrationAnswerValue | undefined;
+    lockedValue?: string;
 }) {
+    if (lockedValue !== undefined) {
+        return (
+            <input
+                type="text"
+                name={field.field_key}
+                value={lockedValue}
+                readOnly
+                aria-readonly="true"
+                className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+            />
+        );
+    }
+
     const type = String(
         field.field_type || "text",
     ).toLowerCase();

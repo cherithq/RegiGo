@@ -6,6 +6,7 @@ import {
     Check,
     Clock3,
     FileText,
+    Globe2,
     Loader2,
     Lock,
     MapPin,
@@ -13,9 +14,11 @@ import {
     Save,
     Settings2,
     Sparkles,
+    UserPlus,
     Users,
 } from "lucide-react";
 import BackButton from "@/components/layout/BackButton";
+import WorkspaceSection from "@/components/layout/WorkspaceSection";
 import {
     useRouter,
 } from "next/navigation";
@@ -30,6 +33,11 @@ import type {
     CompanyModuleKey,
     ModuleDefinition,
 } from "@/lib/company-modules";
+import {
+    EVENT_MODULE_GROUPS,
+    eventModuleDisplay,
+    isEventModuleForcedOn,
+} from "@/lib/event-module-overview";
 
 type CompanyOption = {
     id: string;
@@ -170,11 +178,30 @@ const hiddenModuleKeys =
     >([
         "addons",
         "settings",
-        "invitations",
         "payments",
         "table_selection",
         "badges",
         "direct_printing",
+    ]);
+
+// Same mode-relevance rules the dashboard sidebar already applies to nav
+// items (`hideForInvitationOnly`/`hideForPublicRegistration` in
+// components/layout/DashboardSidebar.tsx) and the overview page's
+// management cards — guest list management and the public event website
+// don't apply to invitation/RSVP events; invitations & RSVP doesn't apply
+// to public-registration events.
+const invitationOnlyHiddenModuleKeys =
+    new Set<
+        CompanyModuleKey
+    >([
+        "guests",
+        "website",
+    ]);
+const publicRegistrationHiddenModuleKeys =
+    new Set<
+        CompanyModuleKey
+    >([
+        "invitations",
     ]);
 
 export default function CreateEventManager() {
@@ -217,6 +244,13 @@ export default function CreateEventManager() {
         registrationOpen,
         setRegistrationOpen,
     ] = useState(true);
+    const [
+        registrationMode,
+        setRegistrationMode,
+    ] = useState<
+        | "public_registration"
+        | "invitation_only"
+    >("public_registration");
     const [
         registrationClosedMessage,
         setRegistrationClosedMessage,
@@ -351,40 +385,102 @@ export default function CreateEventManager() {
             ],
         );
 
+    // Grouped and labelled the same way as the event overview page's module
+    // cards (lib/event-module-overview.ts mirrors its three sections), so
+    // this picker's layout matches what the admin will see once the event
+    // exists, rather than the catalog's own broader category taxonomy.
     const groupedModules =
         useMemo(() => {
-            const groups =
-                new Map<
-                    string,
-                    ModuleDefinition[]
-                >();
-
-            for (const moduleItem of
+            const visibleModules = (
                 data?.moduleCatalog ||
-                []) {
-                if (
-                    hiddenModuleKeys.has(
+                []
+            ).filter(
+                (moduleItem) =>
+                    !hiddenModuleKeys.has(
                         moduleItem.key,
-                    )
-                ) {
-                    continue;
-                }
-
-                groups.set(
-                    moduleItem.group,
-                    [
-                        ...(groups.get(
-                            moduleItem.group,
-                        ) || []),
+                    ) &&
+                    !(
+                        registrationMode ===
+                            "invitation_only" &&
+                        invitationOnlyHiddenModuleKeys.has(
+                            moduleItem.key,
+                        )
+                    ) &&
+                    !(
+                        registrationMode ===
+                            "public_registration" &&
+                        publicRegistrationHiddenModuleKeys.has(
+                            moduleItem.key,
+                        )
+                    ),
+            );
+            const byKey = new Map(
+                visibleModules.map(
+                    (moduleItem) => [
+                        moduleItem.key,
                         moduleItem,
                     ],
-                );
+                ),
+            );
+            const used =
+                new Set<CompanyModuleKey>();
+            const groups: {
+                eyebrow: string;
+                title: string;
+                description: string;
+                modules: ModuleDefinition[];
+            }[] = [];
+
+            for (const group of EVENT_MODULE_GROUPS) {
+                const modules =
+                    group.keys
+                        .map((key) =>
+                            byKey.get(key),
+                        )
+                        .filter(
+                            (
+                                moduleItem,
+                            ): moduleItem is ModuleDefinition =>
+                                Boolean(
+                                    moduleItem,
+                                ),
+                        );
+
+                for (const moduleItem of modules) {
+                    used.add(moduleItem.key);
+                }
+
+                if (modules.length > 0) {
+                    groups.push({
+                        ...group,
+                        modules,
+                    });
+                }
             }
 
-            return Array.from(
-                groups.entries(),
-            );
-        }, [data]);
+            const leftover =
+                visibleModules.filter(
+                    (moduleItem) =>
+                        !used.has(
+                            moduleItem.key,
+                        ),
+                );
+
+            if (leftover.length > 0) {
+                groups.push({
+                    eyebrow: "More",
+                    title: "Other Modules",
+                    description:
+                        "Additional modules not tied to a specific event area.",
+                    modules: leftover,
+                });
+            }
+
+            return groups;
+        }, [
+            data,
+            registrationMode,
+        ]);
 
     function chooseCompany(
         nextCompanyId: string,
@@ -452,6 +548,15 @@ export default function CreateEventManager() {
         );
     }
 
+    function moduleDisplay(
+        moduleItem: ModuleDefinition,
+    ) {
+        return eventModuleDisplay(
+            moduleItem,
+            registrationMode,
+        );
+    }
+
     function toggleAddon(
         addon:
             AddonDefinition,
@@ -471,6 +576,49 @@ export default function CreateEventManager() {
                     !current[
                         addon.key
                     ],
+            }),
+        );
+    }
+
+    function chooseRegistrationMode(
+        mode:
+            | "public_registration"
+            | "invitation_only",
+    ) {
+        if (
+            mode ===
+                "invitation_only" &&
+            company?.modules
+                .invitations ===
+                false
+        ) {
+            setMessage(
+                "Guest Invitations & RSVP is disabled for this company.",
+            );
+            return;
+        }
+
+        setRegistrationMode(mode);
+
+        const invitationsOn =
+            mode ===
+            "invitation_only";
+
+        setRegistrationOpen(
+            !invitationsOn,
+        );
+        setAddons(
+            (current) => ({
+                ...current,
+                guest_invitations:
+                    invitationsOn,
+            }),
+        );
+        setEnabledModules(
+            (current) => ({
+                ...current,
+                invitations:
+                    invitationsOn,
             }),
         );
     }
@@ -532,6 +680,7 @@ export default function CreateEventManager() {
                                           )
                                         : null,
                                 registrationOpen,
+                                registrationMode,
                                 registrationClosedMessage,
                                 enabledModules,
                                 addons,
@@ -885,6 +1034,10 @@ export default function CreateEventManager() {
 
                     <button
                         type="button"
+                        disabled={
+                            registrationMode ===
+                            "invitation_only"
+                        }
                         onClick={() =>
                             setRegistrationOpen(
                                 (
@@ -893,7 +1046,7 @@ export default function CreateEventManager() {
                                     !current,
                             )
                         }
-                        className={`flex items-center justify-between rounded-2xl border p-4 text-left ${
+                        className={`flex items-center justify-between rounded-2xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
                             registrationOpen
                                 ? "border-emerald-200 bg-emerald-50"
                                 : "border-red-200 bg-red-50"
@@ -907,7 +1060,10 @@ export default function CreateEventManager() {
                                     : "Closed"}
                             </p>
                             <p className="mt-1 text-xs text-slate-500">
-                                Control the initial public registration status.
+                                {registrationMode ===
+                                "invitation_only"
+                                    ? "Invitation & RSVP events don't use public registration."
+                                    : "Control the initial public registration status."}
                             </p>
                         </div>
                         <Switch
@@ -943,6 +1099,121 @@ export default function CreateEventManager() {
                 </div>
             </section>
 
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+                <div className="flex items-center gap-3">
+                    <Settings2 className="text-[#4F46E5]" />
+                    <div>
+                        <h2 className="text-2xl font-black">
+                            Guest Access Method
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Choose one way for guests to join this event. Public registration and invitations cannot be active together.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <button
+                        type="button"
+                        onClick={() =>
+                            chooseRegistrationMode(
+                                "public_registration",
+                            )
+                        }
+                        className={`rounded-[1.5rem] border p-5 text-left transition ${
+                            registrationMode ===
+                            "public_registration"
+                                ? "border-emerald-300 bg-emerald-50 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-emerald-200"
+                        }`}
+                    >
+                        <div className="flex items-start justify-between gap-4">
+                            <span
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                                    registrationMode ===
+                                    "public_registration"
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-emerald-50 text-emerald-700"
+                                }`}
+                            >
+                                <Globe2 size={20} />
+                            </span>
+
+                            {registrationMode ===
+                                "public_registration" && (
+                                <Check className="text-emerald-600" />
+                            )}
+                        </div>
+
+                        <h3 className="mt-4 text-lg font-black">
+                            Public Registration
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                            Guests open the public event page and complete the registration form themselves.
+                        </p>
+                    </button>
+
+                    <button
+                        type="button"
+                        disabled={
+                            company?.modules
+                                .invitations ===
+                            false
+                        }
+                        onClick={() =>
+                            chooseRegistrationMode(
+                                "invitation_only",
+                            )
+                        }
+                        className={`rounded-[1.5rem] border p-5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            registrationMode ===
+                            "invitation_only"
+                                ? "border-indigo-300 bg-[#F7F5FF] shadow-sm"
+                                : "border-slate-200 bg-white hover:border-indigo-200"
+                        }`}
+                    >
+                        <div className="flex items-start justify-between gap-4">
+                            <span
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                                    registrationMode ===
+                                    "invitation_only"
+                                        ? "bg-[#4F46E5] text-white"
+                                        : "bg-[#F7F5FF] text-[#4F46E5]"
+                                }`}
+                            >
+                                <UserPlus size={20} />
+                            </span>
+
+                            {company?.modules
+                                .invitations ===
+                            false ? (
+                                <Lock className="text-slate-400" />
+                            ) : (
+                                registrationMode ===
+                                    "invitation_only" && (
+                                    <Check className="text-[#4F46E5]" />
+                                )
+                            )}
+                        </div>
+
+                        <h3 className="mt-4 text-lg font-black">
+                            Invitation & RSVP
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                            The event company adds guests and sends each person a private invitation link to accept or decline.
+                        </p>
+
+                        {company?.modules
+                            .invitations ===
+                            false && (
+                            <p className="mt-3 text-xs font-black text-amber-700">
+                                Guest Invitations is disabled for this company.
+                            </p>
+                        )}
+                    </button>
+                </div>
+            </section>
+
             <section className="space-y-5">
                 <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center gap-3">
@@ -959,23 +1230,30 @@ export default function CreateEventManager() {
                 </div>
 
                 {groupedModules.map(
-                    ([
-                        group,
-                        modules,
-                    ]) => (
-                        <section
-                            key={group}
-                            className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"
+                    (group) => (
+                        <WorkspaceSection
+                            key={
+                                group.title
+                            }
+                            eyebrow={
+                                group.eyebrow
+                            }
+                            title={
+                                group.title
+                            }
+                            description={
+                                group.description
+                            }
                         >
-                            <h3 className="text-xl font-black">
-                                {group}
-                            </h3>
-
-                            <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                {modules.map(
+                            {group.modules.map(
                                     (
                                         module,
                                     ) => {
+                                        const forcedOn =
+                                            isEventModuleForcedOn(
+                                                module.key,
+                                                registrationMode,
+                                            );
                                         const allowed =
                                             company
                                                 ?.modules[
@@ -984,12 +1262,13 @@ export default function CreateEventManager() {
                                             ] !==
                                             false;
                                         const enabled =
-                                            allowed &&
-                                            enabledModules[
-                                                module
-                                                    .key
-                                            ] !==
-                                                false;
+                                            forcedOn ||
+                                            (allowed &&
+                                                enabledModules[
+                                                    module
+                                                        .key
+                                                ] !==
+                                                    false);
 
                                         return (
                                             <button
@@ -1003,7 +1282,8 @@ export default function CreateEventManager() {
                                                     )
                                                 }
                                                 disabled={
-                                                    !allowed
+                                                    !allowed ||
+                                                    forcedOn
                                                 }
                                                 className={`flex items-center justify-between gap-4 rounded-2xl border p-4 text-left transition ${
                                                     enabled
@@ -1014,12 +1294,18 @@ export default function CreateEventManager() {
                                                 <div>
                                                     <p className="font-black">
                                                         {
-                                                            module.label
+                                                            moduleDisplay(
+                                                                module,
+                                                            )
+                                                                .label
                                                         }
                                                     </p>
                                                     <p className="mt-1 text-xs leading-5 text-slate-500">
                                                         {
-                                                            module.description
+                                                            moduleDisplay(
+                                                                module,
+                                                            )
+                                                                .description
                                                         }
                                                     </p>
                                                 </div>
@@ -1042,8 +1328,7 @@ export default function CreateEventManager() {
                                         );
                                     },
                                 )}
-                            </div>
-                        </section>
+                        </WorkspaceSection>
                     ),
                 )}
             </section>
@@ -1056,13 +1341,19 @@ export default function CreateEventManager() {
                             Optional Add-ons
                         </h2>
                         <p className="mt-1 text-sm text-slate-500">
-                            These controls also switch on the corresponding event module.
+                            These controls also switch on the corresponding event module. Guest Invitations is controlled by the Guest Access Method above.
                         </p>
                     </div>
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    {data.addonCatalog.map(
+                    {data.addonCatalog
+                        .filter(
+                            (addon) =>
+                                addon.key !==
+                                "guest_invitations",
+                        )
+                        .map(
                         (addon) => {
                             const allowed =
                                 company
