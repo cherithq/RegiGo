@@ -588,6 +588,28 @@ export async function GET() {
                                     licence.status ===
                                     "used",
                             ).length,
+                        nextLicenceExpiry:
+                            companyLicences
+                                .filter(
+                                    (
+                                        licence,
+                                    ) =>
+                                        licence.status ===
+                                            "available" &&
+                                        licence.expires_at &&
+                                        new Date(
+                                            licence.expires_at,
+                                        ).getTime() >
+                                            now,
+                                )
+                                .map(
+                                    (
+                                        licence,
+                                    ) =>
+                                        licence.expires_at as string,
+                                )
+                                .sort()[0] ||
+                            null,
                     };
                 },
             );

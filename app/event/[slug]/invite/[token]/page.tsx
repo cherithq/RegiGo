@@ -799,6 +799,30 @@ async function updateRsvp(
         redirect(`${path}/tables`);
     }
 
+    // resolveNextRsvpDestination already worked out that payment isn't
+    // required for this guest (otherwise it would have sent them to
+    // "tickets"). Registrations created for the invite/RSVP flow default
+    // payment_status to "pending" regardless of whether the event actually
+    // charges for tickets, and nothing else ever corrects that value — so
+    // without this, isQrPassReady/activateQrPassIfReady's plain
+    // `payment_status === "pending"` check would block the pass forever on
+    // free RSVP events.
+    if (
+        registrationJoined?.payment_status !==
+        "paid"
+    ) {
+        await admin
+            .from("registrations")
+            .update({
+                payment_status:
+                    "not_required",
+            })
+            .eq(
+                "id",
+                invitation.registration_id,
+            );
+    }
+
     await activateQrPassIfReady({
         admin,
         registrationId:
@@ -1349,12 +1373,51 @@ export default async function InvitePage({
                 | null;
     }
 
-    const qrTicketActive =
+    let qrTicketActive =
         (
             qrTicketResult.data as unknown as
                 | { is_active?: boolean | null }
                 | null
         )?.is_active === true;
+
+    // Self-heal guests stuck on "Your pass isn't ready yet": registrations
+    // created for the invite/RSVP flow default payment_status to "pending"
+    // regardless of whether the event actually charges for tickets, and
+    // nothing corrects that value once we've determined (via
+    // paymentRequired/tableSelectionAvailable above) that this guest has
+    // nothing left to do. Without this, a guest who accepted before this
+    // fix shipped would stay stuck forever since activation only used to
+    // run inside the accept form's submit handler, never on page reload.
+    if (
+        accepted &&
+        !qrTicketActive &&
+        !paymentRequired &&
+        (!tableSelectionAvailable ||
+            Boolean(assignedTable))
+    ) {
+        if (
+            registration.payment_status !==
+            "paid"
+        ) {
+            await admin
+                .from("registrations")
+                .update({
+                    payment_status:
+                        "not_required",
+                })
+                .eq(
+                    "id",
+                    registration.id,
+                );
+        }
+
+        qrTicketActive =
+            await activateQrPassIfReady({
+                admin,
+                registrationId:
+                    registration.id,
+            });
+    }
 
     // Same organiser-configured fields as the public self-registration
     // form (`app/event/[slug]/register/page.tsx`) — reused as-is so RSVP

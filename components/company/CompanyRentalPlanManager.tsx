@@ -65,6 +65,9 @@ type Company = {
     teamMemberCount: number;
     availableEventLicences: number;
     usedEventLicences: number;
+    nextLicenceExpiry:
+        | string
+        | null;
     subscription:
         | {
               status:
@@ -240,15 +243,15 @@ function planType(
         : "Annual rental";
 }
 
-// The "RegiGo" plan is the platform's own lifetime plan and never expires;
-// every other annual plan (e.g. "Project Catalyst") keeps a required end date.
-function isLifetimePlan(
-    plan:
-        | RentalPlan
+// The "RegiGo" company (the platform's own account) never expires;
+// every other event company (e.g. "Project Catalyst") keeps a required expiry.
+function isLifetimeCompany(
+    company:
+        | Company
         | null,
 ) {
     return (
-        plan?.plan_name
+        company?.company_name
             .trim()
             .toLowerCase() ===
         "regigo"
@@ -544,8 +547,8 @@ export default function CompanyRentalPlanManager() {
                                 subscriptionEndsAt:
                                     selectedPlan.rental_type ===
                                         "annual" &&
-                                    !isLifetimePlan(
-                                        selectedPlan,
+                                    !isLifetimeCompany(
+                                        company,
                                     )
                                         ? annualEndsAt
                                         : null,
@@ -798,10 +801,16 @@ export default function CompanyRentalPlanManager() {
                                     Current plan expiry
                                 </p>
                                 <p className="mt-2 font-black text-slate-800">
-                                    {formatDate(
-                                        company.subscription
-                                            ?.ends_at,
-                                    )}
+                                    {isLifetimeCompany(
+                                        company,
+                                    )
+                                        ? "No expiry"
+                                        : formatDate(
+                                              company
+                                                  .subscription
+                                                  ?.ends_at ||
+                                                  company.nextLicenceExpiry,
+                                          )}
                                 </p>
                             </div>
                         </div>
@@ -858,8 +867,8 @@ export default function CompanyRentalPlanManager() {
 
                             {selectedPlan.rental_type ===
                             "annual" ? (
-                                isLifetimePlan(
-                                    selectedPlan,
+                                isLifetimeCompany(
+                                    company,
                                 ) ? (
                                     <div className="mt-5 rounded-2xl bg-slate-50 p-4">
                                         <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -869,7 +878,7 @@ export default function CompanyRentalPlanManager() {
                                             No expiry
                                         </p>
                                         <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">
-                                            The RegiGo plan never expires.
+                                            The RegiGo company account never expires.
                                         </p>
                                     </div>
                                 ) : (

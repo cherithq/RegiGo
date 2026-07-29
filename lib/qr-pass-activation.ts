@@ -5,6 +5,54 @@ import { after } from "next/server";
 import { getSiteUrl } from "@/lib/guest-invitations";
 
 /**
+ * A raw payment_status of "pending" only actually blocks the pass if the
+ * event genuinely sells paid tickets. Registrations created through the
+ * invite/RSVP flow default payment_status to "pending" regardless of
+ * whether the event has Stripe payments enabled at all, and nothing ever
+ * corrects that value for guests who don't need to pay — so trusting the
+ * raw string on its own stuck every free/non-payment RSVP guest on "Your
+ * pass isn't ready yet" forever.
+ */
+async function isPaymentGenuinelyPending({
+    admin,
+    eventId,
+    paymentStatus,
+}: {
+    admin: SupabaseClient;
+    eventId: string;
+    paymentStatus?: string | null;
+}): Promise<boolean> {
+    if (paymentStatus !== "pending") {
+        return false;
+    }
+
+    const [paymentAddonResult, ticketCountResult] =
+        await Promise.all([
+            admin
+                .from("event_addons")
+                .select("enabled")
+                .eq("event_id", eventId)
+                .eq("addon_key", "stripe_payments")
+                .maybeSingle(),
+
+            admin
+                .from("ticket_types")
+                .select("id", {
+                    count: "exact",
+                    head: true,
+                })
+                .eq("event_id", eventId),
+        ]);
+
+    const paymentEnabled =
+        paymentAddonResult.data?.enabled === true;
+    const ticketCount =
+        ticketCountResult.count || 0;
+
+    return paymentEnabled && ticketCount > 0;
+}
+
+/**
  * Flips a guest's qr_tickets row to active (and queues their confirmation
  * email) once payment and required table selection are both satisfied.
  * Safe to call repeatedly from any completion point (payment webhook,
@@ -31,7 +79,14 @@ export async function activateQrPassIfReady({
         return false;
     }
 
-    if (registration.payment_status === "pending") {
+    if (
+        await isPaymentGenuinelyPending({
+            admin,
+            eventId: registration.event_id,
+            paymentStatus:
+                registration.payment_status,
+        })
+    ) {
         return false;
     }
 
@@ -149,7 +204,14 @@ export async function isQrPassReady({
         payment_status?: string | null;
     };
 }): Promise<boolean> {
-    if (registration.payment_status === "pending") {
+    if (
+        await isPaymentGenuinelyPending({
+            admin,
+            eventId: registration.event_id,
+            paymentStatus:
+                registration.payment_status,
+        })
+    ) {
         return false;
     }
 
