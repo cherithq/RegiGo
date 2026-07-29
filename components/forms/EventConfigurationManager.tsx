@@ -297,7 +297,6 @@ export default function EventConfigurationManager({
             | "event-details"
             | "registration"
             | "modules"
-            | "addons"
         >("event-details");
 
     function hydrate(
@@ -804,22 +803,10 @@ export default function EventConfigurationManager({
                         activeTab ===
                         "modules"
                     }
-                    label="Modules"
+                    label="Modules & Add-ons"
                     onClick={() =>
                         setActiveTab(
                             "modules",
-                        )
-                    }
-                />
-                <TabButton
-                    active={
-                        activeTab ===
-                        "addons"
-                    }
-                    label="Add-ons"
-                    onClick={() =>
-                        setActiveTab(
-                            "addons",
                         )
                     }
                 />
@@ -1356,10 +1343,10 @@ export default function EventConfigurationManager({
                             <Settings2 className="text-[#4F46E5]" />
                             <div>
                                 <h2 className="text-2xl font-black">
-                                    Event Modules
+                                    Modules & Add-ons
                                 </h2>
                                 <p className="mt-1 text-sm text-slate-500">
-                                    Company-disabled modules remain locked. Add-on modules are managed below.
+                                    Company-disabled modules remain locked. Optional add-ons are listed below the core modules.
                                 </p>
                             </div>
                         </div>
@@ -1466,13 +1453,10 @@ export default function EventConfigurationManager({
                         </section>
                     ),
                 )}
-            </section>
-            )}
 
-            {activeTab === "addons" && (
-            <section
-                className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8"
-            >
+                <section
+                    className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8"
+                >
                 <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <Puzzle className="text-[#4F46E5]" />
@@ -1623,6 +1607,7 @@ export default function EventConfigurationManager({
                         },
                     )}
                 </div>
+                </section>
             </section>
             )}
 

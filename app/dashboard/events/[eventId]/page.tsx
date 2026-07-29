@@ -400,7 +400,9 @@ export default async function EventOverviewPage({
                     canAccessModule(
                         "invitations",
                         canManageEvent,
-                    ),
+                    ) &&
+                    registrationMode !==
+                        "public_registration",
             },
             {
                 moduleKey:
@@ -611,9 +613,13 @@ export default async function EventOverviewPage({
                 moduleKey:
                     "registration",
                 title:
-                    "Registration Builder",
+                    isInvitationOnly
+                        ? "RSVP Guest Fields"
+                        : "Registration Builder",
                 description:
-                    "Create and manage registration form fields.",
+                    isInvitationOnly
+                        ? "Create and manage the questions RSVP guests answer when accepting."
+                        : "Create and manage registration form fields.",
                 href:
                     `/dashboard/events/${eventId}/registration`,
                 icon:
@@ -638,7 +644,8 @@ export default async function EventOverviewPage({
                     canAccessModule(
                         "website",
                         canManageEvent,
-                    ),
+                    ) &&
+                    !isInvitationOnly,
             },
             {
                 moduleKey:

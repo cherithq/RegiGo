@@ -164,30 +164,65 @@ export async function GET(
             }),
         );
 
+        // Stats reflect total headcount (party size), not the number of
+        // invitation/registration records — one invite can bring more than
+        // one guest, so sum selected_ticket_quantity instead of counting
+        // rows. Same fallback-to-1 rule as the party-size badge in the
+        // guest table below.
+        const partySize = (guest: {
+            selected_ticket_quantity: number | null;
+        }) =>
+            Math.max(
+                1,
+                Number(
+                    guest.selected_ticket_quantity ||
+                        1,
+                ),
+            );
+        const sumPartySize = (
+            list: typeof guests,
+        ) =>
+            list.reduce(
+                (sum, guest) =>
+                    sum + partySize(guest),
+                0,
+            );
+
         const stats = {
-            total: guests.length,
-            notInvited: guests.filter(
-                (guest) =>
-                    !guest.invitation ||
-                    guest.rsvp_status ===
-                        "not_invited",
-            ).length,
-            pending: guests.filter((guest) =>
-                ["pending", "opened"].includes(
-                    String(
-                        guest.invitation?.status ||
-                            guest.rsvp_status,
+            total: sumPartySize(guests),
+            notInvited: sumPartySize(
+                guests.filter(
+                    (guest) =>
+                        !guest.invitation ||
+                        guest.rsvp_status ===
+                            "not_invited",
+                ),
+            ),
+            pending: sumPartySize(
+                guests.filter((guest) =>
+                    ["pending", "opened"].includes(
+                        String(
+                            guest.invitation
+                                ?.status ||
+                                guest.rsvp_status,
+                        ),
                     ),
                 ),
-            ).length,
-            accepted: guests.filter(
-                (guest) =>
-                    guest.rsvp_status === "accepted",
-            ).length,
-            declined: guests.filter(
-                (guest) =>
-                    guest.rsvp_status === "declined",
-            ).length,
+            ),
+            accepted: sumPartySize(
+                guests.filter(
+                    (guest) =>
+                        guest.rsvp_status ===
+                        "accepted",
+                ),
+            ),
+            declined: sumPartySize(
+                guests.filter(
+                    (guest) =>
+                        guest.rsvp_status ===
+                        "declined",
+                ),
+            ),
         };
 
         return response({

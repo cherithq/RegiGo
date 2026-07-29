@@ -954,16 +954,26 @@ export async function saveEventConfiguration({
                 eventInput.venue,
                 300,
             );
+        // Guests can't be sent to Stripe checkout unless ticket types are
+        // also switched on — these are two separate settings
+        // (`addons.stripe_payments` vs. `events.enable_ticket_types`) that
+        // organisers otherwise have to discover and flip separately, which
+        // silently breaks the registration → payment redirect. Whenever
+        // this save turns the Stripe Payments addon on, force ticket types
+        // on too, regardless of whatever the event fields separately said.
         const requestedEnableTicketTypes =
-            typeof eventInput.enableTicketTypes ===
-            "boolean"
-                ? eventInput.enableTicketTypes
-                : typeof eventInput.enable_ticket_types ===
+            addonInput.stripe_payments ===
+            true
+                ? true
+                : typeof eventInput.enableTicketTypes ===
                     "boolean"
-                  ? eventInput.enable_ticket_types
-                  : configuration
-                        .event
-                        .enable_ticket_types;
+                  ? eventInput.enableTicketTypes
+                  : typeof eventInput.enable_ticket_types ===
+                      "boolean"
+                    ? eventInput.enable_ticket_types
+                    : configuration
+                          .event
+                          .enable_ticket_types;
 
         const {
             error:
@@ -1204,80 +1214,4 @@ export async function saveEventConfiguration({
     return loadEventConfiguration(
         eventId,
     );
-}
-
-export async function updateSingleAddon({
-    eventId,
-    addonKey,
-    enabled,
-}: {
-    eventId: string;
-    addonKey: EventAddonKey;
-    enabled: boolean;
-}) {
-    const current =
-        await loadEventConfiguration(
-            eventId,
-        );
-
-    if (
-        !current.actor
-            .canManageAddons
-    ) {
-        throw new EventConfigurationError(
-            "You do not have permission to change event add-ons.",
-            403,
-        );
-    }
-
-    if (
-        addonKey ===
-        "guest_invitations"
-    ) {
-        throw new EventConfigurationError(
-            "Guest Invitations is controlled by Guest Access Method. Choose Public Registration or Invitation & RSVP in Settings & Add-ons.",
-            409,
-        );
-    }
-
-    const definition =
-        eventAddonDefinitions.find(
-            (item) =>
-                item.key ===
-                addonKey,
-        );
-
-    if (!definition) {
-        throw new EventConfigurationError(
-            "Choose a valid add-on.",
-        );
-    }
-
-    if (
-        enabled &&
-        !(
-            current.actor
-                .isPlatformAdmin ||
-            current
-                .companyModules[
-                definition
-                    .moduleKey
-            ] !== false
-        )
-    ) {
-        throw new EventConfigurationError(
-            "This add-on is disabled for the event company.",
-            403,
-        );
-    }
-
-    return saveEventConfiguration({
-        eventId,
-        body: {
-            addons: {
-                [addonKey]:
-                    enabled,
-            },
-        },
-    });
 }

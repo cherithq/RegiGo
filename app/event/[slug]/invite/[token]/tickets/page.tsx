@@ -2,6 +2,7 @@ import {
     CalendarDays,
     CreditCard,
     Ticket,
+    XCircle,
 } from "lucide-react";
 import PublicTicketSelector from "@/components/payments/PublicTicketSelector";
 import {
@@ -257,7 +258,10 @@ export default async function TicketSelectionPage({
         return (
             <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] p-5">
                 <section className="w-full max-w-lg rounded-[2rem] bg-white p-8 text-center shadow-xl">
-                    <h1 className="text-3xl font-black">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                        <XCircle size={26} />
+                    </div>
+                    <h1 className="mt-5 text-3xl font-black">
                         Tickets unavailable
                     </h1>
                     <p className="mt-4 leading-7 text-slate-600">

@@ -63,7 +63,9 @@ export default async function RegistrationBuilderPage({
                             <ClipboardList
                                 size={16}
                             />
-                            Registration Form Builder
+                            {context.isInvitationOnly
+                                ? "RSVP Guest Fields"
+                                : "Registration Form Builder"}
                         </div>
 
                         <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
@@ -75,7 +77,9 @@ export default async function RegistrationBuilderPage({
                         </p>
 
                         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
-                            RegiGo automatically creates the registration form for every event. Company Admins and assigned Organizers can add, edit, remove and reorder fields.
+                            {context.isInvitationOnly
+                                ? "These are the same questions RSVP guests answer when accepting their invitation. Company Admins and assigned Organizers can add, edit, remove and reorder fields."
+                                : "RegiGo automatically creates the registration form for every event. Company Admins and assigned Organizers can add, edit, remove and reorder fields."}
                         </p>
 
                         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -89,18 +93,19 @@ export default async function RegistrationBuilderPage({
                                 Edit Fields
                             </a>
 
-                            {eventSlug && (
-                                <Link
-                                    href={`/event/${eventSlug}/register`}
-                                    target="_blank"
-                                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700"
-                                >
-                                    <Eye
-                                        size={18}
-                                    />
-                                    Preview Public Form
-                                </Link>
-                            )}
+                            {eventSlug &&
+                                !context.isInvitationOnly && (
+                                    <Link
+                                        href={`/event/${eventSlug}/register`}
+                                        target="_blank"
+                                        className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700"
+                                    >
+                                        <Eye
+                                            size={18}
+                                        />
+                                        Preview Public Form
+                                    </Link>
+                                )}
                         </div>
                     </div>
                 </section>

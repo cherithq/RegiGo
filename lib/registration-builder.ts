@@ -118,6 +118,7 @@ export async function getRegistrationBuilderContext(
         profileResult,
         eventResult,
         membershipResult,
+        eventSettingsResult,
     ] = await Promise.all([
         admin
             .from("profiles")
@@ -156,7 +157,24 @@ export async function getRegistrationBuilderContext(
                 "status",
                 "active",
             ),
+
+        admin
+            .from(
+                "event_settings",
+            )
+            .select(
+                "registration_mode",
+            )
+            .eq(
+                "event_id",
+                eventId,
+            )
+            .maybeSingle(),
     ]);
+    const isInvitationOnly =
+        eventSettingsResult.data
+            ?.registration_mode ===
+        "invitation_only";
 
     if (
         profileResult.error
@@ -383,6 +401,7 @@ export async function getRegistrationBuilderContext(
         fields:
             fields || [],
         isPlatformAdmin,
+        isInvitationOnly,
         role,
     };
 }

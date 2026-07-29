@@ -139,6 +139,10 @@ type NavItem = {
         boolean;
     hideForInvitationOnly?:
         boolean;
+    hideForPublicRegistration?:
+        boolean;
+    labelForInvitationOnly?:
+        string;
 };
 
 type NavGroup = {
@@ -505,6 +509,8 @@ export default function DashboardSidebar() {
                                           true,
                                       permission:
                                           "canManageEvent",
+                                      hideForPublicRegistration:
+                                          true,
                                       moduleKeys:
                                           [
                                               "invitations",
@@ -722,6 +728,8 @@ export default function DashboardSidebar() {
                                           `/dashboard/events/${eventId}/registration`,
                                       label:
                                           "Registration Builder",
+                                      labelForInvitationOnly:
+                                          "RSVP Guest Fields",
                                       icon:
                                           ClipboardList,
                                       exact:
@@ -744,6 +752,8 @@ export default function DashboardSidebar() {
                                           true,
                                       permission:
                                           "canManageEvent",
+                                      hideForInvitationOnly:
+                                          true,
                                       moduleKeys:
                                           [
                                               "website",
@@ -943,6 +953,21 @@ export default function DashboardSidebar() {
             [eventGroups],
         );
 
+    function resolveLabel(
+        item: NavItem,
+    ) {
+        if (
+            item.labelForInvitationOnly &&
+            context?.event
+                ?.mode ===
+                "invitation_only"
+        ) {
+            return item.labelForInvitationOnly;
+        }
+
+        return item.label;
+    }
+
     function canShow(
         item: NavItem,
     ) {
@@ -963,6 +988,15 @@ export default function DashboardSidebar() {
             context.event
                 ?.mode ===
                 "invitation_only"
+        ) {
+            return false;
+        }
+
+        if (
+            item.hideForPublicRegistration &&
+            context.event
+                ?.mode ===
+                "public_registration"
         ) {
             return false;
         }
@@ -1253,9 +1287,12 @@ export default function DashboardSidebar() {
                                                     key={
                                                         item.href
                                                     }
-                                                    item={
-                                                        item
-                                                    }
+                                                    item={{
+                                                        ...item,
+                                                        label: resolveLabel(
+                                                            item,
+                                                        ),
+                                                    }}
                                                     active={itemIsActive(
                                                         pathname,
                                                         item,

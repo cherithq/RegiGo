@@ -13,8 +13,14 @@ import {
     InvitationError,
 } from "@/lib/guest-invitations";
 import {
+    type RegistrationAnswerValue,
+    type RegistrationField,
+} from "@/lib/registration-field-options";
+import RegistrationFieldFormInputs from "@/components/forms/RegistrationFieldFormInputs";
+import {
     Check,
     CheckCircle2,
+    Loader2,
     Lock,
     Users,
     XCircle,
@@ -138,6 +144,12 @@ type RegistrationRow = {
         | null;
     table_selection_status?:
         | string
+        | null;
+    custom_answers?:
+        | Record<
+              string,
+              unknown
+          >
         | null;
 };
 
@@ -325,12 +337,172 @@ async function updateRsvp(
             ? invitation
                   .events[0]
             : invitation.events;
+    const registrationJoined =
+        Array.isArray(
+            invitation.registrations,
+        )
+            ? invitation
+                  .registrations[0]
+            : invitation.registrations;
 
     const registrationStatus =
         response ===
         "accepted"
             ? "confirmed"
             : "declined";
+
+    // Same organiser-configured fields the public self-registration form
+    // collects — only asked when accepting, since a decline doesn't need
+    // them, and the Decline button skips browser validation for the same
+    // reason (see formNoValidate below).
+    let customAnswers:
+        | Record<string, unknown>
+        | undefined;
+
+    if (
+        response ===
+        "accepted"
+    ) {
+        const { data: formRow } =
+            await admin
+                .from(
+                    "registration_forms",
+                )
+                .select("id")
+                .eq(
+                    "event_id",
+                    eventJoined?.id,
+                )
+                .maybeSingle();
+
+        const { data: fieldRows } =
+            formRow?.id
+                ? await admin
+                      .from(
+                          "registration_fields",
+                      )
+                      .select("*")
+                      .eq(
+                          "form_id",
+                          formRow.id,
+                      )
+                : { data: [] };
+        const fields = (
+            fieldRows || []
+        ) as unknown as RegistrationField[];
+
+        if (fields.length > 0) {
+            const answers: Record<
+                string,
+                unknown
+            > = {
+                ...((registrationJoined?.custom_answers as
+                    | Record<string, unknown>
+                    | null) || {}),
+            };
+
+            for (const field of fields) {
+                const type = String(
+                    field.field_type ||
+                        "text",
+                ).toLowerCase();
+                const key =
+                    field.field_key;
+
+                if (
+                    type ===
+                        "checkbox" ||
+                    type ===
+                        "image_checkbox"
+                ) {
+                    const values = formData
+                        .getAll(key)
+                        .map((value) =>
+                            String(value),
+                        )
+                        .filter(Boolean);
+
+                    if (values.length > 0) {
+                        answers[key] =
+                            values;
+                    } else {
+                        delete answers[
+                            key
+                        ];
+                    }
+                    continue;
+                }
+
+                if (type === "file") {
+                    const file =
+                        formData.get(key);
+
+                    if (
+                        file instanceof
+                            File &&
+                        file.size > 0
+                    ) {
+                        answers[key] = {
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                        };
+                    }
+                    continue;
+                }
+
+                const raw =
+                    formData.get(key);
+                const value =
+                    typeof raw ===
+                    "string"
+                        ? raw.trim()
+                        : "";
+
+                if (value) {
+                    answers[key] = value;
+                } else {
+                    delete answers[key];
+                }
+            }
+
+            for (const field of fields) {
+                if (!field.is_required)
+                    continue;
+
+                const value =
+                    answers[
+                        field.field_key
+                    ];
+                const empty =
+                    value === undefined ||
+                    value === null ||
+                    (typeof value ===
+                        "string" &&
+                        value.trim() ===
+                            "") ||
+                    (Array.isArray(
+                        value,
+                    ) &&
+                        value.length ===
+                            0);
+
+                if (empty) {
+                    redirect(
+                        `/event/${encodeURIComponent(
+                            slug,
+                        )}/invite/${encodeURIComponent(
+                            token,
+                        )}?error=${encodeURIComponent(
+                            `${field.field_label} is required.`,
+                        )}`,
+                    );
+                }
+            }
+
+            customAnswers = answers;
+        }
+    }
 
     const registrationResult =
         await admin
@@ -347,6 +519,12 @@ async function updateRsvp(
                     ? {
                           selected_ticket_quantity:
                               partySize,
+                      }
+                    : {}),
+                ...(customAnswers
+                    ? {
+                          custom_answers:
+                              customAnswers,
                       }
                     : {}),
             })
@@ -537,8 +715,10 @@ function ErrorState({
     return (
         <main className="min-h-screen bg-[#F7F5FF] px-4 py-10 text-slate-950">
             <section className="mx-auto max-w-xl rounded-[2rem] border border-red-200 bg-white p-7 text-center shadow-sm sm:p-10">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-2xl">
-                    !
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                    <XCircle
+                        size={26}
+                    />
                 </div>
 
                 <h1 className="mt-5 text-2xl font-black text-red-600">
@@ -675,6 +855,7 @@ export default async function InvitePage({
         tableCountResult,
         assignmentResult,
         qrTicketResult,
+        registrationFormResult,
     ] =
         await Promise.all([
             admin
@@ -789,6 +970,17 @@ export default async function InvitePage({
                 .eq(
                     "registration_id",
                     registration.id,
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "registration_forms",
+                )
+                .select("*")
+                .eq(
+                    "event_id",
+                    event.id,
                 )
                 .maybeSingle(),
         ]);
@@ -938,6 +1130,66 @@ export default async function InvitePage({
                 | null
         )?.is_active === true;
 
+    // Same organiser-configured fields as the public self-registration
+    // form (`app/event/[slug]/register/page.tsx`) — reused as-is so RSVP
+    // and self-registration guests answer identical questions, seeding a
+    // default form the first time either flow is visited for this event.
+    let registrationForm =
+        registrationFormResult.data as unknown as
+            | { id: string }
+            | null;
+
+    if (!registrationForm) {
+        const { data: seededFormId } =
+            await admin.rpc(
+                "regigo_seed_registration_form_v1",
+                {
+                    p_event_id: event.id,
+                },
+            );
+
+        if (seededFormId) {
+            const seededFormResult =
+                await admin
+                    .from(
+                        "registration_forms",
+                    )
+                    .select("*")
+                    .eq(
+                        "id",
+                        seededFormId,
+                    )
+                    .maybeSingle();
+
+            registrationForm =
+                seededFormResult.data as unknown as
+                    | { id: string }
+                    | null;
+        }
+    }
+
+    const { data: registrationFieldsData } =
+        registrationForm?.id
+            ? await admin
+                  .from(
+                      "registration_fields",
+                  )
+                  .select("*")
+                  .eq(
+                      "form_id",
+                      registrationForm.id,
+                  )
+                  .order(
+                      "sort_order",
+                      {
+                          ascending: true,
+                      },
+                  )
+            : { data: [] };
+    const registrationFields = (
+        registrationFieldsData || []
+    ) as unknown as RegistrationField[];
+
     const invitePath =
         `/event/${encodeURIComponent(
             slug,
@@ -1080,63 +1332,76 @@ export default async function InvitePage({
                         />
                     </div>
 
-                    <div className="mt-7 grid items-stretch gap-4 sm:grid-cols-2">
-                        <form
-                            action={
-                                updateRsvp
+                    <form
+                        action={
+                            updateRsvp
+                        }
+                        className="mt-7 space-y-4"
+                    >
+                        <input
+                            type="hidden"
+                            name="slug"
+                            value={
+                                slug
                             }
-                            className="flex flex-col gap-4"
-                        >
-                            <input
-                                type="hidden"
-                                name="slug"
-                                value={
-                                    slug
-                                }
-                            />
-                            <input
-                                type="hidden"
-                                name="token"
-                                value={
-                                    token
-                                }
-                            />
-                            <input
-                                type="hidden"
-                                name="response"
-                                value="accepted"
-                            />
+                        />
+                        <input
+                            type="hidden"
+                            name="token"
+                            value={
+                                token
+                            }
+                        />
 
-                            <label className="block">
-                                <span className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
-                                    <Users
-                                        size={
-                                            13
-                                        }
-                                    />
-                                    Guests attending
-                                    (including you)
-                                </span>
-                                <input
-                                    type="number"
-                                    name="partySize"
-                                    min={
-                                        1
+                        <label className="block">
+                            <span className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                                <Users
+                                    size={
+                                        13
                                     }
-                                    max={
-                                        20
-                                    }
-                                    defaultValue={
-                                        registration.selected_ticket_quantity ||
-                                        1
-                                    }
-                                    className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-lg font-black text-slate-950 outline-none transition focus:border-[#4F46E5] focus:ring-4 focus:ring-[#4F46E5]/10"
                                 />
-                            </label>
+                                Guests attending
+                                (including you)
+                            </span>
+                            <input
+                                type="number"
+                                name="partySize"
+                                min={
+                                    1
+                                }
+                                max={
+                                    20
+                                }
+                                defaultValue={
+                                    registration.selected_ticket_quantity ||
+                                    1
+                                }
+                                className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-lg font-black text-slate-950 outline-none transition focus:border-[#4F46E5] focus:ring-4 focus:ring-[#4F46E5]/10"
+                            />
+                        </label>
 
+                        {registrationFields.length >
+                            0 && (
+                            <RegistrationFieldFormInputs
+                                fields={
+                                    registrationFields
+                                }
+                                answers={
+                                    (registration.custom_answers ||
+                                        {}) as Record<
+                                        string,
+                                        RegistrationAnswerValue
+                                    >
+                                }
+                            />
+                        )}
+
+                        <div className="grid gap-3 sm:grid-cols-2">
                             <button
                                 type="submit"
-                                className="mt-auto inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3.5 font-black text-white shadow-lg shadow-indigo-200 transition hover:opacity-95"
+                                name="response"
+                                value="accepted"
+                                className="inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3.5 font-black text-white shadow-lg shadow-indigo-200 transition hover:opacity-95"
                             >
                                 <CheckCircle2
                                     size={
@@ -1145,37 +1410,13 @@ export default async function InvitePage({
                                 />
                                 Accept Invitation
                             </button>
-                        </form>
-
-                        <form
-                            action={
-                                updateRsvp
-                            }
-                            className="flex"
-                        >
-                            <input
-                                type="hidden"
-                                name="slug"
-                                value={
-                                    slug
-                                }
-                            />
-                            <input
-                                type="hidden"
-                                name="token"
-                                value={
-                                    token
-                                }
-                            />
-                            <input
-                                type="hidden"
-                                name="response"
-                                value="declined"
-                            />
 
                             <button
                                 type="submit"
-                                className="flex w-full flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 font-black text-slate-500 transition hover:border-slate-300 hover:bg-slate-50"
+                                name="response"
+                                value="declined"
+                                formNoValidate
+                                className="inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 font-black text-slate-500 transition hover:border-slate-300 hover:bg-slate-50"
                             >
                                 <XCircle
                                     size={
@@ -1184,8 +1425,8 @@ export default async function InvitePage({
                                 />
                                 Decline Invitation
                             </button>
-                        </form>
-                    </div>
+                        </div>
+                    </form>
                 </section>
 
                 {accepted && (() => {
@@ -1232,13 +1473,13 @@ export default async function InvitePage({
                             : 0) +
                         1;
                     const qrStepStatus:
-                        | "current"
                         | "done"
-                        | "locked" =
+                        | "locked"
+                        | "processing" =
                         qrTicketActive
                             ? "done"
                             : allStepsDone
-                              ? "current"
+                              ? "processing"
                               : "locked";
 
                     return (
@@ -1465,7 +1706,8 @@ function StepCard({
     status:
         | "current"
         | "done"
-        | "locked";
+        | "locked"
+        | "processing";
     title: string;
     description: string;
     href: string;
@@ -1476,7 +1718,9 @@ function StepCard({
         "done"
             ? "border-emerald-200 bg-emerald-50"
             : status ===
-                "locked"
+                "locked" ||
+              status ===
+                  "processing"
               ? "border-slate-200 bg-slate-50"
               : "border-indigo-100 bg-[#F7F5FF]";
     const badgeClass =
@@ -1484,7 +1728,9 @@ function StepCard({
         "done"
             ? "bg-emerald-600 text-white"
             : status ===
-                "locked"
+                  "locked" ||
+              status ===
+                  "processing"
               ? "bg-slate-300 text-white"
               : "bg-[#4F46E5] text-white";
 
@@ -1509,6 +1755,14 @@ function StepCard({
                             15
                         }
                     />
+                ) : status ===
+                  "processing" ? (
+                    <Loader2
+                        size={
+                            15
+                        }
+                        className="animate-spin"
+                    />
                 ) : (
                     step
                 )}
@@ -1528,23 +1782,25 @@ function StepCard({
                 </p>
 
                 {status !==
-                    "locked" && (
-                    <Link
-                        href={
-                            href
-                        }
-                        className={`mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-2xl px-5 py-3 font-black text-white sm:w-auto ${
-                            status ===
-                            "done"
-                                ? "bg-emerald-600"
-                                : "bg-[#4F46E5]"
-                        }`}
-                    >
-                        {
-                            buttonLabel
-                        }
-                    </Link>
-                )}
+                    "locked" &&
+                    status !==
+                        "processing" && (
+                        <Link
+                            href={
+                                href
+                            }
+                            className={`mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-2xl px-5 py-3 font-black text-white sm:w-auto ${
+                                status ===
+                                "done"
+                                    ? "bg-emerald-600"
+                                    : "bg-[#4F46E5]"
+                            }`}
+                        >
+                            {
+                                buttonLabel
+                            }
+                        </Link>
+                    )}
             </div>
         </div>
     );

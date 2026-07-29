@@ -7,6 +7,7 @@ import {
     MapPin,
     QrCode,
     TableProperties,
+    XCircle,
 } from "lucide-react";
 import DynamicRegistrationForm from "@/components/forms/DynamicRegistrationForm";
 
@@ -102,7 +103,7 @@ export default async function RegisterPage({
                     "event_settings",
                 )
                 .select(
-                    "registration_is_open, registration_closed_message",
+                    "registration_is_open, registration_closed_message, registration_mode",
                 )
                 .eq(
                     "event_id",
@@ -268,6 +269,21 @@ export default async function RegisterPage({
 
     const settings =
         settingsResult.data;
+
+    if (
+        settings
+            ?.registration_mode ===
+        "invitation_only"
+    ) {
+        return (
+            <MessagePage
+                title="Invitation Only"
+                message="This event is by invitation only. Please use the personal invite link sent to you by the organiser to RSVP."
+                variant="notice"
+            />
+        );
+    }
+
     const registrationOpen =
         event.status ===
             "published" &&
@@ -286,6 +302,7 @@ export default async function RegisterPage({
                         ?.registration_closed_message ||
                     "This event is not currently accepting registrations."
                 }
+                variant="notice"
             />
         );
     }
@@ -513,13 +530,9 @@ export default async function RegisterPage({
 
                         <div className="mt-6 md:mt-8">
                             <DynamicRegistrationForm
-                                event={{
-                                    ...event,
-                                    // Table selection happens after registration,
-                                    // not through the old unsafe dropdown.
-                                    enable_tables:
-                                        false,
-                                }}
+                                event={
+                                    event
+                                }
                                 fields={
                                     fields ||
                                     []
@@ -568,14 +581,29 @@ function Info({
 function MessagePage({
     title,
     message,
+    variant = "error",
 }: {
     title: string;
     message: string;
+    variant?: "error" | "notice";
 }) {
     return (
         <main className="flex min-h-screen items-center justify-center bg-[#F7F5FF] p-5">
             <section className="w-full max-w-lg rounded-[2rem] bg-white p-8 text-center shadow-xl">
-                <h1 className="text-3xl font-black">
+                <div
+                    className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
+                        variant === "error"
+                            ? "bg-red-50 text-red-600"
+                            : "bg-amber-50 text-amber-600"
+                    }`}
+                >
+                    {variant === "error" ? (
+                        <XCircle size={26} />
+                    ) : (
+                        <Clock3 size={26} />
+                    )}
+                </div>
+                <h1 className="mt-5 text-3xl font-black">
                     {title}
                 </h1>
                 <p className="mt-4 leading-7 text-slate-600">

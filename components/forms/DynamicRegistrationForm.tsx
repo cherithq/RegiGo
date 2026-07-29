@@ -57,19 +57,17 @@ export default function DynamicRegistrationForm({
     event,
     fields,
     tickets = [],
-    tables = [],
 }: {
     event: any;
     fields: Field[];
     tickets?: any[];
-    tables?: any[];
 }) {
     const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const [redirectNotice, setRedirectNotice] = useState("");
 
     const enableTicketTypes = event?.enable_ticket_types ?? true;
-    const enableTables = event?.enable_tables ?? false;
 
     const orderedFields = useMemo(
         () =>
@@ -114,12 +112,6 @@ export default function DynamicRegistrationForm({
             return;
         }
 
-        if (enableTables && !answers.table_id) {
-            setMessage("Please select a table.");
-            setLoading(false);
-            return;
-        }
-
         for (const field of orderedFields) {
             if (!field.is_required) continue;
 
@@ -149,6 +141,7 @@ export default function DynamicRegistrationForm({
                 error?: string;
                 passUrl?: string;
                 checkoutUrl?: string;
+                tableSelectionUrl?: string;
             } = {};
 
             try {
@@ -164,6 +157,9 @@ export default function DynamicRegistrationForm({
             }
 
             if (data.checkoutUrl) {
+                setRedirectNotice(
+                    "Registration saved — redirecting you to secure payment…"
+                );
                 window.location.href = data.checkoutUrl;
                 return;
             }
@@ -174,6 +170,11 @@ export default function DynamicRegistrationForm({
                 );
             }
 
+            setRedirectNotice(
+                data.tableSelectionUrl
+                    ? "Registration saved — redirecting you to choose your table…"
+                    : "Registration saved — redirecting you to your QR pass…"
+            );
             window.location.href = data.passUrl;
         } catch (error) {
             setMessage(
@@ -190,62 +191,36 @@ export default function DynamicRegistrationForm({
             {enableTicketTypes && (
                 <FormFieldShell
                     label="Ticket Type"
-                    required
+                    required={tickets.length > 0}
                 >
-                    <select
-                        required
-                        value={String(answers.ticket_type_id || "")}
-                        onChange={(eventObject) =>
-                            updateAnswer(
-                                "ticket_type_id",
-                                eventObject.target.value
-                            )
-                        }
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-[#4F46E5]"
-                    >
-                        <option value="">Select ticket type</option>
+                    {tickets.length > 0 ? (
+                        <select
+                            required
+                            value={String(answers.ticket_type_id || "")}
+                            onChange={(eventObject) =>
+                                updateAnswer(
+                                    "ticket_type_id",
+                                    eventObject.target.value
+                                )
+                            }
+                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-[#4F46E5]"
+                        >
+                            <option value="">Select ticket type</option>
 
-                        {tickets.map((ticket) => (
-                            <option key={ticket.id} value={ticket.id}>
-                                {ticket.ticket_name ||
-                                    ticket.name ||
-                                    ticket.title ||
-                                    "Ticket"}
-                            </option>
-                        ))}
-                    </select>
-                </FormFieldShell>
-            )}
-
-            {enableTables && (
-                <FormFieldShell label="Table" required>
-                    <select
-                        required
-                        value={String(answers.table_id || "")}
-                        onChange={(eventObject) =>
-                            onTableChange(
-                                eventObject.target.value,
-                                tables,
-                                updateAnswer
-                            )
-                        }
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-[#4F46E5]"
-                    >
-                        <option value="">Select table</option>
-
-                        {tables.map((table) => (
-                            <option key={table.id} value={table.id}>
-                                {table.table_name ||
-                                    table.name ||
-                                    table.table_number ||
-                                    `Table ${table.id}`}
-                            </option>
-                        ))}
-                    </select>
-
-                    {tables.length === 0 && (
-                        <p className="mt-2 text-sm font-semibold text-amber-600">
-                            No tables are currently available.
+                            {tickets.map((ticket) => (
+                                <option key={ticket.id} value={ticket.id}>
+                                    {ticket.ticket_name ||
+                                        ticket.name ||
+                                        ticket.title ||
+                                        "Ticket"}
+                                </option>
+                            ))}
+                        </select>
+                    ) : (
+                        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+                            No ticket types are currently available.
+                            Please check back later or contact the
+                            event organiser.
                         </p>
                     )}
                 </FormFieldShell>
@@ -271,37 +246,32 @@ export default function DynamicRegistrationForm({
                 </div>
             )}
 
+            {redirectNotice && (
+                <div
+                    role="status"
+                    className="flex items-center gap-3 rounded-xl bg-[#F7F5FF] p-4 font-semibold text-[#4F46E5]"
+                >
+                    <span
+                        className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#4F46E5] border-t-transparent"
+                        aria-hidden="true"
+                    />
+                    {redirectNotice}
+                </div>
+            )}
+
             <button
                 type="submit"
                 disabled={loading}
                 className="w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-6 py-4 font-black text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-                {loading ? "Submitting..." : "Submit Registration"}
+                {redirectNotice
+                    ? "Redirecting..."
+                    : loading
+                      ? "Submitting..."
+                      : "Submit Registration"}
             </button>
         </form>
     );
-}
-
-function onTableChange(
-    tableId: string,
-    tables: any[],
-    updateAnswer: (key: string, value: AnswerValue) => void
-) {
-    const selectedTable = tables.find(
-        (table) => String(table.id) === String(tableId)
-    );
-
-    updateAnswer("table_id", tableId);
-
-    if (selectedTable) {
-        updateAnswer(
-            "table_name",
-            selectedTable.table_name ||
-                selectedTable.name ||
-                selectedTable.table_number ||
-                `Table ${selectedTable.id}`
-        );
-    }
 }
 
 function FieldInput({

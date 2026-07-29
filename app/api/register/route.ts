@@ -222,7 +222,7 @@ export async function POST(
                         "event_settings",
                     )
                     .select(
-                        "registration_is_open, registration_closed_message",
+                        "registration_is_open, registration_closed_message, registration_mode",
                     )
                     .eq(
                         "event_id",
@@ -308,6 +308,22 @@ export async function POST(
 
         const event =
             eventResult.data;
+
+        if (
+            settingsResult.data
+                ?.registration_mode ===
+            "invitation_only"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "This event is by invitation only. Use the personal invite link sent to you to RSVP.",
+                },
+                {
+                    status: 403,
+                },
+            );
+        }
+
         const registrationOpen =
             event.status ===
                 "published" &&
