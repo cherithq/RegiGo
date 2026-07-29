@@ -87,6 +87,13 @@ export async function GET(
             }
         }
 
+        const qrPassUrl =
+            `/event/${encodeURIComponent(
+                slug,
+            )}/pass?registration=${encodeURIComponent(
+                context.registration.id,
+            )}`;
+
         let tableSelectionUrl: string | null = null;
 
         if (order.status === "paid") {
@@ -149,6 +156,7 @@ export async function GET(
                     order_items:
                         order.order_items,
                 },
+                qrPassUrl,
                 tableSelectionUrl,
             },
             {

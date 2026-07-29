@@ -14,7 +14,10 @@ import {
 } from "@/lib/guest-invitations";
 import {
     Check,
+    CheckCircle2,
     Lock,
+    Users,
+    XCircle,
 } from "lucide-react";
 
 export const dynamic =
@@ -671,6 +674,7 @@ export default async function InvitePage({
         tableSettingsResult,
         tableCountResult,
         assignmentResult,
+        qrTicketResult,
     ] =
         await Promise.all([
             admin
@@ -768,6 +772,19 @@ export default async function InvitePage({
                 )
                 .select(
                     "table_id",
+                )
+                .eq(
+                    "registration_id",
+                    registration.id,
+                )
+                .maybeSingle(),
+
+            admin
+                .from(
+                    "qr_tickets",
+                )
+                .select(
+                    "is_active",
                 )
                 .eq(
                     "registration_id",
@@ -914,6 +931,13 @@ export default async function InvitePage({
                 | null;
     }
 
+    const qrTicketActive =
+        (
+            qrTicketResult.data as unknown as
+                | { is_active?: boolean | null }
+                | null
+        )?.is_active === true;
+
     const invitePath =
         `/event/${encodeURIComponent(
             slug,
@@ -924,6 +948,12 @@ export default async function InvitePage({
         `${invitePath}/tickets`;
     const tablesPath =
         `${invitePath}/tables`;
+    const qrPassUrl =
+        `/event/${encodeURIComponent(
+            slug,
+        )}/pass?registration=${encodeURIComponent(
+            registration.id,
+        )}`;
 
     return (
         <main
@@ -1050,12 +1080,12 @@ export default async function InvitePage({
                         />
                     </div>
 
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-7 grid items-stretch gap-4 sm:grid-cols-2">
                         <form
                             action={
                                 updateRsvp
                             }
-                            className="space-y-3"
+                            className="flex flex-col gap-4"
                         >
                             <input
                                 type="hidden"
@@ -1078,7 +1108,12 @@ export default async function InvitePage({
                             />
 
                             <label className="block">
-                                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                                <span className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                                    <Users
+                                        size={
+                                            13
+                                        }
+                                    />
                                     Guests attending
                                     (including you)
                                 </span>
@@ -1095,14 +1130,19 @@ export default async function InvitePage({
                                         registration.selected_ticket_quantity ||
                                         1
                                     }
-                                    className="min-h-11 w-full rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-950 outline-none focus:border-[#4F46E5]"
+                                    className="min-h-12 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-lg font-black text-slate-950 outline-none transition focus:border-[#4F46E5] focus:ring-4 focus:ring-[#4F46E5]/10"
                                 />
                             </label>
 
                             <button
                                 type="submit"
-                                className="min-h-12 w-full rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white shadow-lg"
+                                className="mt-auto inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3.5 font-black text-white shadow-lg shadow-indigo-200 transition hover:opacity-95"
                             >
+                                <CheckCircle2
+                                    size={
+                                        18
+                                    }
+                                />
                                 Accept Invitation
                             </button>
                         </form>
@@ -1111,6 +1151,7 @@ export default async function InvitePage({
                             action={
                                 updateRsvp
                             }
+                            className="flex"
                         >
                             <input
                                 type="hidden"
@@ -1134,8 +1175,13 @@ export default async function InvitePage({
 
                             <button
                                 type="submit"
-                                className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 font-black text-slate-600"
+                                className="flex w-full flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 font-black text-slate-500 transition hover:border-slate-300 hover:bg-slate-50"
                             >
+                                <XCircle
+                                    size={
+                                        18
+                                    }
+                                />
                                 Decline Invitation
                             </button>
                         </form>
@@ -1177,6 +1223,23 @@ export default async function InvitePage({
                             null ||
                             tableStepStatus ===
                                 "done");
+                    const qrStepNumber =
+                        (ticketStepStatus
+                            ? 1
+                            : 0) +
+                        (tableStepStatus
+                            ? 1
+                            : 0) +
+                        1;
+                    const qrStepStatus:
+                        | "current"
+                        | "done"
+                        | "locked" =
+                        qrTicketActive
+                            ? "done"
+                            : allStepsDone
+                              ? "current"
+                              : "locked";
 
                     return (
                         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -1253,17 +1316,33 @@ export default async function InvitePage({
                                     />
                                 )}
 
-                                {allStepsDone && (
-                                    <div className="rounded-2xl bg-emerald-50 p-5">
-                                        <p className="font-black text-emerald-700">
-                                            Your RSVP is complete.
-                                        </p>
-
-                                        <p className="mt-2 text-sm font-semibold leading-6 text-emerald-700/80">
-                                            No further action is required at this time.
-                                        </p>
-                                    </div>
-                                )}
+                                <StepCard
+                                    step={
+                                        qrStepNumber
+                                    }
+                                    status={
+                                        qrStepStatus
+                                    }
+                                    title="Confirmation & QR Pass"
+                                    description={
+                                        qrStepStatus ===
+                                        "locked"
+                                            ? "Finish the steps above to unlock your confirmation and QR pass."
+                                            : qrStepStatus ===
+                                                "done"
+                                              ? "A confirmation email with your QR pass has been sent to your email address."
+                                              : "Your RSVP is confirmed. Your QR pass is being generated — it will be ready in a moment."
+                                    }
+                                    href={
+                                        qrPassUrl
+                                    }
+                                    buttonLabel={
+                                        qrStepStatus ===
+                                        "done"
+                                            ? "View QR Pass"
+                                            : "Check My QR Pass"
+                                    }
+                                />
                             </div>
                         </section>
                     );

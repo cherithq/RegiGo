@@ -103,10 +103,10 @@ export default async function PublicTablesPage({
                             token={token}
                             completionUrl={`/event/${encodeURIComponent(
                                 slug,
-                            )}/invite/${encodeURIComponent(
-                                token,
+                            )}/pass?registration=${encodeURIComponent(
+                                snapshot.registration.id,
                             )}`}
-                            completionLabel="Return to Invitation"
+                            completionLabel="Continue to QR Pass"
                             initialData={{
                                 guest: {
                                     partySize: snapshot.partySize,
