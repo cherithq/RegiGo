@@ -5,6 +5,9 @@ import {
     EventDeletionAccessError,
     getEventDeletionAccess,
 } from "@/lib/event-deletion-access";
+import {
+    deleteEventDependents,
+} from "@/lib/event-deletion-cascade";
 
 export const runtime =
     "nodejs";
@@ -138,6 +141,11 @@ export async function DELETE(
             access.event
                 .event_name ||
             "Event";
+
+        await deleteEventDependents(
+            admin,
+            eventId,
+        );
 
         const deletion =
             await admin
