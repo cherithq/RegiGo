@@ -7,12 +7,12 @@ import {
 import PublicTicketSelector from "@/components/payments/PublicTicketSelector";
 import {
     PaymentError,
-    getPublicTicketContext,
 } from "@/lib/stripe-payments";
+import { getPublicRegistrationTicketContext } from "@/lib/registration-payments";
 
 export const dynamic = "force-dynamic";
 
-export default async function TicketSelectionPage({
+export default async function RegistrationTicketSelectionPage({
     params,
 }: {
     params: Promise<{
@@ -24,83 +24,24 @@ export default async function TicketSelectionPage({
 
     try {
         const context =
-            await getPublicTicketContext({
+            await getPublicRegistrationTicketContext({
                 slug,
                 token,
             });
 
-        const eventBrandingRaw = (
-            context.event as {
-                event_branding?:
-                    unknown;
-            }
-        ).event_branding;
-        const branding = Array.isArray(
-            eventBrandingRaw,
-        )
-            ? (
-                  eventBrandingRaw as any[]
-              )[0]
-            : (
-                  eventBrandingRaw as
-                      | any
-                      | null
-              );
-        const primaryColor =
-            branding?.primary_color ||
-            "#4F46E5";
-        const secondaryColor =
-            branding?.secondary_color ||
-            "#EC4899";
-        const backgroundColor =
-            branding?.background_color ||
-            "#F7F5FF";
-
         return (
-            <main
-                className="min-h-screen p-5 md:p-10"
-                style={{
-                    backgroundColor:
-                        backgroundColor,
-                }}
-            >
+            <main className="min-h-screen bg-[#F7F5FF] p-5 md:p-10">
                 <div className="mx-auto max-w-5xl space-y-6">
-                    <section
-                        className="relative overflow-hidden rounded-[2rem] p-8 text-white shadow-xl"
-                        style={{
-                            backgroundImage:
-                                branding
-                                    ?.banner_background_url
-                                    ? `url(${branding.banner_background_url})`
-                                    : `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-                            backgroundSize:
-                                "cover",
-                            backgroundPosition:
-                                "center",
-                        }}
-                    >
-                        {branding
-                            ?.banner_background_url && (
-                            <div
-                                className="absolute inset-0 bg-black"
-                                style={{
-                                    opacity:
-                                        branding
-                                            ?.banner_overlay_opacity ??
-                                        0.45,
-                                }}
-                            />
-                        )}
-
+                    <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-8 text-white shadow-xl">
                         <div className="relative z-10">
                             <p className="text-sm font-black uppercase tracking-[0.18em] text-white/75">
                                 Ticket Selection
                             </p>
                             <h1 className="mt-4 text-4xl font-black">
-                                {branding
-                                    ?.hero_title ||
+                                {
                                     context.event
-                                        .event_name}
+                                        .event_name
+                                }
                             </h1>
                             <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">
                                 <span className="inline-flex items-center gap-2">
@@ -145,19 +86,14 @@ export default async function TicketSelectionPage({
                         <PublicTicketSelector
                             checkoutUrl={`/api/public/events/${encodeURIComponent(
                                 slug,
-                            )}/invite/${encodeURIComponent(
+                            )}/registration/${encodeURIComponent(
                                 token,
                             )}/checkout`}
                             tickets={
                                 context.tickets
                             }
                             quantity={
-                                Number(
-                                    context
-                                        .registration
-                                        .selected_ticket_quantity,
-                                ) ||
-                                1
+                                context.partySize
                             }
                         />
 
@@ -206,36 +142,6 @@ export default async function TicketSelectionPage({
                                                     }
                                                 </li>
                                             ),
-                                        )}
-                                        {context
-                                            .diagnostics
-                                            .totalTicketCount >
-                                            context
-                                                .diagnostics
-                                                .rawActiveTicketCount && (
-                                            <li>
-                                                {context
-                                                    .diagnostics
-                                                    .totalTicketCount -
-                                                    context
-                                                        .diagnostics
-                                                        .rawActiveTicketCount}{" "}
-                                                ticket
-                                                type
-                                                {context
-                                                    .diagnostics
-                                                    .totalTicketCount -
-                                                    context
-                                                        .diagnostics
-                                                        .rawActiveTicketCount ===
-                                                1
-                                                    ? ""
-                                                    : "s"}{" "}
-                                                marked
-                                                inactive
-                                                by the
-                                                organiser.
-                                            </li>
                                         )}
                                     </ul>
                                     <p className="mt-3 text-xs font-bold text-amber-700">

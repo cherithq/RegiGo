@@ -220,7 +220,6 @@ async function resolveNextRsvpDestination({
     "tickets" | "tables" | "pass"
 > {
     const [
-        paymentAddonResult,
         ticketSalesSettingsResult,
         ticketCountResult,
         tableAddonResult,
@@ -228,16 +227,6 @@ async function resolveNextRsvpDestination({
         tableCountResult,
         assignmentResult,
     ] = await Promise.all([
-        admin
-            .from("event_addons")
-            .select("*")
-            .eq("event_id", eventId)
-            .eq(
-                "addon_key",
-                "stripe_payments",
-            )
-            .maybeSingle(),
-
         admin
             .from("event_ticket_settings")
             .select("allow_rsvp_sales")
@@ -294,27 +283,27 @@ async function resolveNextRsvpDestination({
             .maybeSingle(),
     ]);
 
-    const paymentAddonData =
-        paymentAddonResult.data as unknown as
-            | Record<string, unknown>
-            | null;
     const ticketSalesAllowed =
         ticketSalesSettingsResult.data
             ?.allow_rsvp_sales !== false;
-    const paymentEnabled =
-        (paymentAddonData?.enabled ===
-            true ||
-            paymentAddonData?.is_enabled ===
-                true) &&
-        ticketSalesAllowed;
     const ticketCount =
         ticketCountResult.count || 0;
     const normalisedPaymentStatus =
         normaliseStatus(
             paymentStatus,
         ) || "not_required";
+    // Whether payment is *required* depends on whether the event actually
+    // has ticket types to sell, not on the separate "Stripe Ticket
+    // Payments" addon toggle in Settings — requirePaymentManager
+    // (lib/payment-access.ts) already lets an organiser configure ticket
+    // types on the Tickets & Payments page before ever touching that
+    // toggle (it only blocks when the addon row explicitly says
+    // enabled:false, not when the row is simply missing). Gating on
+    // `paymentAddonData?.enabled === true` here meant any event with real
+    // ticket types but no addon row yet silently skipped the tickets step
+    // entirely instead of sending the guest to pay.
     const paymentRequired =
-        paymentEnabled &&
+        ticketSalesAllowed &&
         ticketCount > 0 &&
         ![
             "paid",
@@ -1081,7 +1070,6 @@ export default async function InvitePage({
         "#F7F5FF";
 
     const [
-        paymentAddonResult,
         ticketSalesSettingsResult,
         tableAddonResult,
         ticketCountResult,
@@ -1092,23 +1080,6 @@ export default async function InvitePage({
         registrationFormResult,
     ] =
         await Promise.all([
-            admin
-                .from(
-                    "event_addons",
-                )
-                .select(
-                    "*",
-                )
-                .eq(
-                    "event_id",
-                    event.id,
-                )
-                .eq(
-                    "addon_key",
-                    "stripe_payments",
-                )
-                .maybeSingle(),
-
             admin
                 .from(
                     "event_ticket_settings",
@@ -1232,21 +1203,16 @@ export default async function InvitePage({
                 .maybeSingle(),
         ]);
 
-    const paymentAddonData =
-        paymentAddonResult.data as unknown as
-            | Record<
-                  string,
-                  unknown
-              >
-            | null;
+    // Whether payment is required depends on whether the event actually
+    // has ticket types to sell, not the separate "Stripe Ticket Payments"
+    // addon toggle — see the matching comment in resolveNextRsvpDestination
+    // above for why gating on that toggle silently skipped the tickets
+    // step for events where an organiser set up ticket types without ever
+    // touching the addon switch.
     const paymentEnabled =
-        (paymentAddonData?.enabled ===
-            true ||
-            paymentAddonData?.is_enabled ===
-                true) &&
         ticketSalesSettingsResult.data
             ?.allow_rsvp_sales !==
-            false;
+        false;
     const tableAddonData =
         tableAddonResult.data as unknown as
             | Record<

@@ -4,12 +4,6 @@ import {
 import {
     createClient,
 } from "@supabase/supabase-js";
-import {
-    PaymentError,
-    createTicketCheckoutSession,
-    isPlatformCompany,
-    registrationCheckoutUrls,
-} from "@/lib/stripe-payments";
 
 export const runtime =
     "nodejs";
@@ -74,63 +68,6 @@ function quantity(
         number <= 100
         ? number
         : 1;
-}
-
-function moneyValue(
-    ticket:
-        | Record<
-              string,
-              unknown
-          >
-        | null,
-) {
-    if (!ticket) {
-        return 0;
-    }
-
-    for (const key of [
-        "price_cents",
-        "amount_cents",
-        "unit_amount",
-    ]) {
-        const value =
-            Number(
-                ticket[key],
-            );
-
-        if (
-            Number.isFinite(
-                value,
-            ) &&
-            value > 0
-        ) {
-            return value;
-        }
-    }
-
-    for (const key of [
-        "price",
-        "amount",
-        "ticket_price",
-    ]) {
-        const value =
-            Number(
-                ticket[key],
-            );
-
-        if (
-            Number.isFinite(
-                value,
-            ) &&
-            value > 0
-        ) {
-            return Math.round(
-                value * 100,
-            );
-        }
-    }
-
-    return 0;
 }
 
 async function triggerEmailWorker(
@@ -206,6 +143,9 @@ export async function POST(
             addonResult,
             tableSettingsResult,
             selectableTableCountResult,
+            ticketSalesSettingsResult,
+            ticketCountResult,
+            stripeAddonResult,
         ] =
             await Promise.all([
                 admin
@@ -284,6 +224,53 @@ export async function POST(
                         "table_capacity",
                         0,
                     ),
+
+                admin
+                    .from(
+                        "event_ticket_settings",
+                    )
+                    .select(
+                        "allow_registration_sales",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    )
+                    .maybeSingle(),
+
+                admin
+                    .from(
+                        "ticket_types",
+                    )
+                    .select(
+                        "id",
+                        {
+                            count:
+                                "exact",
+                            head: true,
+                        },
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    ),
+
+                admin
+                    .from(
+                        "event_addons",
+                    )
+                    .select(
+                        "enabled",
+                    )
+                    .eq(
+                        "event_id",
+                        eventId,
+                    )
+                    .eq(
+                        "addon_key",
+                        "stripe_payments",
+                    )
+                    .maybeSingle(),
             ]);
 
         if (
@@ -377,88 +364,45 @@ export async function POST(
             );
         }
 
-        const ticketTypeId =
-            text(
-                answers.ticket_type_id,
-                80,
-            ) || null;
-
-        if (
-            event.enable_ticket_types &&
-            !ticketTypeId
-        ) {
-            return NextResponse.json(
-                {
-                    error:
-                        "Ticket type is required.",
-                },
-                {
-                    status: 400,
-                },
-            );
-        }
-
-        let ticket:
-            | Record<
-                  string,
-                  unknown
-              >
-            | null = null;
-
-        if (ticketTypeId) {
-            const {
-                data,
-                error,
-            } = await admin
-                .from(
-                    "ticket_types",
-                )
-                .select("*")
-                .eq(
-                    "id",
-                    ticketTypeId,
-                )
-                .eq(
-                    "event_id",
-                    eventId,
-                )
-                .maybeSingle();
-
-            if (
-                error ||
-                !data
-            ) {
-                return NextResponse.json(
-                    {
-                        error:
-                            error?.message ||
-                            "The selected ticket is unavailable.",
-                    },
-                    {
-                        status:
-                            error
-                                ? 400
-                                : 409,
-                    },
-                );
-            }
-
-            ticket =
-                data as Record<
-                    string,
-                    unknown
-                >;
-        }
-
+        // Ticket selection is deferred to a dedicated page after
+        // registration (mirroring the RSVP/invite flow's separate
+        // "/tickets" step), the same way table selection is already
+        // deferred below — so no ticket_type_id is collected here at all.
         const selectedQuantity =
             quantity(
                 answers.selected_ticket_quantity ??
                     answers.ticket_quantity ??
                     answers.quantity,
             );
+        const ticketSalesAllowed =
+            ticketSalesSettingsResult
+                .data
+                ?.allow_registration_sales !==
+            false;
+        const ticketCount =
+            ticketCountResult.count ||
+            0;
+        // Also requires the "Stripe Ticket Payments" addon to be enabled —
+        // unlike the RSVP flow's equivalent check, this one must stay
+        // consistent with getPublicRegistrationTicketContext
+        // (lib/registration-payments.ts), which hard-requires that same
+        // addon before it'll show the ticket-selection page at all. If
+        // this were permissive like RSVP's, a guest could be sent to a
+        // ticket page that immediately errors with "Ticket payments are
+        // not enabled for this event."
+        const stripeAddonEnabled =
+            stripeAddonResult.data
+                ?.enabled ===
+            true;
+        const ticketSelectionRequired =
+            Boolean(
+                event.enable_ticket_types,
+            ) &&
+            stripeAddonEnabled &&
+            ticketSalesAllowed &&
+            ticketCount > 0;
         const paymentStatus =
-            moneyValue(ticket) >
-            0
+            ticketSelectionRequired
                 ? "pending"
                 : "not_required";
         const tableAddonEnabled =
@@ -557,7 +501,7 @@ export async function POST(
                         80,
                     ) || null,
                 ticket_type_id:
-                    ticketTypeId,
+                    null,
                 selected_ticket_quantity:
                     selectedQuantity,
                 custom_answers:
@@ -599,9 +543,6 @@ export async function POST(
             );
         const qrToken =
             crypto.randomUUID();
-        const paymentRequired =
-            paymentStatus ===
-            "pending";
         const tableSelectionRequired =
             tableFlowAllowed &&
             tableSettings
@@ -622,7 +563,7 @@ export async function POST(
                 qr_token:
                     qrToken,
                 is_active:
-                    !paymentRequired &&
+                    !ticketSelectionRequired &&
                     !tableSelectionRequired,
             });
 
@@ -660,19 +601,23 @@ export async function POST(
             )}/pass?registration=${encodeURIComponent(
                 registrationId,
             )}`;
-        const paymentAllowsTable =
-            tableSettings
-                ?.require_paid_ticket !==
-                true ||
-            [
-                "paid",
-                "not_required",
-            ].includes(
-                paymentStatus,
-            );
+        // Tickets are offered before tables, same ordering as the RSVP
+        // flow (resolveNextRsvpDestination in the invite page) — table
+        // selection is only surfaced once ticket selection is no longer
+        // outstanding. Once the guest actually buys/confirms a ticket on
+        // that page, its checkout route and the order-status route
+        // compute tableSelectionUrl next, exactly like the invite flow.
+        const ticketSelectionUrl =
+            ticketSelectionRequired
+                ? `/event/${encodeURIComponent(
+                      slug,
+                  )}/registration/${encodeURIComponent(
+                      qrToken,
+                  )}/tickets`
+                : null;
         const tableSelectionUrl =
-            tableFlowRequested &&
-            paymentAllowsTable
+            !ticketSelectionRequired &&
+            tableFlowRequested
                 ? `/event/${encodeURIComponent(
                       slug,
                   )}/registration/${encodeURIComponent(
@@ -680,232 +625,13 @@ export async function POST(
                   )}/tables`
                 : null;
 
-        if (paymentRequired) {
-            const [
-                stripeAddonResult,
-                ticketSalesSettingsResult,
-                companyResult,
-            ] = await Promise.all([
-                admin
-                    .from(
-                        "event_addons",
-                    )
-                    .select(
-                        "enabled",
-                    )
-                    .eq(
-                        "event_id",
-                        eventId,
-                    )
-                    .eq(
-                        "addon_key",
-                        "stripe_payments",
-                    )
-                    .maybeSingle(),
-
-                admin
-                    .from(
-                        "event_ticket_settings",
-                    )
-                    .select(
-                        "allow_registration_sales",
-                    )
-                    .eq(
-                        "event_id",
-                        eventId,
-                    )
-                    .maybeSingle(),
-
-                admin
-                    .from(
-                        "companies",
-                    )
-                    .select(
-                        "id, stripe_connected_account_id, stripe_charges_enabled",
-                    )
-                    .eq(
-                        "id",
-                        event.company_id,
-                    )
-                    .maybeSingle(),
-            ]);
-
-            const company =
-                companyResult.data;
-            const stripeAddonEnabled =
-                stripeAddonResult
-                    .data
-                    ?.enabled ===
-                true;
-            const ticketSalesAllowed =
-                ticketSalesSettingsResult
-                    .data
-                    ?.allow_registration_sales !==
-                false;
-            const usesPlatform =
-                Boolean(
-                    company,
-                ) &&
-                isPlatformCompany(
-                    company!.id,
-                );
-            const companyReady =
-                Boolean(
-                    company,
-                ) &&
-                (
-                    usesPlatform ||
-                    (
-                        Boolean(
-                            company!
-                                .stripe_connected_account_id,
-                        ) &&
-                        Boolean(
-                            company!
-                                .stripe_charges_enabled,
-                        )
-                    )
-                );
-
-            if (
-                !stripeAddonEnabled ||
-                !ticketSalesAllowed ||
-                !companyReady
-            ) {
-                await admin
-                    .from(
-                        "qr_tickets",
-                    )
-                    .delete()
-                    .eq(
-                        "registration_id",
-                        registrationId,
-                    );
-                await admin
-                    .from(
-                        "registrations",
-                    )
-                    .delete()
-                    .eq(
-                        "id",
-                        registrationId,
-                    );
-
-                return NextResponse.json(
-                    {
-                        error:
-                            "Ticket payments are not set up for this event yet. Please contact the event organiser.",
-                    },
-                    {
-                        status: 503,
-                    },
-                );
-            }
-
-            const urls =
-                registrationCheckoutUrls(
-                    {
-                        slug,
-                        registrationId,
-                    },
-                );
-
-            try {
-                const result =
-                    await createTicketCheckoutSession(
-                        {
-                            admin,
-                            eventId,
-                            company:
-                                company!,
-                            usesPlatformStripeAccount:
-                                usesPlatform,
-                            registrationId,
-                            recipientEmail:
-                                email,
-                            ticketTypeId:
-                                ticketTypeId!,
-                            quantity:
-                                selectedQuantity,
-                            ticket:
-                                ticket!,
-                            successUrl:
-                                urls.success,
-                            cancelUrl:
-                                urls.cancel,
-                            buildFreeSuccessUrl:
-                                (
-                                    orderId,
-                                ) =>
-                                    `${
-                                        urls.success.split(
-                                            "?",
-                                        )[0]
-                                    }` +
-                                    `?free_order=${encodeURIComponent(
-                                        orderId,
-                                    )}` +
-                                    `&registration=${encodeURIComponent(
-                                        registrationId,
-                                    )}`,
-                        },
-                    );
-
-                return NextResponse.json(
-                    {
-                        success: true,
-                        registrationId,
-                        checkoutUrl:
-                            result.url,
-                        tableSelectionUrl,
-                    },
-                );
-            } catch (
-                checkoutError
-            ) {
-                await admin
-                    .from(
-                        "qr_tickets",
-                    )
-                    .delete()
-                    .eq(
-                        "registration_id",
-                        registrationId,
-                    );
-                await admin
-                    .from(
-                        "registrations",
-                    )
-                    .delete()
-                    .eq(
-                        "id",
-                        registrationId,
-                    );
-
-                return NextResponse.json(
-                    {
-                        error:
-                            checkoutError instanceof
-                            Error
-                                ? checkoutError.message
-                                : "Unable to start payment.",
-                    },
-                    {
-                        status:
-                            checkoutError instanceof
-                            PaymentError
-                                ? checkoutError.status
-                                : 500,
-                    },
-                );
-            }
-        }
-
-        // When table selection is still required, the confirmation email
-        // (and its QR pass) is deferred until the guest completes it — see
-        // activateQrPassIfReady, called from the table-selection confirm
-        // route once the table is assigned.
+        // When ticket or table selection is still required, the
+        // confirmation email (and its QR pass) is deferred until the
+        // guest completes it — see activateQrPassIfReady, called from the
+        // ticket-checkout route and the table-selection confirm route
+        // once each step finishes.
         const emailJobError =
+            ticketSelectionRequired ||
             tableSelectionRequired
                 ? null
                 : (
@@ -933,6 +659,7 @@ export async function POST(
                   ).error;
 
         const emailTriggered =
+            ticketSelectionRequired ||
             tableSelectionRequired ||
             emailJobError
                 ? false
@@ -944,11 +671,14 @@ export async function POST(
             success: true,
             registrationId,
             qrPassUrl,
+            ticketSelectionUrl,
             tableSelectionUrl,
             // The existing DynamicRegistrationForm redirects to passUrl.
-            // Returning the table URL here inserts table selection into the
-            // registration journey without replacing the entire form component.
+            // Returning the ticket/table URL here inserts those steps into
+            // the registration journey without replacing the entire form
+            // component.
             passUrl:
+                ticketSelectionUrl ||
                 tableSelectionUrl ||
                 qrPassUrl,
             emailQueued:

@@ -7,6 +7,7 @@ import {
     MapPin,
     QrCode,
     TableProperties,
+    Ticket,
     XCircle,
 } from "lucide-react";
 import DynamicRegistrationForm from "@/components/forms/DynamicRegistrationForm";
@@ -357,37 +358,21 @@ export default async function RegisterPage({
             tableCountResult.count ||
                 0,
         ) > 0;
-    const stripePaymentsEnabled =
+    const ticketFlowEnabled =
+        Boolean(
+            event.enable_ticket_types,
+        ) &&
         stripeAddonResult.data
             ?.enabled ===
             true &&
         ticketSalesSettingsResult
             .data
             ?.allow_registration_sales !==
-            false;
-    const visibleTickets = (
-        ticketsResult.data ||
-        []
-    ).filter((ticket) => {
-        if (
-            stripePaymentsEnabled
-        ) {
-            return true;
-        }
-
-        return [
-            "price_cents",
-            "amount_cents",
-            "unit_amount",
-        ].every(
-            (key) =>
-                !(
-                    Number(
-                        ticket[key],
-                    ) > 0
-                ),
-        );
-    });
+            false &&
+        (
+            ticketsResult.data ||
+            []
+        ).length > 0;
 
     return (
         <main
@@ -518,6 +503,27 @@ export default async function RegisterPage({
                             are required.
                         </p>
 
+                        {ticketFlowEnabled && (
+                            <div className="mt-5 rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-4">
+                                <div className="flex items-start gap-3">
+                                    <Ticket
+                                        size={
+                                            20
+                                        }
+                                        className="mt-0.5 shrink-0 text-[#4F46E5]"
+                                    />
+                                    <div>
+                                        <p className="font-black text-slate-900">
+                                            Choose your ticket after submitting
+                                        </p>
+                                        <p className="mt-1 text-sm leading-6 text-slate-600">
+                                            Your registration is created first, then you&apos;ll pick a ticket and complete secure payment through Stripe.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {tableFlowEnabled && (
                             <div className="mt-5 rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-4">
                                 <div className="flex items-start gap-3">
@@ -554,9 +560,6 @@ export default async function RegisterPage({
                                 fields={
                                     fields ||
                                     []
-                                }
-                                tickets={
-                                    visibleTickets
                                 }
                             />
                         </div>

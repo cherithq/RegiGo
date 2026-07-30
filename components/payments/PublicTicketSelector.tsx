@@ -40,13 +40,11 @@ function money(
 }
 
 export default function PublicTicketSelector({
-    slug,
-    token,
+    checkoutUrl,
     tickets,
     quantity,
 }: {
-    slug: string;
-    token: string;
+    checkoutUrl: string;
     tickets: TicketRow[];
     quantity: number;
 }) {
@@ -80,11 +78,7 @@ export default function PublicTicketSelector({
 
         try {
             const response = await fetch(
-                `/api/public/events/${encodeURIComponent(
-                    slug,
-                )}/invite/${encodeURIComponent(
-                    token,
-                )}/checkout`,
+                checkoutUrl,
                 {
                     method: "POST",
                     headers: {

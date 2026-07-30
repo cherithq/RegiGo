@@ -56,18 +56,14 @@ type AnswerValue =
 export default function DynamicRegistrationForm({
     event,
     fields,
-    tickets = [],
 }: {
     event: any;
     fields: Field[];
-    tickets?: any[];
 }) {
     const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
     const [redirectNotice, setRedirectNotice] = useState("");
-
-    const enableTicketTypes = event?.enable_ticket_types ?? true;
 
     const orderedFields = useMemo(
         () =>
@@ -106,12 +102,6 @@ export default function DynamicRegistrationForm({
             return;
         }
 
-        if (enableTicketTypes && !answers.ticket_type_id) {
-            setMessage("Please select a ticket type.");
-            setLoading(false);
-            return;
-        }
-
         for (const field of orderedFields) {
             if (!field.is_required) continue;
 
@@ -140,7 +130,7 @@ export default function DynamicRegistrationForm({
             let data: {
                 error?: string;
                 passUrl?: string;
-                checkoutUrl?: string;
+                ticketSelectionUrl?: string;
                 tableSelectionUrl?: string;
             } = {};
 
@@ -156,14 +146,6 @@ export default function DynamicRegistrationForm({
                 throw new Error(data.error || "Registration failed.");
             }
 
-            if (data.checkoutUrl) {
-                setRedirectNotice(
-                    "Registration saved — redirecting you to secure payment…"
-                );
-                window.location.href = data.checkoutUrl;
-                return;
-            }
-
             if (!data.passUrl) {
                 throw new Error(
                     "Registration succeeded, but no pass URL was returned."
@@ -171,9 +153,11 @@ export default function DynamicRegistrationForm({
             }
 
             setRedirectNotice(
-                data.tableSelectionUrl
-                    ? "Registration saved — redirecting you to choose your table…"
-                    : "Registration saved — redirecting you to your QR pass…"
+                data.ticketSelectionUrl
+                    ? "Registration saved — redirecting you to choose your ticket…"
+                    : data.tableSelectionUrl
+                      ? "Registration saved — redirecting you to choose your table…"
+                      : "Registration saved — redirecting you to your QR pass…"
             );
             window.location.href = data.passUrl;
         } catch (error) {
@@ -188,44 +172,6 @@ export default function DynamicRegistrationForm({
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            {enableTicketTypes && (
-                <FormFieldShell
-                    label="Ticket Type"
-                    required={tickets.length > 0}
-                >
-                    {tickets.length > 0 ? (
-                        <select
-                            required
-                            value={String(answers.ticket_type_id || "")}
-                            onChange={(eventObject) =>
-                                updateAnswer(
-                                    "ticket_type_id",
-                                    eventObject.target.value
-                                )
-                            }
-                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-[#4F46E5]"
-                        >
-                            <option value="">Select ticket type</option>
-
-                            {tickets.map((ticket) => (
-                                <option key={ticket.id} value={ticket.id}>
-                                    {ticket.ticket_name ||
-                                        ticket.name ||
-                                        ticket.title ||
-                                        "Ticket"}
-                                </option>
-                            ))}
-                        </select>
-                    ) : (
-                        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
-                            No ticket types are currently available.
-                            Please check back later or contact the
-                            event organiser.
-                        </p>
-                    )}
-                </FormFieldShell>
-            )}
-
             {orderedFields.map((field) => (
                 <FieldInput
                     key={field.id}
