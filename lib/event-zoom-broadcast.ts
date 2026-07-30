@@ -186,6 +186,7 @@ export async function createEventZoomMeeting({
             eventDetails?.event_name ||
             event.event_name,
         startTime,
+        timezone: "Asia/Singapore",
         joinBeforeHost:
             resolvedSettings.joinBeforeHost,
         waitingRoom:
@@ -276,8 +277,16 @@ function buildZoomStartTime(
     if (!eventDate) return null;
 
     const time = eventTime || "09:00";
+
+    // Event date/time are entered as Singapore wall-clock time (no
+    // per-event timezone support), matching the Asia/Singapore
+    // convention used elsewhere in this app (e.g. the analytics
+    // export). Without an explicit offset, `new Date(...)` parses this
+    // as the server process's own local timezone instead — typically
+    // UTC in production — silently shifting the Zoom meeting's actual
+    // start time by hours.
     const combined = new Date(
-        `${eventDate}T${time}`,
+        `${eventDate}T${time}:00+08:00`,
     );
 
     if (Number.isNaN(combined.getTime())) {

@@ -88,6 +88,65 @@ export async function verifyZoomCredentials(
     await getZoomAccessToken(credentials);
 }
 
+// Zoom's own "type" values for GET /users/me — 1 is Basic/Free, which caps
+// meetings with 3+ participants at 40 minutes; 2 (Licensed) and 3 (On-prem)
+// have no such default cap. Used only to warn the organiser, never to
+// block anything — a lookup failure just means the warning can't be shown.
+export async function getZoomAccountPlanType({
+    accessToken,
+}: {
+    accessToken: string;
+}): Promise<"basic" | "licensed" | "on_prem" | "unknown"> {
+    try {
+        const response = await fetch(
+            "https://api.zoom.us/v2/users/me",
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                cache: "no-store",
+            },
+        );
+
+        if (!response.ok) {
+            // Swallowed everywhere else so a lookup failure never breaks
+            // the page — but silently returning "unknown" makes this
+            // impossible to diagnose from the outside, so log the actual
+            // Zoom error server-side. The most likely cause: the
+            // Server-to-Server OAuth app is missing a user-read scope
+            // (e.g. "View a user"/user:read:user:admin) — meeting scopes
+            // alone are enough to create meetings but not to read plan
+            // type via GET /users/me.
+            console.error(
+                "getZoomAccountPlanType: GET /users/me failed —",
+                await readZoomError(response),
+                `(scope likely missing on the Server-to-Server app; status ${response.status})`,
+            );
+            return "unknown";
+        }
+
+        const data = (await response.json()) as {
+            type?: number;
+        };
+
+        if (data.type === 1) return "basic";
+        if (data.type === 2) return "licensed";
+        if (data.type === 3) return "on_prem";
+
+        console.error(
+            "getZoomAccountPlanType: unrecognized user type in response —",
+            data,
+        );
+        return "unknown";
+    } catch (error) {
+        console.error(
+            "getZoomAccountPlanType: request failed —",
+            error,
+        );
+        return "unknown";
+    }
+}
+
 export type ZoomMeeting = {
     id: number;
     topic: string;

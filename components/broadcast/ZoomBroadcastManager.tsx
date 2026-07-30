@@ -28,6 +28,12 @@ type Meeting = {
 
 type Payload = {
     zoomConnected: boolean;
+    zoomAccountPlan?:
+        | "basic"
+        | "licensed"
+        | "on_prem"
+        | "unknown"
+        | null;
     meeting: Meeting | null;
 };
 
@@ -211,6 +217,30 @@ export default function ZoomBroadcastManager({
                 </div>
             )}
 
+            {data?.zoomConnected &&
+                data.zoomAccountPlan === "basic" && (
+                    <div className="mb-5 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                        <CircleAlert
+                            size={16}
+                            className="mt-0.5 shrink-0"
+                        />
+                        <span>
+                            <span className="font-black">
+                                This Zoom account is on the
+                                Free/Basic plan.
+                            </span>{" "}
+                            Zoom automatically ends meetings
+                            with 3 or more participants after{" "}
+                            <span className="font-black">
+                                40 minutes
+                            </span>
+                            . Upgrade to a paid Zoom plan
+                            (Pro or above) to remove this
+                            limit for your event broadcast.
+                        </span>
+                    </div>
+                )}
+
             {data?.zoomConnected && (
                 <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                     <p className="text-sm font-black text-slate-700">
@@ -351,7 +381,18 @@ export default function ZoomBroadcastManager({
                                 />
                                 {new Date(
                                     data.meeting.start_time,
-                                ).toLocaleString()}
+                                ).toLocaleString(
+                                    undefined,
+                                    {
+                                        year: "numeric",
+                                        month: "2-digit",
+                                        day: "2-digit",
+                                        hour: "numeric",
+                                        minute: "2-digit",
+                                        second: "2-digit",
+                                        hour12: true,
+                                    },
+                                )}
                             </p>
                         )}
 

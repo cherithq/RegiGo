@@ -4,6 +4,11 @@ import {
     createEventZoomMeeting,
     requireZoomBroadcastManager,
 } from "@/lib/event-zoom-broadcast";
+import { resolveZoomCredentials } from "@/lib/company-zoom";
+import {
+    getZoomAccessToken,
+    getZoomAccountPlanType,
+} from "@/lib/zoom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,7 +78,9 @@ export async function GET(
         const { data: company } =
             await admin
                 .from("companies")
-                .select("zoom_connected")
+                .select(
+                    "id, company_name, zoom_account_id, zoom_client_id, zoom_client_secret_encrypted, zoom_connected, zoom_connected_at",
+                )
                 .eq(
                     "id",
                     configuration.actor
@@ -81,11 +88,46 @@ export async function GET(
                 )
                 .maybeSingle();
 
+        // Best-effort only — shown as an informational warning, so a
+        // Zoom-side hiccup here should never break the rest of the page.
+        let zoomAccountPlan:
+            | "basic"
+            | "licensed"
+            | "on_prem"
+            | "unknown"
+            | null = null;
+
+        if (company?.zoom_connected) {
+            try {
+                const credentials =
+                    resolveZoomCredentials(
+                        company,
+                    );
+                const accessToken =
+                    await getZoomAccessToken(
+                        credentials,
+                    );
+                zoomAccountPlan =
+                    await getZoomAccountPlanType(
+                        {
+                            accessToken,
+                        },
+                    );
+            } catch (planError) {
+                console.error(
+                    "Zoom plan-type lookup failed before reaching /users/me —",
+                    planError,
+                );
+                zoomAccountPlan = "unknown";
+            }
+        }
+
         return json({
             success: true,
             zoomConnected: Boolean(
                 company?.zoom_connected,
             ),
+            zoomAccountPlan,
             meeting: meeting || null,
         });
     } catch (error) {
