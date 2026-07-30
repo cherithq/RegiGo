@@ -543,6 +543,14 @@ export default function TapTournamentPlayer({
     const pendingRef = useRef(0);
     const flushingRef = useRef(false);
     const lastRoundRef = useRef<string | null>(null);
+    const sawActiveRef = useRef(false);
+    const roundStatusRef = useRef(
+        state.roundStatus
+    );
+
+    useEffect(() => {
+        roundStatusRef.current = state.roundStatus;
+    }, [state.roundStatus]);
 
     const loadPublicState = useCallback(async () => {
         const response = await fetch(
@@ -602,12 +610,28 @@ export default function TapTournamentPlayer({
             ) {
                 lastRoundRef.current = next.roundId;
                 pendingRef.current = 0;
+                sawActiveRef.current =
+                    next.roundStatus === "active";
                 setLocalTaps(
                     Number(next.score || 0)
+                );
+
+                // A brand-new round id that's already past "active" on
+                // the very first poll that sees it means this device
+                // never got a chance to play — let the player know
+                // instead of silently jumping to results.
+                setError(
+                    next.roundStatus ===
+                        "round_complete" &&
+                        !sawActiveRef.current
+                        ? "You may have missed part of this round — showing results now."
+                        : ""
                 );
             } else if (
                 next.roundStatus === "active"
             ) {
+                sawActiveRef.current = true;
+                setError("");
                 setLocalTaps((current) =>
                     Math.max(
                         current,
@@ -616,6 +640,21 @@ export default function TapTournamentPlayer({
                     )
                 );
             } else {
+                if (
+                    next.roundStatus ===
+                        "round_complete" &&
+                    !sawActiveRef.current
+                ) {
+                    setError(
+                        "You may have missed part of this round — showing results now."
+                    );
+                } else if (
+                    next.roundStatus !==
+                    "round_complete"
+                ) {
+                    setError("");
+                }
+
                 pendingRef.current = 0;
                 setLocalTaps(
                     Number(next.score || 0)
@@ -659,19 +698,55 @@ export default function TapTournamentPlayer({
                 window.clearInterval(timer);
         }
 
-        const timer = window.setInterval(() => {
-            if (
-                document.visibilityState ===
-                "visible"
-            ) {
-                void loadPlayerState(
-                    token,
-                    true
-                );
-            }
-        }, 650);
+        // Adaptive cadence via a self-rescheduling timeout rather than a
+        // fixed setInterval: tightens to 400ms while a round is
+        // counting down/active (when cross-surface skew with the big
+        // screen matters most) and relaxes back to 650ms otherwise, all
+        // without tearing down/recreating the poll loop on every status
+        // change — each tick just reads the latest status from a ref.
+        let cancelled = false;
+        let timeoutId: number;
 
-        return () => window.clearInterval(timer);
+        function scheduleNext() {
+            const delay =
+                roundStatusRef.current ===
+                    "countdown" ||
+                roundStatusRef.current === "active"
+                    ? 400
+                    : 650;
+
+            timeoutId = window.setTimeout(async () => {
+                if (cancelled) return;
+
+                try {
+                    if (
+                        document.visibilityState ===
+                        "visible"
+                    ) {
+                        await loadPlayerState(
+                            token,
+                            true
+                        );
+                    }
+                } catch {
+                    // Keep polling even if a single tick fails
+                    // (e.g. a transient network hiccup) — matching the
+                    // previous setInterval-based behavior, which never
+                    // stopped polling on a single failed request.
+                } finally {
+                    if (!cancelled) {
+                        scheduleNext();
+                    }
+                }
+            }, delay);
+        }
+
+        scheduleNext();
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
     }, [
         loadPlayerState,
         loadPublicState,
@@ -721,6 +796,10 @@ export default function TapTournamentPlayer({
             if (!response.ok) {
                 if (response.status !== 409) {
                     pendingRef.current += batch;
+                } else {
+                    setError(
+                        "That round just ended — hang tight for results."
+                    );
                 }
                 return;
             }

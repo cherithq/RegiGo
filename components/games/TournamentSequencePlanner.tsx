@@ -165,10 +165,14 @@ async function readPayload(
 export default function TournamentSequencePlanner({
     eventId,
     onSuggestedGameChange,
+    onFinalSizeChange,
 }: {
     eventId: string;
     onSuggestedGameChange: (
         gameKey: TournamentGameKey
+    ) => void;
+    onFinalSizeChange?: (
+        finalSize: number
     ) => void;
 }) {
     const [plan, setPlan] =
@@ -178,6 +182,8 @@ export default function TournamentSequencePlanner({
     >(RECOMMENDED_STEPS);
     const [finalGameKey, setFinalGameKey] =
         useState<FinalGameKey>("tap_fast");
+    const [finalSize, setFinalSize] =
+        useState(10);
     const [loading, setLoading] =
         useState(true);
     const [saving, setSaving] =
@@ -219,6 +225,10 @@ export default function TournamentSequencePlanner({
                 nextPlan.finalGameKey ||
                     "tap_fast"
             );
+            const loadedFinalSize =
+                Number(nextPlan.finalSize) || 10;
+            setFinalSize(loadedFinalSize);
+            onFinalSizeChange?.(loadedFinalSize);
 
             if (nextPlan.suggestedGameKey) {
                 onSuggestedGameChange(
@@ -236,6 +246,7 @@ export default function TournamentSequencePlanner({
         }
     }, [
         eventId,
+        onFinalSizeChange,
         onSuggestedGameChange,
     ]);
 
@@ -328,6 +339,7 @@ export default function TournamentSequencePlanner({
                     body: JSON.stringify({
                         steps,
                         finalGameKey,
+                        finalSize,
                     }),
                     cache: "no-store",
                 }
@@ -354,6 +366,11 @@ export default function TournamentSequencePlanner({
                 nextPlan.finalGameKey ||
                     finalGameKey
             );
+            const savedFinalSize =
+                Number(nextPlan.finalSize) ||
+                finalSize;
+            setFinalSize(savedFinalSize);
+            onFinalSizeChange?.(savedFinalSize);
             setMessage(
                 data.message ||
                     "Tournament sequence saved."
@@ -628,7 +645,7 @@ export default function TournamentSequencePlanner({
                         <label className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                             <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-amber-800">
                                 <Trophy size={16} />
-                                Final 10 Game
+                                Final {finalSize} Game
                             </span>
 
                             <select
@@ -663,6 +680,42 @@ export default function TournamentSequencePlanner({
                                     )
                                 )}
                             </select>
+
+                            <span className="mt-3 block text-xs font-black uppercase tracking-[0.16em] text-amber-800">
+                                Finalist Count
+                            </span>
+
+                            <input
+                                type="number"
+                                min={2}
+                                max={50}
+                                step={1}
+                                value={finalSize}
+                                onChange={(event) =>
+                                    setFinalSize(
+                                        Math.min(
+                                            50,
+                                            Math.max(
+                                                2,
+                                                Number(
+                                                    event
+                                                        .target
+                                                        .value
+                                                ) || 2
+                                            )
+                                        )
+                                    )
+                                }
+                                disabled={
+                                    editingLocked
+                                }
+                                className="mt-2 h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-sm font-black text-slate-700 outline-none disabled:opacity-50"
+                            />
+                            <span className="mt-2 block text-xs font-bold leading-5 text-amber-800/80">
+                                Rounds stop halving once this many
+                                players remain — they play the
+                                final game above instead.
+                            </span>
                         </label>
                     </div>
 

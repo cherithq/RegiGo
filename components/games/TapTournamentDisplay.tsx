@@ -30,6 +30,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from "react";
 
@@ -188,6 +189,14 @@ export default function TapTournamentDisplay({
             : `${window.location.origin}${path}`;
     }, [publicBaseUrl, slug]);
 
+    const roundStatusRef = useRef(
+        state.roundStatus
+    );
+
+    useEffect(() => {
+        roundStatusRef.current = state.roundStatus;
+    }, [state.roundStatus]);
+
     const reload = useCallback(async () => {
         const response = await fetch(
             `/api/public/events/${encodeURIComponent(
@@ -208,14 +217,55 @@ export default function TapTournamentDisplay({
 
     useEffect(() => {
         void reload();
+    }, [reload]);
 
-        const timer = window.setInterval(
-            () => void reload(),
-            500
-        );
+    useEffect(() => {
+        // Adaptive cadence via a self-rescheduling timeout rather than a
+        // fixed setInterval: tightens to 400ms while a round is
+        // counting down/active (when skew against a guest's phone
+        // matters most) and relaxes back to 500ms otherwise. Also
+        // pauses while the browser tab isn't visible, matching the
+        // guard the player screen already had.
+        let cancelled = false;
+        let timeoutId: number;
 
-        return () =>
-            window.clearInterval(timer);
+        function scheduleNext() {
+            const delay =
+                roundStatusRef.current ===
+                    "countdown" ||
+                roundStatusRef.current === "active"
+                    ? 400
+                    : 500;
+
+            timeoutId = window.setTimeout(async () => {
+                if (cancelled) return;
+
+                try {
+                    if (
+                        document.visibilityState ===
+                        "visible"
+                    ) {
+                        await reload();
+                    }
+                } catch {
+                    // Keep polling even if a single tick fails
+                    // (e.g. a transient network hiccup) — matching the
+                    // previous setInterval-based behavior, which never
+                    // stopped polling on a single failed request.
+                } finally {
+                    if (!cancelled) {
+                        scheduleNext();
+                    }
+                }
+            }, delay);
+        }
+
+        scheduleNext();
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
     }, [reload]);
 
     useEffect(() => {

@@ -94,7 +94,7 @@ export async function GET(
 }
 
 export async function POST(
-    _request: Request,
+    request: Request,
     {
         params,
     }: {
@@ -110,12 +110,33 @@ export async function POST(
                 eventId,
             );
 
+        const body = await request
+            .json()
+            .catch(() => ({}) as Record<string, unknown>);
+
         const meeting =
             await createEventZoomMeeting({
                 configuration,
                 userId:
                     configuration.actor
                         .userId,
+                settings: {
+                    joinBeforeHost:
+                        typeof body.joinBeforeHost ===
+                        "boolean"
+                            ? body.joinBeforeHost
+                            : undefined,
+                    waitingRoom:
+                        typeof body.waitingRoom ===
+                        "boolean"
+                            ? body.waitingRoom
+                            : undefined,
+                    muteUponEntry:
+                        typeof body.muteUponEntry ===
+                        "boolean"
+                            ? body.muteUponEntry
+                            : undefined,
+                },
             });
 
         return json({

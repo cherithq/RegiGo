@@ -101,11 +101,17 @@ export async function createZoomMeeting({
     topic,
     startTime,
     timezone,
+    joinBeforeHost = true,
+    waitingRoom = false,
+    muteUponEntry = false,
 }: {
     accessToken: string;
     topic: string;
     startTime: string | null;
     timezone?: string;
+    joinBeforeHost?: boolean;
+    waitingRoom?: boolean;
+    muteUponEntry?: boolean;
 }): Promise<ZoomMeeting> {
     const response = await fetch(
         "https://api.zoom.us/v2/users/me/meetings",
@@ -124,9 +130,13 @@ export async function createZoomMeeting({
                     ? timezone || "UTC"
                     : undefined,
                 settings: {
-                    join_before_host: true,
+                    // When waiting_room is on, Zoom ignores
+                    // join_before_host — guests wait in the room
+                    // regardless, so it's safe to pass both as given.
+                    join_before_host: joinBeforeHost,
                     approval_type: 2,
-                    waiting_room: false,
+                    waiting_room: waitingRoom,
+                    mute_upon_entry: muteUponEntry,
                 },
             }),
         },

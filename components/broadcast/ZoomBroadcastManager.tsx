@@ -21,6 +21,9 @@ type Meeting = {
     join_url: string;
     start_time: string | null;
     updated_at: string;
+    join_before_host?: boolean | null;
+    waiting_room?: boolean | null;
+    mute_upon_entry?: boolean | null;
 };
 
 type Payload = {
@@ -57,6 +60,12 @@ export default function ZoomBroadcastManager({
     const [message, setMessage] =
         useState("");
     const [error, setError] = useState("");
+    const [requireHostStart, setRequireHostStart] =
+        useState(false);
+    const [waitingRoom, setWaitingRoom] =
+        useState(false);
+    const [muteUponEntry, setMuteUponEntry] =
+        useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -93,6 +102,20 @@ export default function ZoomBroadcastManager({
         void load();
     }, [load]);
 
+    useEffect(() => {
+        if (!data?.meeting) return;
+
+        setRequireHostStart(
+            data.meeting.join_before_host === false,
+        );
+        setWaitingRoom(
+            Boolean(data.meeting.waiting_room),
+        );
+        setMuteUponEntry(
+            Boolean(data.meeting.mute_upon_entry),
+        );
+    }, [data]);
+
     async function createMeeting() {
         setWorking(true);
         setMessage("");
@@ -101,7 +124,19 @@ export default function ZoomBroadcastManager({
         try {
             const response = await fetch(
                 `/api/events/${eventId}/zoom-meeting`,
-                { method: "POST" },
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+                    },
+                    body: JSON.stringify({
+                        joinBeforeHost:
+                            !requireHostStart,
+                        waitingRoom,
+                        muteUponEntry,
+                    }),
+                },
             );
             const result =
                 await readJson(response);
@@ -173,6 +208,90 @@ export default function ZoomBroadcastManager({
                     >
                         Go to Zoom Setup
                     </Link>
+                </div>
+            )}
+
+            {data?.zoomConnected && (
+                <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <p className="text-sm font-black text-slate-700">
+                        Meeting Settings
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                        Applied the next time you create or
+                        regenerate the meeting below.
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                        <label className="flex items-start gap-3">
+                            <input
+                                type="checkbox"
+                                checked={requireHostStart}
+                                onChange={(event) =>
+                                    setRequireHostStart(
+                                        event.target.checked,
+                                    )
+                                }
+                                className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                            />
+                            <span>
+                                <span className="block text-sm font-black">
+                                    Only start once the host
+                                    starts the meeting
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                    When on, guests wait until
+                                    you start the meeting from
+                                    Zoom. When off, guests can
+                                    join and start talking
+                                    before you arrive.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-3">
+                            <input
+                                type="checkbox"
+                                checked={waitingRoom}
+                                onChange={(event) =>
+                                    setWaitingRoom(
+                                        event.target.checked,
+                                    )
+                                }
+                                className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                            />
+                            <span>
+                                <span className="block text-sm font-black">
+                                    Enable waiting room
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                    Guests wait in a virtual
+                                    lobby until you admit them.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-3">
+                            <input
+                                type="checkbox"
+                                checked={muteUponEntry}
+                                onChange={(event) =>
+                                    setMuteUponEntry(
+                                        event.target.checked,
+                                    )
+                                }
+                                className="mt-1 h-4 w-4 accent-[#4F46E5]"
+                            />
+                            <span>
+                                <span className="block text-sm font-black">
+                                    Mute participants on entry
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                    Guests join muted and can
+                                    unmute themselves.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
                 </div>
             )}
 

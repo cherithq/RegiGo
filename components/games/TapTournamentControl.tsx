@@ -155,6 +155,25 @@ type TournamentState = {
     leaderboard?: Leader[];
 };
 
+type RevealSummary = {
+    canReveal?: boolean;
+    canOpenReady?: boolean;
+    resultAvailable?: boolean;
+    resultsRevealed?: boolean;
+    resultRoundNumber?: number | null;
+    resultGameTitle?: string | null;
+    resultIsFinal?: boolean;
+    advancingCount?: number;
+    eliminatedCount?: number;
+};
+
+type ReadySummary = {
+    readyOpen?: boolean;
+    allReady?: boolean;
+    readyCount?: number;
+    readyTotal?: number;
+};
+
 type ApiPayload = Record<string, any>;
 
 async function readApiPayload(
@@ -231,6 +250,14 @@ export default function TapTournamentControl({
         useState("");
     const [nextGameKey, setNextGameKey] =
         useState<TournamentGameKey>("tap_fast");
+    const [finalSize, setFinalSize] =
+        useState(10);
+    const [reveal, setReveal] =
+        useState<RevealSummary>({});
+    const [ready, setReady] =
+        useState<ReadySummary>({});
+    const [dangerZoneOpen, setDangerZoneOpen] =
+        useState(false);
 
     const publicBaseUrl = useMemo(
         () =>
@@ -318,6 +345,46 @@ export default function TapTournamentControl({
                         ? managementError.message
                         : "Tournament management tools are unavailable."
                 );
+            }
+
+            // Reveal/ready summaries power the consolidated "Next Step"
+            // card below — same routes TournamentResultsRevealPanel and
+            // TournamentReadyPanel already poll independently, so a
+            // failure here must not block the main tournament screen.
+            try {
+                const revealResponse = await fetch(
+                    `/api/events/${eventId}/games/tournament/reveal`,
+                    { cache: "no-store" }
+                );
+                const revealData = await readApiPayload(
+                    revealResponse,
+                    "Tournament reveal API"
+                );
+
+                if (revealResponse.ok) {
+                    setReveal(revealData.reveal || {});
+                }
+            } catch {
+                // Non-fatal — the Next Step card falls back to the
+                // Start Round action when reveal status is unavailable.
+            }
+
+            try {
+                const readyResponse = await fetch(
+                    `/api/events/${eventId}/games/tournament/ready`,
+                    { cache: "no-store" }
+                );
+                const readyData = await readApiPayload(
+                    readyResponse,
+                    "Tournament ready API"
+                );
+
+                if (readyResponse.ok) {
+                    setReady(readyData.ready || {});
+                }
+            } catch {
+                // Non-fatal — the readiness gate simply won't have
+                // anything to check against if this fails.
             }
         } catch (error) {
             setMessage(
@@ -417,24 +484,87 @@ export default function TapTournamentControl({
         }
     }
 
+    function startRound() {
+        if (ready.readyOpen && !ready.allReady) {
+            const notReadyCount =
+                Number(ready.readyTotal || 0) -
+                Number(ready.readyCount || 0);
+
+            const confirmed = window.confirm(
+                `${notReadyCount} of ${
+                    ready.readyTotal || 0
+                } players haven't confirmed ready — start anyway?`
+            );
+
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        void perform(
+            `/api/events/${eventId}/games/tournament/start-round`,
+            { gameKey: nextGameKey }
+        );
+    }
+
+    async function performReveal(
+        action: "reveal" | "ready"
+    ) {
+        setWorking(`reveal-${action}`);
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${eventId}/games/tournament/reveal`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+                    },
+                    body: JSON.stringify({ action }),
+                    cache: "no-store",
+                }
+            );
+            const data = await readApiPayload(
+                response,
+                "Tournament reveal API"
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    data.error ||
+                        "Unable to update round results."
+                );
+            }
+
+            setMessage(
+                data.message || "Round results updated."
+            );
+            await reload();
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to update round results."
+            );
+        } finally {
+            setWorking("");
+        }
+    }
+
     async function managePlayer(
         player: ManagedPlayer,
         action: "remove" | "eliminate" | "restore"
     ) {
-        const label =
+        const confirmMessage =
             action === "remove"
-                ? "remove"
+                ? `Remove ${player.name} from the tournament entirely? This deletes them from the lobby and can't be undone.`
                 : action === "restore"
-                  ? "restore"
-                  : "eliminate";
+                  ? `Restore ${player.name} to the tournament? They'll be marked active again.`
+                  : `Eliminate ${player.name} from the current round? Their history stays on record, and they can be restored later if needed.`;
 
-        if (
-            !window.confirm(
-                `${label[0].toUpperCase()}${label.slice(
-                    1
-                )} ${player.name}?`
-            )
-        ) {
+        if (!window.confirm(confirmMessage)) {
             return;
         }
 
@@ -638,10 +768,210 @@ export default function TapTournamentControl({
     const currentPlayers =
         Number(state.activePlayers || 0);
     const nextRoundIsFinal =
-        currentPlayers > 0 && currentPlayers <= 10;
+        currentPlayers > 0 &&
+        currentPlayers <= finalSize;
+
+    // Drives the "Next Step" card below — a single source of truth for
+    // what the admin should do right now, instead of them having to
+    // piece it together from several independently-polling panels.
+    const nextStep =
+        canCreate
+            ? "create"
+            : canLock
+              ? "lock"
+              : status === "countdown" ||
+                  status === "active"
+                ? "live"
+                : status === "round_complete"
+                  ? reveal.canReveal
+                      ? "reveal"
+                      : reveal.canOpenReady
+                        ? "ready"
+                        : "start"
+                  : canStart
+                    ? "start"
+                    : "idle";
 
     return (
         <div className="space-y-6">
+            <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-black text-slate-500">
+                    <span>
+                        Status:{" "}
+                        <span className="text-slate-900">
+                            {nextRoundIsFinal &&
+                            (status === "locked" ||
+                                status === "round_complete")
+                                ? "Final round up next"
+                                : status
+                                      .replace(/_/g, " ")
+                                      .replace(
+                                          /^./,
+                                          (char) =>
+                                              char.toUpperCase()
+                                      )}
+                        </span>
+                    </span>
+                    <span>
+                        Round:{" "}
+                        <span className="text-slate-900">
+                            {state.currentRound || 0}
+                        </span>
+                    </span>
+                    <span>
+                        Players remaining:{" "}
+                        <span className="text-slate-900">
+                            {currentPlayers}
+                        </span>
+                    </span>
+                    {state.gameTitle && (
+                        <span>
+                            Game:{" "}
+                            <span className="text-slate-900">
+                                {state.gameTitle}
+                            </span>
+                        </span>
+                    )}
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-indigo-100 bg-[#F7F5FF] p-4">
+                    {nextStep === "create" && (
+                        <NextStepRow
+                            label="Next step"
+                            description="Create the tournament lobby so guests can start scanning the QR code."
+                            actionLabel="Create Tournament Lobby"
+                            onAction={() =>
+                                perform(
+                                    `/api/events/${eventId}/games/tournament`,
+                                    { action: "create" }
+                                )
+                            }
+                            disabled={Boolean(working)}
+                        />
+                    )}
+
+                    {nextStep === "lock" && (
+                        <NextStepRow
+                            label="Next step"
+                            description={`${
+                                state.joinedPlayers || 0
+                            } guest${
+                                state.joinedPlayers === 1
+                                    ? ""
+                                    : "s"
+                            } joined so far. Lock the lobby once everyone who's playing has scanned in.`}
+                            actionLabel="Lock Players"
+                            onAction={() =>
+                                perform(
+                                    `/api/events/${eventId}/games/tournament`,
+                                    { action: "lock" }
+                                )
+                            }
+                            disabled={
+                                Boolean(working) ||
+                                Number(
+                                    state.joinedPlayers || 0
+                                ) < 2
+                            }
+                        />
+                    )}
+
+                    {nextStep === "live" && (
+                        <p className="text-sm font-bold text-slate-700">
+                            Round {state.currentRound} (
+                            {state.gameTitle || "in progress"}) is
+                            running — no action needed until it
+                            ends.
+                        </p>
+                    )}
+
+                    {nextStep === "reveal" && (
+                        <NextStepRow
+                            label="Next step"
+                            description={`Round ${
+                                reveal.resultRoundNumber ||
+                                state.currentRound
+                            } (${
+                                reveal.resultGameTitle ||
+                                "the last game"
+                            }) has finished. Reveal the results before opening the next ready check.`}
+                            actionLabel="Reveal Round Results"
+                            onAction={() =>
+                                performReveal("reveal")
+                            }
+                            disabled={
+                                Boolean(working) ||
+                                working === "reveal-reveal"
+                            }
+                        />
+                    )}
+
+                    {nextStep === "ready" && (
+                        <NextStepRow
+                            label="Next step"
+                            description="Results revealed. Open the ready check so players confirm they're set for the next round."
+                            actionLabel="Open Next Ready Check"
+                            onAction={() =>
+                                performReveal("ready")
+                            }
+                            disabled={
+                                Boolean(working) ||
+                                working === "reveal-ready"
+                            }
+                        />
+                    )}
+
+                    {nextStep === "start" && (
+                        <div>
+                            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4F46E5]">
+                                Next step
+                            </p>
+                            <p className="mt-1 text-sm font-bold text-slate-700">
+                                {ready.readyOpen &&
+                                !ready.allReady
+                                    ? `${
+                                          Number(
+                                              ready.readyTotal || 0
+                                          ) -
+                                          Number(
+                                              ready.readyCount || 0
+                                          )
+                                      } of ${
+                                          ready.readyTotal || 0
+                                      } players haven't confirmed ready yet. `
+                                    : ""}
+                                Choose the next game and click
+                                Start Round below.
+                            </p>
+                            <a
+                                href="#start-round-controls"
+                                className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white"
+                            >
+                                Jump to Start Round
+                            </a>
+                        </div>
+                    )}
+
+                    {nextStep === "idle" && (
+                        <p className="text-sm font-bold text-slate-500">
+                            Loading tournament status…
+                        </p>
+                    )}
+                </div>
+
+                {nextRoundIsFinal &&
+                    (nextStep === "start" ||
+                        nextStep === "ready" ||
+                        nextStep === "reveal") && (
+                        <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-black text-amber-900">
+                            Next round is the FINAL round —{" "}
+                            {finalSize} players left. Tic-Tac-Toe
+                            isn&rsquo;t available for the final;
+                            results go live on the big screen.
+                        </div>
+                    )}
+            </section>
+
             <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
                 <div className="grid gap-8 p-6 lg:grid-cols-[1fr_390px] lg:p-9">
                     <div>
@@ -757,7 +1087,14 @@ export default function TapTournamentControl({
                             )}
 
                             {canStart && (
-                                <label className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3">
+                                <label
+                                    id="start-round-controls"
+                                    className={`flex min-h-11 scroll-mt-6 items-center gap-2 rounded-2xl border bg-white px-3 ${
+                                        nextStep === "start"
+                                            ? "border-[#4F46E5] ring-2 ring-[#4F46E5]/30"
+                                            : "border-slate-200"
+                                    }`}
+                                >
                                     {nextGameKey === "higher_lower" ? (
                                         <ArrowUpDown
                                             size={17}
@@ -870,14 +1207,7 @@ export default function TapTournamentControl({
 
                             {canStart && (
                                 <ActionButton
-                                    onClick={() =>
-                                        perform(
-                                            `/api/events/${eventId}/games/tournament/start-round`,
-                                            {
-                                                gameKey: nextGameKey,
-                                            }
-                                        )
-                                    }
+                                    onClick={startRound}
                                     disabled={
                                         Boolean(working) ||
                                         currentPlayers < 2
@@ -933,32 +1263,6 @@ export default function TapTournamentControl({
                                           }`}
                                 </ActionButton>
                             )}
-
-                            <ActionButton
-                                danger
-                                onClick={() => {
-                                    const confirmed =
-                                        window.confirm(
-                                            "Reset the tournament and remove all players, rounds and scores?"
-                                        );
-
-                                    if (confirmed) {
-                                        void perform(
-                                            `/api/events/${eventId}/games/tournament`,
-                                            {
-                                                action:
-                                                    "reset",
-                                            }
-                                        );
-                                    }
-                                }}
-                                disabled={Boolean(working)}
-                                icon={
-                                    <RotateCcw size={17} />
-                                }
-                            >
-                                Reset Tournament
-                            </ActionButton>
                         </div>
 
                         {message && (
@@ -1003,6 +1307,7 @@ export default function TapTournamentControl({
             <TournamentSequencePlanner
                 eventId={eventId}
                 onSuggestedGameChange={setNextGameKey}
+                onFinalSizeChange={setFinalSize}
             />
 
             <TournamentSafetyPanel
@@ -1370,6 +1675,7 @@ export default function TapTournamentControl({
                                                         {beforeRoundOne ? (
                                                             <button
                                                                 type="button"
+                                                                title="Deletes this player from the lobby before the tournament starts."
                                                                 onClick={() =>
                                                                     void managePlayer(
                                                                         player,
@@ -1392,6 +1698,7 @@ export default function TapTournamentControl({
                                                           "active" ? (
                                                             <button
                                                                 type="button"
+                                                                title="Marks this player eliminated for the current round. Their history is kept and they can be restored."
                                                                 onClick={() =>
                                                                     void managePlayer(
                                                                         player,
@@ -1619,6 +1926,55 @@ export default function TapTournamentControl({
                     </div>
                 </div>
             </section>
+
+            <section className="rounded-[2rem] border border-red-100 bg-red-50/40 p-5">
+                <button
+                    type="button"
+                    onClick={() =>
+                        setDangerZoneOpen((current) => !current)
+                    }
+                    className="text-sm font-black text-red-700"
+                >
+                    {dangerZoneOpen ? "Hide" : "Show"} Danger Zone
+                </button>
+
+                {dangerZoneOpen && (
+                    <div className="mt-4">
+                        <p className="text-xs font-bold leading-5 text-red-700/80">
+                            Resetting removes every player, round
+                            and score for this tournament. This
+                            can&rsquo;t be undone.
+                        </p>
+
+                        <div className="mt-4">
+                            <ActionButton
+                                danger
+                                onClick={() => {
+                                    const confirmed =
+                                        window.confirm(
+                                            "Reset the tournament and remove all players, rounds and scores?"
+                                        );
+
+                                    if (confirmed) {
+                                        void perform(
+                                            `/api/events/${eventId}/games/tournament`,
+                                            {
+                                                action: "reset",
+                                            }
+                                        );
+                                    }
+                                }}
+                                disabled={Boolean(working)}
+                                icon={
+                                    <RotateCcw size={17} />
+                                }
+                            >
+                                Reset Tournament
+                            </ActionButton>
+                        </div>
+                    </div>
+                )}
+            </section>
         </div>
     );
 }
@@ -1643,6 +1999,42 @@ function Stat({
             <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
                 {label}
             </p>
+        </div>
+    );
+}
+
+function NextStepRow({
+    label,
+    description,
+    actionLabel,
+    onAction,
+    disabled,
+}: {
+    label: string;
+    description: string;
+    actionLabel: string;
+    onAction: () => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4F46E5]">
+                    {label}
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-700">
+                    {description}
+                </p>
+            </div>
+
+            <button
+                type="button"
+                onClick={onAction}
+                disabled={disabled}
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 text-sm font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
+            >
+                {actionLabel}
+            </button>
         </div>
     );
 }

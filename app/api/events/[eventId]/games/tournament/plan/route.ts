@@ -360,6 +360,58 @@ export async function POST(
                 ? bodyObject.finalGameKey
                 : "tap_fast";
 
+        let finalSize: number | null = null;
+
+        if ("finalSize" in bodyObject) {
+            const rawFinalSize = Number(
+                bodyObject.finalSize
+            );
+
+            if (
+                !Number.isInteger(rawFinalSize) ||
+                rawFinalSize < 2 ||
+                rawFinalSize > 50
+            ) {
+                throw new Error(
+                    "Finalist count must be a whole number between 2 and 50."
+                );
+            }
+
+            const {
+                count: activePlayerCount,
+                error: activePlayerError,
+            } = await supabaseServer
+                .from("tap_tournament_players")
+                .select("id", {
+                    count: "exact",
+                    head: true,
+                })
+                .eq(
+                    "tournament_id",
+                    tournament.id
+                )
+                .eq("status", "active");
+
+            if (activePlayerError) {
+                throw new Error(
+                    activePlayerError.message
+                );
+            }
+
+            if (
+                Number(activePlayerCount || 0) >
+                    0 &&
+                rawFinalSize >=
+                    Number(activePlayerCount || 0)
+            ) {
+                throw new Error(
+                    `Finalist count must be lower than the ${activePlayerCount} active players remaining, or the tournament will never reach a final round.`
+                );
+            }
+
+            finalSize = rawFinalSize;
+        }
+
         const { error: deleteError } =
             await supabaseServer
                 .from("tap_tournament_plan_steps")
@@ -421,13 +473,35 @@ export async function POST(
             );
         }
 
+        if (finalSize !== null) {
+            const { error: finalSizeError } =
+                await supabaseServer
+                    .from("tap_tournaments")
+                    .update({
+                        final_size: finalSize,
+                    })
+                    .eq("id", tournament.id);
+
+            if (finalSizeError) {
+                throw new Error(
+                    finalSizeError.message
+                );
+            }
+        }
+
         return json({
             success: true,
             message:
                 "Tournament sequence saved.",
             plan: await loadPlan(
                 supabaseServer,
-                tournament
+                finalSize !== null
+                    ? {
+                          ...tournament,
+                          final_size:
+                              finalSize,
+                      }
+                    : tournament
             ),
         });
     } catch (error) {
