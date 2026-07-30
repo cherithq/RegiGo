@@ -14,6 +14,18 @@ const DEFAULT_SETTINGS = {
     allow_rsvp_sales: true,
 };
 
+function missingRelation(error: { message?: string } | null) {
+    if (!error?.message) return false;
+
+    const lowered = error.message.toLowerCase();
+
+    return (
+        lowered.includes("does not exist") ||
+        lowered.includes("schema cache") ||
+        lowered.includes("could not find")
+    );
+}
+
 function json(body: Record<string, unknown>, status = 200) {
     return NextResponse.json(body, {
         status,
@@ -59,7 +71,12 @@ async function buildPayload(eventId: string) {
             ),
         ]);
 
-    if (settingsResult.error) {
+    if (
+        settingsResult.error &&
+        !missingRelation(
+            settingsResult.error,
+        )
+    ) {
         throw new PaymentAccessError(
             settingsResult.error.message,
         );
@@ -123,7 +140,10 @@ export async function PATCH(
             .eq("event_id", eventId)
             .maybeSingle();
 
-        if (current.error) {
+        if (
+            current.error &&
+            !missingRelation(current.error)
+        ) {
             throw new PaymentAccessError(
                 current.error.message,
             );
@@ -159,7 +179,9 @@ export async function PATCH(
 
         if (error) {
             throw new PaymentAccessError(
-                error.message,
+                missingRelation(error)
+                    ? `${error.message} Run sql/2026-07-30-event-ticket-settings.sql and restart Next.js.`
+                    : error.message,
             );
         }
 
