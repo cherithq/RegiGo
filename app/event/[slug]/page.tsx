@@ -69,6 +69,13 @@ export default async function PublicEventPage({
         ? event.event_branding[0]
         : event.event_branding;
 
+    type PageSection = {
+        id: string;
+        section_type?: string | null;
+        title?: string | null;
+        content?: string | null;
+    };
+
     const [sectionsResult, speakersResult, agendaResult, ticketsResult] =
         await Promise.all([
             supabaseServer
@@ -97,6 +104,22 @@ export default async function PublicEventPage({
                 .order("display_order", { ascending: true }),
         ]);
 
+    const orderedSections = (sectionsResult.data ||
+        []) as PageSection[];
+    const agendaItems = agendaResult.data || [];
+    // The programme's position among the other sections is set from the
+    // Website Builder via a placeholder "agenda" row in event_page_sections
+    // (its title/content are unused — EventAgenda always renders "Programme"
+    // sourced from event_agenda). Older events that haven't opened the
+    // Website Builder since this was added won't have that row yet, so fall
+    // back to the programme's original fixed position (right after the
+    // registration CTA) until one exists. Only the first such row (lowest
+    // sort_order) is ever honoured — if more than one exists (e.g. a stale
+    // duplicate), the rest are skipped so Programme never renders twice.
+    const firstAgendaSectionId = orderedSections.find(
+        (section) => section.section_type === "agenda",
+    )?.id;
+
     return (
         <main
             className="min-h-screen overflow-x-hidden text-slate-950"
@@ -116,18 +139,37 @@ export default async function PublicEventPage({
                     <RegistrationCTA event={event} />
                 </div>
 
-                <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
-                    <EventAgenda agenda={agendaResult.data || []} />
-                </div>
+                {!firstAgendaSectionId && (
+                    <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
+                        <EventAgenda agenda={agendaItems} />
+                    </div>
+                )}
 
-                <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
-                    <EventSections
-                        sections={(sectionsResult.data || []).filter(
-                            (section: { section_type?: string | null }) =>
-                                section.section_type !== "agenda",
-                        )}
-                    />
-                </div>
+                {orderedSections.map((section) => {
+                    if (section.section_type === "agenda") {
+                        if (section.id !== firstAgendaSectionId) {
+                            return null;
+                        }
+
+                        return (
+                            <div
+                                key={section.id}
+                                className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]"
+                            >
+                                <EventAgenda agenda={agendaItems} />
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div
+                            key={section.id}
+                            className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]"
+                        >
+                            <EventSections sections={[section]} />
+                        </div>
+                    );
+                })}
 
                 <div className="overflow-hidden rounded-[1.5rem] md:rounded-[2rem]">
                     <EventSpeakers speakers={speakersResult.data || []} />

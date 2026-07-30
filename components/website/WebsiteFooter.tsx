@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatClockTime, formatDisplayDate } from "@/lib/format-time";
 
 type FooterEvent = {
     event_name?: string | null;
@@ -17,7 +18,8 @@ export default function WebsiteFooter({ event }: { event: FooterEvent }) {
                     <h2 className="text-2xl font-black">{event.event_name}</h2>
 
                     <p className="mt-2 text-white/70">
-                        {event.event_date || "-"} · {event.event_time || "-"}
+                        {formatDisplayDate(event.event_date) || "-"} ·{" "}
+                        {formatClockTime(event.event_time) || "-"}
                     </p>
 
                     <p className="mt-1 text-white/70">{event.venue || "-"}</p>

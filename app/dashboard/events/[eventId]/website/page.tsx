@@ -19,7 +19,11 @@ export default async function EventWebsitePage({
 
     if (!event) return <div>Event not found.</div>;
 
-    const [{ data: sections }, { count: agendaCount }] = await Promise.all([
+    const [
+        { data: sections },
+        { count: agendaCount },
+        { count: speakerCount },
+    ] = await Promise.all([
         supabaseServer
             .from("event_page_sections")
             .select("*")
@@ -28,6 +32,11 @@ export default async function EventWebsitePage({
 
         supabaseServer
             .from("event_agenda")
+            .select("id", { count: "exact", head: true })
+            .eq("event_id", eventId),
+
+        supabaseServer
+            .from("speakers")
             .select("id", { count: "exact", head: true })
             .eq("event_id", eventId),
     ]);
@@ -62,6 +71,7 @@ export default async function EventWebsitePage({
                         event={event}
                         initialSections={sections || []}
                         agendaCount={agendaCount || 0}
+                        speakerCount={speakerCount || 0}
                     />
                 </div>
             </div>

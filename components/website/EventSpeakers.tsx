@@ -17,7 +17,7 @@ export default function EventSpeakers({
 
     return (
 
-        <section className="mb-12 p-1 pt-2 sm:p-2 sm:pt-3">
+        <section className="mb-12 rounded-[2rem] bg-white p-8 shadow-xl">
 
             <h2 className="mb-8 text-3xl font-black">
 

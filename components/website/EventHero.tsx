@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatClockTime, formatDisplayDate } from "@/lib/format-time";
 
 type HeroEvent = {
     event_name?: string | null;
@@ -60,8 +61,16 @@ export default function EventHero({
                 </p>
 
                 <div className="mt-10 grid max-w-4xl gap-4 md:grid-cols-3">
-                    <Info label="Date" value={event.event_date || "-"} />
-                    <Info label="Time" value={event.event_time || "-"} />
+                    <Info
+                        label="Date"
+                        value={
+                            formatDisplayDate(event.event_date) || "-"
+                        }
+                    />
+                    <Info
+                        label="Time"
+                        value={formatClockTime(event.event_time) || "-"}
+                    />
                     <Info label="Venue" value={event.venue || "-"} />
                 </div>
 
