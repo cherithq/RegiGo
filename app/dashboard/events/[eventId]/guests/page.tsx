@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { requirePermission } from "@/lib/permissions";
 import { getSupabaseAdminClient } from "@/lib/guest-invitations";
+import { resolveEventRegistrationMode } from "@/lib/event-analytics-server";
 import BulkEmailButton from "@/components/guests/BulkEmailButton";
 import GuestsManager from "@/components/guests/GuestsManager";
 import BackButton from "@/components/layout/BackButton";
@@ -97,6 +98,7 @@ export default async function GuestsPage({
         { data: guests },
         registeredCountResult,
         checkedInCountResult,
+        registrationMode,
     ] = await Promise.all([
         admin
             .from("registrations")
@@ -122,6 +124,11 @@ export default async function GuestsPage({
                 head: true,
             })
             .eq("event_id", eventId),
+
+        resolveEventRegistrationMode(
+            admin,
+            eventId,
+        ),
     ]);
 
     const initialCounters = {
@@ -242,13 +249,16 @@ export default async function GuestsPage({
                     </div>
 
                     <div className="flex flex-wrap gap-3 lg:justify-end">
-                        <Link
-                            href={`/dashboard/events/${eventId}/invitations`}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90"
-                        >
-                            <MailCheck size={17} />
-                            Invitations & RSVP
-                        </Link>
+                        {registrationMode ===
+                            "invitation_only" && (
+                            <Link
+                                href={`/dashboard/events/${eventId}/invitations`}
+                                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 text-sm font-black text-white shadow-lg transition hover:opacity-90"
+                            >
+                                <MailCheck size={17} />
+                                Invitations & RSVP
+                            </Link>
+                        )}
 
                         <BulkEmailButton
                             eventId={eventId}

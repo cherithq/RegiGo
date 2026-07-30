@@ -50,6 +50,10 @@ function getDefaultSubject(emailType: string, eventName: string) {
         return `Reminder: ${eventName} is coming up`;
     }
 
+    if (emailType === "thank_you") {
+        return `Thank you for attending ${eventName}`;
+    }
+
     return `Registration confirmed for ${eventName}`;
 }
 
@@ -82,6 +86,15 @@ This is a reminder that {{event_name}} is coming up soon. Your details are below
 
 You may view your QR pass here:
 {{pass_url}}`;
+    }
+
+    if (emailType === "thank_you") {
+        return `Hi {{name}},
+
+Thank you for attending {{event_name}}. We hope you enjoyed it.
+
+Regards,
+RegiGo`;
     }
 
     const zoomParagraph = options.hasZoomLink
@@ -152,6 +165,62 @@ async function queueTomorrowReminders(
     }
 }
 
+async function queuePastEventThankYous(
+    admin: ReturnType<typeof getSupabaseAdminClient>,
+) {
+    // The worker runs once/day (see vercel.json), so "yesterday" is the one
+    // day an event that just finished will match - same one-shot-per-event
+    // cadence as queueTomorrowReminders, just looking a day behind instead
+    // of a day ahead.
+    const sgtNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const yesterday = new Date(sgtNow);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayDate = yesterday.toISOString().slice(0, 10);
+
+    const { data: events } = await admin
+        .from("events")
+        .select("id")
+        .eq("event_date", yesterdayDate)
+        .eq("status", "published");
+
+    if (!events || events.length === 0) return;
+
+    for (const event of events) {
+        const { data: existingThankYou } = await admin
+            .from("email_jobs")
+            .select("id")
+            .eq("event_id", event.id)
+            .eq("email_type", "thank_you")
+            .limit(1)
+            .maybeSingle();
+
+        if (existingThankYou) continue;
+
+        const { data: registrations } = await admin
+            .from("registrations")
+            .select("id, email")
+            .eq("event_id", event.id)
+            .in("registration_status", ["checked_in", "attended"]);
+
+        const rows = (registrations || [])
+            .filter((registration) => registration.email)
+            .map((registration) => ({
+                event_id: event.id,
+                registration_id: registration.id,
+                recipient_email: registration.email,
+                email_type: "thank_you",
+                status: "pending",
+                attempts: 0,
+                last_error: null,
+                sent_at: null,
+            }));
+
+        if (rows.length > 0) {
+            await admin.from("email_jobs").insert(rows);
+        }
+    }
+}
+
 async function runEmailWorker(req: Request) {
     try {
         const url = new URL(req.url);
@@ -175,6 +244,7 @@ async function runEmailWorker(req: Request) {
         const admin = getSupabaseAdminClient();
 
         await queueTomorrowReminders(admin);
+        await queuePastEventThankYous(admin);
 
         const { data: jobs, error: jobsError } = await admin
             .from("email_jobs")
