@@ -278,8 +278,11 @@ export async function getPublicTicketContext({
     }
 
     const { data: ticketSettings } = await admin
+        // select("*") instead of an explicit column list so this keeps
+        // working even before the page_title/page_subtitle/banner_color_*
+        // appearance columns have been added to the database.
         .from("event_ticket_settings")
-        .select("allow_rsvp_sales")
+        .select("*")
         .eq("event_id", event.id)
         .maybeSingle();
 
@@ -412,6 +415,7 @@ export async function getPublicTicketContext({
             isPlatformCompany(company.id),
         tickets: availableTickets,
         diagnostics,
+        ticketSettings: ticketSettings || null,
     };
 }
 

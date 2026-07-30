@@ -12,7 +12,16 @@ export const revalidate = 0;
 const DEFAULT_SETTINGS = {
     allow_registration_sales: true,
     allow_rsvp_sales: true,
+    page_title: null as string | null,
+    page_subtitle: null as string | null,
+    banner_color_from: "#4F46E5" as string | null,
+    banner_color_to: "#EC4899" as string | null,
+    banner_image_url: null as string | null,
 };
+
+function cleanText(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
+}
 
 function missingRelation(error: { message?: string } | null) {
     if (!error?.message) return false;
@@ -57,11 +66,12 @@ async function buildPayload(eventId: string) {
 
     const [settingsResult, registrationMode] =
         await Promise.all([
+            // select("*") instead of an explicit column list so this keeps
+            // working even before the page_title/page_subtitle/banner_color_*
+            // appearance columns have been added to the database.
             admin
                 .from("event_ticket_settings")
-                .select(
-                    "allow_registration_sales, allow_rsvp_sales",
-                )
+                .select("*")
                 .eq("event_id", eventId)
                 .maybeSingle(),
 
@@ -134,9 +144,7 @@ export async function PATCH(
 
         const current = await admin
             .from("event_ticket_settings")
-            .select(
-                "allow_registration_sales, allow_rsvp_sales",
-            )
+            .select("*")
             .eq("event_id", eventId)
             .maybeSingle();
 
@@ -165,19 +173,80 @@ export async function PATCH(
                     : base.allow_rsvp_sales,
         };
 
+        const appearanceProvided =
+            "page_title" in body ||
+            "page_subtitle" in body ||
+            "banner_color_from" in body ||
+            "banner_color_to" in body ||
+            "banner_image_url" in body;
+
+        const nextAppearance = {
+            page_title:
+                "page_title" in body
+                    ? cleanText(body.page_title) || null
+                    : (base.page_title ?? null),
+            page_subtitle:
+                "page_subtitle" in body
+                    ? cleanText(body.page_subtitle) || null
+                    : (base.page_subtitle ?? null),
+            banner_color_from:
+                "banner_color_from" in body
+                    ? cleanText(body.banner_color_from) ||
+                      "#4F46E5"
+                    : (base.banner_color_from ?? "#4F46E5"),
+            banner_color_to:
+                "banner_color_to" in body
+                    ? cleanText(body.banner_color_to) ||
+                      "#EC4899"
+                    : (base.banner_color_to ?? "#EC4899"),
+            banner_image_url:
+                "banner_image_url" in body
+                    ? cleanText(body.banner_image_url) || null
+                    : (base.banner_image_url ?? null),
+        };
+
         const { error } = await admin
             .from("event_ticket_settings")
             .upsert(
                 {
                     event_id: eventId,
                     ...nextSettings,
+                    ...nextAppearance,
                     updated_at:
                         new Date().toISOString(),
                 },
                 { onConflict: "event_id" },
             );
 
-        if (error) {
+        // The page_title/page_subtitle/banner_color_* appearance columns
+        // are a newer addition — if they don't exist in this database yet,
+        // retry without them rather than blocking the sales-channel toggles
+        // from saving.
+        if (error && missingRelation(error)) {
+            const { error: fallbackError } = await admin
+                .from("event_ticket_settings")
+                .upsert(
+                    {
+                        event_id: eventId,
+                        ...nextSettings,
+                        updated_at:
+                            new Date().toISOString(),
+                    },
+                    { onConflict: "event_id" },
+                );
+
+            if (fallbackError) {
+                throw new PaymentAccessError(
+                    `${fallbackError.message} Run sql/2026-07-30-event-ticket-settings.sql and restart Next.js.`,
+                );
+            }
+
+            if (appearanceProvided) {
+                throw new PaymentAccessError(
+                    "Ticket sales settings were saved, but page appearance needs sql/2026-07-30-event-ticket-settings-appearance.sql to be run first.",
+                );
+            }
+        } else if (error) {
             throw new PaymentAccessError(
                 missingRelation(error)
                     ? `${error.message} Run sql/2026-07-30-event-ticket-settings.sql and restart Next.js.`
@@ -194,7 +263,10 @@ export async function PATCH(
         return json({
             success: true,
             message: "Ticket sales settings updated.",
-            settings: nextSettings,
+            settings: {
+                ...nextSettings,
+                ...nextAppearance,
+            },
             registrationMode,
         });
     } catch (error) {

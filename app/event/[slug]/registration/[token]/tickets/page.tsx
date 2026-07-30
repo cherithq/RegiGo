@@ -29,20 +29,42 @@ export default async function RegistrationTicketSelectionPage({
                 token,
             });
 
+        const banner = context.ticketSettings;
+        const bannerColorFrom =
+            banner?.banner_color_from || "#4F46E5";
+        const bannerColorTo =
+            banner?.banner_color_to || "#EC4899";
+
         return (
             <main className="min-h-screen bg-[#F7F5FF] p-5 md:p-10">
                 <div className="mx-auto max-w-5xl space-y-6">
-                    <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-[#4F46E5] to-[#EC4899] p-8 text-white shadow-xl">
+                    <section
+                        className="relative overflow-hidden rounded-[2rem] p-8 text-white shadow-xl"
+                        style={{
+                            backgroundImage:
+                                banner?.banner_image_url
+                                    ? `linear-gradient(rgba(2,6,23,.35), rgba(2,6,23,.55)), url("${banner.banner_image_url}")`
+                                    : `linear-gradient(to right, ${bannerColorFrom}, ${bannerColorTo})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                        }}
+                    >
                         <div className="relative z-10">
                             <p className="text-sm font-black uppercase tracking-[0.18em] text-white/75">
                                 Ticket Selection
                             </p>
                             <h1 className="mt-4 text-4xl font-black">
-                                {
+                                {banner?.page_title ||
                                     context.event
-                                        .event_name
-                                }
+                                        .event_name}
                             </h1>
+                            {banner?.page_subtitle && (
+                                <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/85">
+                                    {
+                                        banner.page_subtitle
+                                    }
+                                </p>
+                            )}
                             <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">
                                 <span className="inline-flex items-center gap-2">
                                     <CalendarDays

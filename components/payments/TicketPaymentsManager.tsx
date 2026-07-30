@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
     CheckCircle2,
     CreditCard,
+    Image as ImageIcon,
     Loader2,
     Pencil,
     Plus,
@@ -62,7 +63,19 @@ type OrderRow = {
 type TicketSalesSettings = {
     allow_registration_sales: boolean;
     allow_rsvp_sales: boolean;
+    page_title: string | null;
+    page_subtitle: string | null;
+    banner_color_from: string | null;
+    banner_color_to: string | null;
+    banner_image_url: string | null;
 };
+
+type TicketAppearanceKey =
+    | "page_title"
+    | "page_subtitle"
+    | "banner_color_from"
+    | "banner_color_to"
+    | "banner_image_url";
 
 type TicketSalesPayload = {
     settings: TicketSalesSettings;
@@ -358,6 +371,141 @@ export default function TicketPaymentsManager({
                 error instanceof Error
                     ? error.message
                     : "Unable to save ticket sales settings.",
+            );
+        } finally {
+            setWorking("");
+        }
+    }
+
+    function updateAppearanceField(
+        key: TicketAppearanceKey,
+        value: string,
+    ) {
+        setSalesSettings((current) =>
+            current
+                ? {
+                      ...current,
+                      settings: {
+                          ...current.settings,
+                          [key]: value,
+                      },
+                  }
+                : current,
+        );
+    }
+
+    async function saveAppearance() {
+        if (!salesSettings) return;
+
+        setWorking("appearance");
+        setMessage("");
+
+        try {
+            const response = await fetch(
+                `/api/events/${eventId}/ticket-settings`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+                    },
+                    body: JSON.stringify({
+                        page_title:
+                            salesSettings.settings
+                                .page_title,
+                        page_subtitle:
+                            salesSettings.settings
+                                .page_subtitle,
+                        banner_color_from:
+                            salesSettings.settings
+                                .banner_color_from,
+                        banner_color_to:
+                            salesSettings.settings
+                                .banner_color_to,
+                        banner_image_url:
+                            salesSettings.settings
+                                .banner_image_url,
+                    }),
+                },
+            );
+            const result =
+                await readJson(response);
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error ||
+                        "Unable to save the ticket page appearance.",
+                );
+            }
+
+            setSalesSettings(
+                result as TicketSalesPayload,
+            );
+            setMessage(
+                result.message ||
+                    "Ticket page appearance updated.",
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to save the ticket page appearance.",
+            );
+        } finally {
+            setWorking("");
+        }
+    }
+
+    async function uploadTicketBannerImage(
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+
+        if (!file) return;
+
+        setWorking("upload");
+        setMessage("");
+
+        try {
+            const formData = new FormData();
+            formData.set("file", file);
+
+            const response = await fetch(
+                `/api/events/${eventId}/ticket-settings/assets`,
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
+            const result =
+                await readJson(response);
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error ||
+                        "Unable to upload the banner image.",
+                );
+            }
+
+            if (!result.url) {
+                throw new Error(
+                    "The upload completed without returning an image URL.",
+                );
+            }
+
+            updateAppearanceField(
+                "banner_image_url",
+                result.url,
+            );
+            setMessage(
+                "Image uploaded — click Save Appearance to apply it.",
+            );
+        } catch (error) {
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Unable to upload the banner image.",
             );
         } finally {
             setWorking("");
@@ -1144,6 +1292,203 @@ export default function TicketPaymentsManager({
                                     </label>
                                 )}
                             </div>
+                        </section>
+                    )}
+
+                    {salesSettings && (
+                        <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                            <p className="text-sm font-black text-slate-700">
+                                Page Appearance
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Customise the banner guests see on
+                                the ticket purchase page.
+                            </p>
+
+                            <div className="mt-4 space-y-4">
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Title
+                                    </label>
+                                    <input
+                                        value={
+                                            salesSettings.settings
+                                                .page_title || ""
+                                        }
+                                        onChange={(event) =>
+                                            updateAppearanceField(
+                                                "page_title",
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="Ticket Selection"
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Subtitle
+                                    </label>
+                                    <textarea
+                                        value={
+                                            salesSettings.settings
+                                                .page_subtitle || ""
+                                        }
+                                        onChange={(event) =>
+                                            updateAppearanceField(
+                                                "page_subtitle",
+                                                event.target.value,
+                                            )
+                                        }
+                                        rows={2}
+                                        placeholder="Choose your ticket and pay securely with Stripe."
+                                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-[#4F46E5]"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="mb-2 block text-xs font-black text-slate-500">
+                                            Gradient From
+                                        </label>
+                                        <input
+                                            type="color"
+                                            value={
+                                                salesSettings.settings
+                                                    .banner_color_from ||
+                                                "#4F46E5"
+                                            }
+                                            onChange={(event) =>
+                                                updateAppearanceField(
+                                                    "banner_color_from",
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className="h-11 w-full cursor-pointer rounded-xl border border-slate-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-2 block text-xs font-black text-slate-500">
+                                            Gradient To
+                                        </label>
+                                        <input
+                                            type="color"
+                                            value={
+                                                salesSettings.settings
+                                                    .banner_color_to ||
+                                                "#EC4899"
+                                            }
+                                            onChange={(event) =>
+                                                updateAppearanceField(
+                                                    "banner_color_to",
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className="h-11 w-full cursor-pointer rounded-xl border border-slate-200"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-xs font-black text-slate-500">
+                                        Banner Image
+                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-700">
+                                            {working === "upload" ? (
+                                                <Loader2
+                                                    size={15}
+                                                    className="animate-spin"
+                                                />
+                                            ) : (
+                                                <ImageIcon size={15} />
+                                            )}
+                                            Upload Image
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                hidden
+                                                disabled={
+                                                    working === "upload"
+                                                }
+                                                onChange={
+                                                    uploadTicketBannerImage
+                                                }
+                                            />
+                                        </label>
+
+                                        {salesSettings.settings
+                                            .banner_image_url && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    updateAppearanceField(
+                                                        "banner_image_url",
+                                                        "",
+                                                    )
+                                                }
+                                                className="text-xs font-black text-red-600"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div
+                                    className="overflow-hidden rounded-2xl p-4 text-white shadow-sm"
+                                    style={{
+                                        backgroundImage:
+                                            salesSettings.settings
+                                                .banner_image_url
+                                                ? `linear-gradient(rgba(2,6,23,.35), rgba(2,6,23,.55)), url("${salesSettings.settings.banner_image_url}")`
+                                                : `linear-gradient(to right, ${
+                                                      salesSettings
+                                                          .settings
+                                                          .banner_color_from ||
+                                                      "#4F46E5"
+                                                  }, ${
+                                                      salesSettings
+                                                          .settings
+                                                          .banner_color_to ||
+                                                      "#EC4899"
+                                                  })`,
+                                        backgroundSize: "cover",
+                                        backgroundPosition: "center",
+                                    }}
+                                >
+                                    <p className="text-xs font-black uppercase tracking-wide text-white/75">
+                                        Preview
+                                    </p>
+                                    <p className="mt-1 text-lg font-black">
+                                        {salesSettings.settings
+                                            .page_title ||
+                                            "Ticket Selection"}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    void saveAppearance()
+                                }
+                                disabled={
+                                    working === "appearance"
+                                }
+                                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#4F46E5] to-[#EC4899] px-5 py-3 font-black text-white disabled:opacity-50"
+                            >
+                                {working === "appearance" ? (
+                                    <Loader2
+                                        size={17}
+                                        className="animate-spin"
+                                    />
+                                ) : (
+                                    <Save size={17} />
+                                )}
+                                Save Appearance
+                            </button>
                         </section>
                     )}
 

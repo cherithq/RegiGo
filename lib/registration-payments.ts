@@ -190,10 +190,11 @@ export async function getPublicRegistrationTicketContext({
     const {
         data: ticketSettings,
     } = await admin
+        // select("*") instead of an explicit column list so this keeps
+        // working even before the page_title/page_subtitle/banner_color_*
+        // appearance columns have been added to the database.
         .from("event_ticket_settings")
-        .select(
-            "allow_registration_sales",
-        )
+        .select("*")
         .eq(
             "event_id",
             event.id,
@@ -362,5 +363,7 @@ export async function getPublicRegistrationTicketContext({
             ),
             1,
         ),
+        ticketSettings:
+            ticketSettings || null,
     };
 }

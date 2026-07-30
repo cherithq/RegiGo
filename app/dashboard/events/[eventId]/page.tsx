@@ -11,6 +11,7 @@ import {
     ClipboardList,
     Clock3,
     CreditCard,
+    ExternalLink,
     Gift,
     Globe2,
     LayoutDashboard,
@@ -781,16 +782,42 @@ export default async function EventOverviewPage({
                         Back to Events
                     </BackButton>
 
-                    {(isPlatformAdmin ||
-                        isCompanyAdmin) && (
-                        <DeleteEventButton
-                            eventId={eventId}
-                            eventName={
-                                event.event_name
-                            }
-                            redirectAfterDelete="/dashboard/events"
-                        />
-                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                        {!isInvitationOnly &&
+                            event.event_slug && (
+                                <Link
+                                    href={`/event/${encodeURIComponent(
+                                        event.event_slug,
+                                    )}?preview=1`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-[#F7F5FF] px-4 py-2 text-sm font-black text-[#4F46E5] transition hover:border-[#4F46E5] hover:bg-white"
+                                >
+                                    <Globe2
+                                        size={
+                                            17
+                                        }
+                                    />
+                                    View Website
+                                    <ExternalLink
+                                        size={
+                                            14
+                                        }
+                                    />
+                                </Link>
+                            )}
+
+                        {(isPlatformAdmin ||
+                            isCompanyAdmin) && (
+                            <DeleteEventButton
+                                eventId={eventId}
+                                eventName={
+                                    event.event_name
+                                }
+                                redirectAfterDelete="/dashboard/events"
+                            />
+                        )}
+                    </div>
                 </div>
 
                 <section className="relative mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm md:p-10">

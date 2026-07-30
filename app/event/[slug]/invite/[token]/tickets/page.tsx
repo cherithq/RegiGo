@@ -46,15 +46,30 @@ export default async function TicketSelectionPage({
                       | any
                       | null
               );
+        const ticketBanner =
+            context.ticketSettings;
         const primaryColor =
+            ticketBanner?.banner_color_from ||
             branding?.primary_color ||
             "#4F46E5";
         const secondaryColor =
+            ticketBanner?.banner_color_to ||
             branding?.secondary_color ||
             "#EC4899";
         const backgroundColor =
             branding?.background_color ||
             "#F7F5FF";
+        const heroImageUrl =
+            ticketBanner?.banner_image_url ||
+            branding?.banner_background_url ||
+            null;
+        const heroTitle =
+            ticketBanner?.page_title ||
+            branding?.hero_title ||
+            context.event.event_name;
+        const heroSubtitle =
+            ticketBanner?.page_subtitle ||
+            null;
 
         return (
             <main
@@ -69,9 +84,8 @@ export default async function TicketSelectionPage({
                         className="relative overflow-hidden rounded-[2rem] p-8 text-white shadow-xl"
                         style={{
                             backgroundImage:
-                                branding
-                                    ?.banner_background_url
-                                    ? `url(${branding.banner_background_url})`
+                                heroImageUrl
+                                    ? `url(${heroImageUrl})`
                                     : `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
                             backgroundSize:
                                 "cover",
@@ -79,8 +93,7 @@ export default async function TicketSelectionPage({
                                 "center",
                         }}
                     >
-                        {branding
-                            ?.banner_background_url && (
+                        {heroImageUrl && (
                             <div
                                 className="absolute inset-0 bg-black"
                                 style={{
@@ -97,11 +110,15 @@ export default async function TicketSelectionPage({
                                 Ticket Selection
                             </p>
                             <h1 className="mt-4 text-4xl font-black">
-                                {branding
-                                    ?.hero_title ||
-                                    context.event
-                                        .event_name}
+                                {heroTitle}
                             </h1>
+                            {heroSubtitle && (
+                                <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/85">
+                                    {
+                                        heroSubtitle
+                                    }
+                                </p>
+                            )}
                             <div className="mt-5 flex flex-wrap gap-4 text-sm font-bold text-white/85">
                                 <span className="inline-flex items-center gap-2">
                                     <CalendarDays
