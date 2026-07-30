@@ -132,17 +132,43 @@ export async function activateQrPassIfReady({
         return false;
     }
 
-    const { data: activated } = await admin
+    const { data: existingTicket } = await admin
         .from("qr_tickets")
-        .update({ is_active: true })
+        .select("id, is_active")
         .eq("registration_id", registrationId)
-        .eq("is_active", false)
-        .select("id")
         .maybeSingle();
 
-    if (!activated) {
-        // Already active (or no ticket row exists yet) — nothing to do.
+    if (existingTicket?.is_active) {
+        // Already active — nothing to do.
         return true;
+    }
+
+    // Guests added through the invite/RSVP flow (single add or CSV import)
+    // never get a qr_tickets row created for them — unlike public
+    // self-registration, which inserts one immediately in
+    // app/api/register/route.ts. Without this, there was nothing here for
+    // `.update(...)` to match, so the pass was silently never generated and
+    // no confirmation email was ever queued.
+    const activated = existingTicket
+        ? await admin
+              .from("qr_tickets")
+              .update({ is_active: true })
+              .eq("id", existingTicket.id)
+              .select("id")
+              .maybeSingle()
+        : await admin
+              .from("qr_tickets")
+              .insert({
+                  registration_id: registrationId,
+                  event_id: registration.event_id,
+                  qr_token: crypto.randomUUID(),
+                  is_active: true,
+              })
+              .select("id")
+              .maybeSingle();
+
+    if (!activated.data) {
+        return false;
     }
 
     await admin.from("email_jobs").insert({
