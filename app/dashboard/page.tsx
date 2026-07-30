@@ -569,9 +569,9 @@ function StatCard({
     icon: LucideIcon;
 }) {
     return (
-        <div className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-4">
-                <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5] transition group-hover:bg-[#4F46E5] group-hover:text-white">
+                <div className="rounded-2xl bg-[#F7F5FF] p-3 text-[#4F46E5]">
                     <Icon size={24} />
                 </div>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
