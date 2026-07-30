@@ -290,6 +290,15 @@ export default function PublicTableSelector({
         Boolean(data.currentAssignment) &&
         !data.settings.allow_changes;
 
+    const noTableFitsParty =
+        data.tables.length > 0 &&
+        !data.currentAssignment &&
+        !data.currentHold &&
+        !data.tables.some(
+            (table) =>
+                table.availableSeats >= data.guest.partySize,
+        );
+
     return (
         <div className="mt-7 space-y-5">
             {message && (
@@ -423,6 +432,24 @@ export default function PublicTableSelector({
                     <p className="text-sm text-slate-500">
                         Tap a table to reserve it right away.
                     </p>
+
+                    {noTableFitsParty && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-800">
+                            <p className="font-black">
+                                No tables currently fit your
+                                party
+                            </p>
+                            <p className="mt-1 text-sm leading-6">
+                                Every table is either full or
+                                doesn&rsquo;t have enough
+                                remaining seats for your party
+                                of {data.guest.partySize}.
+                                Please check back later or
+                                contact the event organiser for
+                                help.
+                            </p>
+                        </div>
+                    )}
 
                     {data.tables.some(
                         (table) =>
