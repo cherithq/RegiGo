@@ -132,6 +132,119 @@ export type ReportTable = {
         | null;
 };
 
+export type ReportTicketType = {
+    id: string;
+    ticket_name:
+        | string
+        | null;
+    price_cents:
+        | number
+        | null;
+    currency:
+        | string
+        | null;
+    quantity_available:
+        | number
+        | null;
+    quantity_reserved:
+        | number
+        | null;
+    quantity_sold:
+        | number
+        | null;
+    is_active:
+        | boolean
+        | null;
+    is_complimentary:
+        | boolean
+        | null;
+};
+
+export type ReportOrderItem = {
+    ticket_name:
+        | string
+        | null;
+    quantity:
+        | number
+        | null;
+};
+
+export type ReportOrder = {
+    id: string;
+    order_number:
+        | string
+        | null;
+    currency:
+        | string
+        | null;
+    total_cents:
+        | number
+        | null;
+    status:
+        | string
+        | null;
+    paid_at:
+        | string
+        | null;
+    created_at:
+        | string
+        | null;
+    registration_id:
+        | string
+        | null;
+    order_items:
+        | ReportOrderItem[]
+        | null;
+};
+
+export type EventReportTicketTypeSummary = {
+    id: string;
+    name: string;
+    priceCents: number;
+    currency: string;
+    quantitySold: number;
+    quantityReserved: number;
+    quantityAvailable:
+        | number
+        | null;
+    revenueCents: number;
+    isComplimentary: boolean;
+    isActive: boolean;
+};
+
+export type EventReportOrderSummary = {
+    id: string;
+    orderNumber: string;
+    status: string;
+    currency: string;
+    totalCents: number;
+    paidAt: string;
+    createdAt: string;
+    guestName: string;
+    guestEmail: string;
+    items: {
+        ticketName: string;
+        quantity: number;
+    }[];
+};
+
+export type EventReportTicketing = {
+    enabled: boolean;
+    currency: string;
+    ticketTypes:
+        EventReportTicketTypeSummary[];
+    orders:
+        EventReportOrderSummary[];
+    totals: {
+        totalRevenueCents: number;
+        paidOrderCount: number;
+        pendingOrderCount: number;
+        unsuccessfulOrderCount: number;
+        ticketsSold: number;
+        averageOrderValueCents: number;
+    };
+};
+
 export type EventReportGuest = {
     id: string;
     fullName: string;
@@ -191,6 +304,8 @@ export type EventReportDataset = {
         ReportTable[];
     guests:
         EventReportGuest[];
+    ticketing:
+        EventReportTicketing;
 };
 
 const optionalErrors =
@@ -354,6 +469,44 @@ async function loadCheckIns({
         eventId,
         orderColumn:
             "checked_in_at",
+    });
+}
+
+async function loadTicketTypes({
+    admin,
+    eventId,
+}: {
+    admin: SupabaseClient;
+    eventId: string;
+}) {
+    return loadOptionalRows<ReportTicketType>({
+        admin,
+        table:
+            "ticket_types",
+        columns:
+            "id, ticket_name, price_cents, currency, quantity_available, quantity_reserved, quantity_sold, is_active, is_complimentary",
+        eventId,
+        orderColumn:
+            "price_cents",
+    });
+}
+
+async function loadOrders({
+    admin,
+    eventId,
+}: {
+    admin: SupabaseClient;
+    eventId: string;
+}) {
+    return loadOptionalRows<ReportOrder>({
+        admin,
+        table:
+            "orders",
+        columns:
+            "id, order_number, currency, total_cents, status, paid_at, created_at, registration_id, order_items(ticket_name, quantity)",
+        eventId,
+        orderColumn:
+            "created_at",
     });
 }
 
@@ -601,6 +754,8 @@ export async function loadEventReportDataset(
         checkIns,
         fieldResult,
         tables,
+        ticketTypes,
+        orders,
     ] =
         await Promise.all([
             admin
@@ -651,6 +806,16 @@ export async function loadEventReportDataset(
                 eventId,
                 orderColumn:
                     "table_name",
+            }),
+
+            loadTicketTypes({
+                admin,
+                eventId,
+            }),
+
+            loadOrders({
+                admin,
+                eventId,
             }),
         ]);
 
@@ -917,6 +1082,257 @@ export async function loadEventReportDataset(
             },
         );
 
+    const registrationById =
+        new Map(
+            registrations.map(
+                (
+                    registration,
+                ) => [
+                    String(
+                        registration.id,
+                    ),
+                    registration,
+                ],
+            ),
+        );
+    const ticketingCurrency =
+        clean(
+            ticketTypes[0]
+                ?.currency ||
+                orders[0]
+                    ?.currency,
+        ) || "SGD";
+
+    const ticketTypeSummaries: EventReportTicketTypeSummary[] =
+        ticketTypes.map(
+            (
+                ticket,
+            ) => {
+                const priceCents =
+                    Math.max(
+                        0,
+                        Number(
+                            ticket.price_cents,
+                        ) ||
+                            0,
+                    );
+                const quantitySold =
+                    Math.max(
+                        0,
+                        Number(
+                            ticket.quantity_sold,
+                        ) ||
+                            0,
+                    );
+
+                return {
+                    id:
+                        String(
+                            ticket.id,
+                        ),
+                    name:
+                        clean(
+                            ticket.ticket_name,
+                        ) ||
+                        "Ticket",
+                    priceCents,
+                    currency:
+                        clean(
+                            ticket.currency,
+                        ) ||
+                        ticketingCurrency,
+                    quantitySold,
+                    quantityReserved:
+                        Math.max(
+                            0,
+                            Number(
+                                ticket.quantity_reserved,
+                            ) ||
+                                0,
+                        ),
+                    quantityAvailable:
+                        ticket.quantity_available ===
+                            null ||
+                        ticket.quantity_available ===
+                            undefined
+                            ? null
+                            : Number(
+                                  ticket.quantity_available,
+                              ),
+                    revenueCents:
+                        priceCents *
+                        quantitySold,
+                    isComplimentary:
+                        Boolean(
+                            ticket.is_complimentary,
+                        ),
+                    isActive:
+                        ticket.is_active !==
+                        false,
+                };
+            },
+        );
+
+    const orderSummaries: EventReportOrderSummary[] =
+        orders.map(
+            (
+                order,
+            ) => {
+                const registration =
+                    registrationById.get(
+                        clean(
+                            order.registration_id,
+                        ),
+                    );
+
+                return {
+                    id:
+                        String(
+                            order.id,
+                        ),
+                    orderNumber:
+                        clean(
+                            order.order_number,
+                        ),
+                    status:
+                        lower(
+                            order.status,
+                            "pending",
+                        ),
+                    currency:
+                        clean(
+                            order.currency,
+                        ) ||
+                        ticketingCurrency,
+                    totalCents:
+                        Math.max(
+                            0,
+                            Number(
+                                order.total_cents,
+                            ) ||
+                                0,
+                        ),
+                    paidAt:
+                        clean(
+                            order.paid_at,
+                        ),
+                    createdAt:
+                        clean(
+                            order.created_at,
+                        ),
+                    guestName:
+                        clean(
+                            registration?.full_name,
+                        ) ||
+                        "Guest",
+                    guestEmail:
+                        clean(
+                            registration?.email,
+                        ),
+                    items:
+                        (
+                            order.order_items ||
+                            []
+                        ).map(
+                            (
+                                item,
+                            ) => ({
+                                ticketName:
+                                    clean(
+                                        item.ticket_name,
+                                    ) ||
+                                    "Ticket",
+                                quantity:
+                                    Math.max(
+                                        0,
+                                        Number(
+                                            item.quantity,
+                                        ) ||
+                                            0,
+                                    ),
+                            }),
+                        ),
+                };
+            },
+        );
+
+    const paidOrders =
+        orderSummaries.filter(
+            (
+                order,
+            ) =>
+                order.status ===
+                "paid",
+        );
+    const unsuccessfulStatuses =
+        new Set([
+            "failed",
+            "expired",
+            "cancelled",
+        ]);
+    const totalRevenueCents =
+        paidOrders.reduce(
+            (
+                sum,
+                order,
+            ) =>
+                sum +
+                order.totalCents,
+            0,
+        );
+
+    const ticketing: EventReportTicketing =
+        {
+            enabled:
+                ticketTypeSummaries.length >
+                0,
+            currency:
+                ticketingCurrency,
+            ticketTypes:
+                ticketTypeSummaries,
+            orders:
+                orderSummaries,
+            totals: {
+                totalRevenueCents,
+                paidOrderCount:
+                    paidOrders.length,
+                pendingOrderCount:
+                    orderSummaries.filter(
+                        (
+                            order,
+                        ) =>
+                            order.status ===
+                            "pending",
+                    ).length,
+                unsuccessfulOrderCount:
+                    orderSummaries.filter(
+                        (
+                            order,
+                        ) =>
+                            unsuccessfulStatuses.has(
+                                order.status,
+                            ),
+                    ).length,
+                ticketsSold:
+                    ticketTypeSummaries.reduce(
+                        (
+                            sum,
+                            ticket,
+                        ) =>
+                            sum +
+                            ticket.quantitySold,
+                        0,
+                    ),
+                averageOrderValueCents:
+                    paidOrders.length
+                        ? Math.round(
+                              totalRevenueCents /
+                                  paidOrders.length,
+                          )
+                        : 0,
+            },
+        };
+
     return {
         context,
         mode,
@@ -930,5 +1346,6 @@ export async function loadEventReportDataset(
         assignments,
         tables,
         guests,
+        ticketing,
     };
 }

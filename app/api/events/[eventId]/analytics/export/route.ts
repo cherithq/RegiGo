@@ -24,6 +24,7 @@ type ReportType =
     | "form"
     | "invitations"
     | "seating"
+    | "ticketing"
     | "all";
 
 function cleanReport(
@@ -35,6 +36,7 @@ function cleanReport(
         "form",
         "invitations",
         "seating",
+        "ticketing",
         "all",
     ].includes(
         String(
@@ -131,6 +133,26 @@ function timestamp(
         },
     ).format(
         date,
+    );
+}
+
+function money(
+    cents: number,
+    currency: string,
+) {
+    return new Intl.NumberFormat(
+        "en-SG",
+        {
+            style:
+                "currency",
+            currency:
+                currency ||
+                "SGD",
+        },
+    ).format(
+        (cents ||
+            0) /
+            100,
     );
 }
 
@@ -655,6 +677,157 @@ function seatingTable(
     };
 }
 
+// Ticket sales aren't tied to guest-report mode (both public-registration
+// and invitation/RSVP events can sell tickets — see
+// event_ticket_settings' allow_registration_sales/allow_rsvp_sales), so
+// this report is gated on whether the event has any ticket types
+// configured at all, not on dataset.mode.
+function ticketingSummaryTable(
+    dataset:
+        EventReportDataset,
+) {
+    return {
+        headers: [
+            "Ticket Name",
+            "Price",
+            "Tickets Sold",
+            "Reserved",
+            "Available",
+            "Revenue",
+            "Status",
+        ],
+        rows:
+            dataset.ticketing.ticketTypes.map(
+                (
+                    ticket,
+                ) => [
+                    ticket.name,
+                    ticket.isComplimentary
+                        ? "Free"
+                        : money(
+                              ticket.priceCents,
+                              ticket.currency,
+                          ),
+                    ticket.quantitySold,
+                    ticket.quantityReserved,
+                    ticket.quantityAvailable ===
+                    null
+                        ? "Unlimited"
+                        : Math.max(
+                              0,
+                              ticket.quantityAvailable -
+                                  ticket.quantityReserved -
+                                  ticket.quantitySold,
+                          ),
+                    money(
+                        ticket.revenueCents,
+                        ticket.currency,
+                    ),
+                    ticket.isActive
+                        ? "Active"
+                        : "Inactive",
+                ],
+            ),
+    };
+}
+
+function ticketingOrdersTable(
+    dataset:
+        EventReportDataset,
+) {
+    return {
+        headers: [
+            "Order Number",
+            "Guest",
+            "Email",
+            "Tickets",
+            "Amount",
+            "Status",
+            "Paid At",
+            "Created At",
+        ],
+        rows:
+            dataset.ticketing.orders.map(
+                (
+                    order,
+                ) => [
+                    order.orderNumber ||
+                        order.id,
+                    order.guestName,
+                    order.guestEmail,
+                    order.items
+                        .map(
+                            (
+                                item,
+                            ) =>
+                                `${item.ticketName} x${item.quantity}`,
+                        )
+                        .join(
+                            "; ",
+                        ),
+                    money(
+                        order.totalCents,
+                        order.currency,
+                    ),
+                    order.status,
+                    timestamp(
+                        order.paidAt,
+                    ),
+                    timestamp(
+                        order.createdAt,
+                    ),
+                ],
+            ),
+    };
+}
+
+function ticketingCsv(
+    dataset:
+        EventReportDataset,
+) {
+    const sections: {
+        title: string;
+        headers: string[];
+        rows: unknown[][];
+    }[] = [
+        {
+            title:
+                "TICKET SALES SUMMARY",
+            ...ticketingSummaryTable(
+                dataset,
+            ),
+        },
+        {
+            title:
+                "TICKET ORDERS",
+            ...ticketingOrdersTable(
+                dataset,
+            ),
+        },
+    ];
+
+    return sections
+        .map(
+            (
+                section,
+            ) =>
+                [
+                    csvCell(
+                        section.title,
+                    ),
+                    csvTable(
+                        section.headers,
+                        section.rows,
+                    ),
+                ].join(
+                    "\r\n",
+                ),
+        )
+        .join(
+            "\r\n\r\n",
+        );
+}
+
 function reportTable({
     dataset,
     report,
@@ -664,7 +837,8 @@ function reportTable({
     report:
         Exclude<
             ReportType,
-            "all"
+            | "all"
+            | "ticketing"
         >;
 }) {
     if (
@@ -783,6 +957,27 @@ function allCsv(
                             !guest.checkedIn,
                     ).length,
                 ],
+                ...(dataset.ticketing
+                    .enabled
+                    ? [
+                          [
+                              "Tickets Sold",
+                              dataset.ticketing
+                                  .totals
+                                  .ticketsSold,
+                          ],
+                          [
+                              "Ticket Revenue",
+                              money(
+                                  dataset.ticketing
+                                      .totals
+                                      .totalRevenueCents,
+                                  dataset.ticketing
+                                      .currency,
+                              ),
+                          ],
+                      ]
+                    : []),
             ],
         },
         // The full guest report already carries check-in, table, and
@@ -797,6 +992,28 @@ function allCsv(
                 true,
             ),
         },
+        // Only events with at least one ticket type configured have
+        // anything to report here — free/non-ticketed events would just
+        // show an empty section.
+        ...(dataset.ticketing
+            .enabled
+            ? [
+                  {
+                      title:
+                          "TICKET SALES SUMMARY",
+                      ...ticketingSummaryTable(
+                          dataset,
+                      ),
+                  },
+                  {
+                      title:
+                          "TICKET ORDERS",
+                      ...ticketingOrdersTable(
+                          dataset,
+                      ),
+                  },
+              ]
+            : []),
         {
             title:
                 "SEATING REPORT",
@@ -925,6 +1142,14 @@ function printableHtml(
         seatingTable(
             dataset,
         );
+    const ticketingSummary =
+        ticketingSummaryTable(
+            dataset,
+        );
+    const ticketingOrders =
+        ticketingOrdersTable(
+            dataset,
+        );
     const checkedIn =
         dataset.guests.filter(
             (
@@ -1006,11 +1231,53 @@ function printableHtml(
         )}</strong></div>
         <div class="stat">Attendance Rate<strong>${attendanceRate}%</strong></div>
     </div>
+    ${
+        dataset.ticketing
+            .enabled
+            ? `<div class="stats">
+        <div class="stat">Tickets Sold<strong>${dataset.ticketing.totals.ticketsSold}</strong></div>
+        <div class="stat">Paid Orders<strong>${dataset.ticketing.totals.paidOrderCount}</strong></div>
+        <div class="stat">Ticket Revenue<strong>${escapeHtml(
+            money(
+                dataset.ticketing
+                    .totals
+                    .totalRevenueCents,
+                dataset.ticketing
+                    .currency,
+            ),
+        )}</strong></div>
+        <div class="stat">Avg Order Value<strong>${escapeHtml(
+            money(
+                dataset.ticketing
+                    .totals
+                    .averageOrderValueCents,
+                dataset.ticketing
+                    .currency,
+            ),
+        )}</strong></div>
+    </div>`
+            : ""
+    }
     ${htmlTable(
         "Full Guest Report",
         guest.headers,
         guest.rows,
     )}
+    ${
+        dataset.ticketing
+            .enabled
+            ? `${htmlTable(
+                  "Ticket Sales Summary",
+                  ticketingSummary.headers,
+                  ticketingSummary.rows,
+              )}
+    ${htmlTable(
+        "Ticket Orders",
+        ticketingOrders.headers,
+        ticketingOrders.rows,
+    )}`
+            : ""
+    }
     ${htmlTable(
         "Seating Report",
         seating.headers,
@@ -1139,18 +1406,23 @@ export async function GET(
                 ? allCsv(
                       dataset,
                   )
-                : (() => {
-                      const table =
-                          reportTable({
-                              dataset,
-                              report,
-                          });
+                : report ===
+                  "ticketing"
+                  ? ticketingCsv(
+                        dataset,
+                    )
+                  : (() => {
+                        const table =
+                            reportTable({
+                                dataset,
+                                report,
+                            });
 
-                      return csvTable(
-                          table.headers,
-                          table.rows,
-                      );
-                  })();
+                        return csvTable(
+                            table.headers,
+                            table.rows,
+                        );
+                    })();
 
         return new NextResponse(
             `\uFEFF${content}`,

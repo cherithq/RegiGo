@@ -8,10 +8,13 @@ import {
     FileDown,
     Loader2,
     Printer,
+    Receipt,
     Search,
+    Ticket,
     UserCheck,
     UserX,
     Users,
+    Wallet,
 } from "lucide-react";
 import {
     useCallback,
@@ -36,10 +39,55 @@ type GuestRow = {
     invitationStatus: string;
 };
 
+type TicketTypeSummary = {
+    id: string;
+    name: string;
+    priceCents: number;
+    currency: string;
+    quantitySold: number;
+    quantityReserved: number;
+    quantityAvailable: number | null;
+    revenueCents: number;
+    isComplimentary: boolean;
+    isActive: boolean;
+};
+
+type OrderSummary = {
+    id: string;
+    orderNumber: string;
+    status: string;
+    currency: string;
+    totalCents: number;
+    paidAt: string;
+    createdAt: string;
+    guestName: string;
+    guestEmail: string;
+    items: {
+        ticketName: string;
+        quantity: number;
+    }[];
+};
+
+type Ticketing = {
+    enabled: boolean;
+    currency: string;
+    ticketTypes: TicketTypeSummary[];
+    orders: OrderSummary[];
+    totals: {
+        totalRevenueCents: number;
+        paidOrderCount: number;
+        pendingOrderCount: number;
+        unsuccessfulOrderCount: number;
+        ticketsSold: number;
+        averageOrderValueCents: number;
+    };
+};
+
 type Payload = {
     mode?:
         | "public_registration"
         | "invitation_only";
+    ticketing?: Ticketing;
     rows: GuestRow[];
     counts: {
         total: number;
@@ -84,6 +132,26 @@ function formatDate(
         },
     ).format(
         date,
+    );
+}
+
+function formatMoney(
+    cents: number,
+    currency: string,
+) {
+    return new Intl.NumberFormat(
+        "en-SG",
+        {
+            style:
+                "currency",
+            currency:
+                currency ||
+                "SGD",
+        },
+    ).format(
+        (cents ||
+            0) /
+            100,
     );
 }
 
@@ -327,6 +395,274 @@ export default function EventReportsManager({
                     </a>
                 </div>
             </section>
+
+            {data?.ticketing?.enabled && (
+                <>
+                    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <Stat
+                            icon={
+                                Wallet
+                            }
+                            label="Ticket Revenue"
+                            value={formatMoney(
+                                data.ticketing
+                                    .totals
+                                    .totalRevenueCents,
+                                data.ticketing
+                                    .currency,
+                            )}
+                        />
+                        <Stat
+                            icon={
+                                Ticket
+                            }
+                            label="Tickets Sold"
+                            value={
+                                data.ticketing
+                                    .totals
+                                    .ticketsSold
+                            }
+                        />
+                        <Stat
+                            icon={
+                                Receipt
+                            }
+                            label="Paid Orders"
+                            value={
+                                data.ticketing
+                                    .totals
+                                    .paidOrderCount
+                            }
+                        />
+                        <Stat
+                            icon={
+                                BarChart3
+                            }
+                            label="Avg Order Value"
+                            value={formatMoney(
+                                data.ticketing
+                                    .totals
+                                    .averageOrderValueCents,
+                                data.ticketing
+                                    .currency,
+                            )}
+                        />
+                    </section>
+
+                    <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                            <div>
+                                <h2 className="text-2xl font-black">
+                                    Ticketing report
+                                </h2>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    Tickets sold, revenue and recent orders.
+                                </p>
+                            </div>
+
+                            <a
+                                href={`${exportBase}&report=ticketing&format=csv`}
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 font-black text-white"
+                            >
+                                <FileDown
+                                    size={
+                                        18
+                                    }
+                                />
+                                Export Ticketing CSV
+                            </a>
+                        </div>
+
+                        <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+                            <table className="min-w-[720px] w-full border-collapse text-left text-sm">
+                                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">
+                                            Ticket
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            Price
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            Sold
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            Available
+                                        </th>
+                                        <th className="px-4 py-3">
+                                            Revenue
+                                        </th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {data.ticketing.ticketTypes.map(
+                                        (
+                                            ticket,
+                                        ) => (
+                                            <tr
+                                                key={
+                                                    ticket.id
+                                                }
+                                                className="border-t border-slate-100"
+                                            >
+                                                <td className="px-4 py-4 font-black">
+                                                    {
+                                                        ticket.name
+                                                    }
+                                                </td>
+                                                <td className="px-4 py-4">
+                                                    {ticket.isComplimentary
+                                                        ? "Free"
+                                                        : formatMoney(
+                                                              ticket.priceCents,
+                                                              ticket.currency,
+                                                          )}
+                                                </td>
+                                                <td className="px-4 py-4">
+                                                    {
+                                                        ticket.quantitySold
+                                                    }
+                                                </td>
+                                                <td className="px-4 py-4">
+                                                    {ticket.quantityAvailable ===
+                                                    null
+                                                        ? "Unlimited"
+                                                        : Math.max(
+                                                              0,
+                                                              ticket.quantityAvailable -
+                                                                  ticket.quantityReserved -
+                                                                  ticket.quantitySold,
+                                                          )}
+                                                </td>
+                                                <td className="px-4 py-4 font-bold">
+                                                    {formatMoney(
+                                                        ticket.revenueCents,
+                                                        ticket.currency,
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ),
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {data.ticketing.orders
+                            .length >
+                            0 && (
+                            <div className="mt-6">
+                                <h3 className="text-lg font-black">
+                                    Recent orders
+                                </h3>
+
+                                <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+                                    <table className="min-w-[820px] w-full border-collapse text-left text-sm">
+                                        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                                            <tr>
+                                                <th className="px-4 py-3">
+                                                    Guest
+                                                </th>
+                                                <th className="px-4 py-3">
+                                                    Tickets
+                                                </th>
+                                                <th className="px-4 py-3">
+                                                    Amount
+                                                </th>
+                                                <th className="px-4 py-3">
+                                                    Status
+                                                </th>
+                                                <th className="px-4 py-3">
+                                                    Created At
+                                                </th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            {[
+                                                ...data
+                                                    .ticketing
+                                                    .orders,
+                                            ]
+                                                .sort(
+                                                    (
+                                                        first,
+                                                        second,
+                                                    ) =>
+                                                        new Date(
+                                                            second.createdAt ||
+                                                                0,
+                                                        ).getTime() -
+                                                        new Date(
+                                                            first.createdAt ||
+                                                                0,
+                                                        ).getTime(),
+                                                )
+                                                .slice(
+                                                    0,
+                                                    10,
+                                                )
+                                                .map(
+                                                    (
+                                                        order,
+                                                    ) => (
+                                                        <tr
+                                                            key={
+                                                                order.id
+                                                            }
+                                                            className="border-t border-slate-100"
+                                                        >
+                                                            <td className="px-4 py-4">
+                                                                <p className="font-black">
+                                                                    {
+                                                                        order.guestName
+                                                                    }
+                                                                </p>
+                                                                <p className="mt-1 text-xs text-slate-400">
+                                                                    {
+                                                                        order.guestEmail
+                                                                    }
+                                                                </p>
+                                                            </td>
+                                                            <td className="px-4 py-4">
+                                                                {order.items
+                                                                    .map(
+                                                                        (
+                                                                            item,
+                                                                        ) =>
+                                                                            `${item.ticketName} x${item.quantity}`,
+                                                                    )
+                                                                    .join(
+                                                                        ", ",
+                                                                    )}
+                                                            </td>
+                                                            <td className="px-4 py-4 font-bold">
+                                                                {formatMoney(
+                                                                    order.totalCents,
+                                                                    order.currency,
+                                                                )}
+                                                            </td>
+                                                            <td className="px-4 py-4 capitalize">
+                                                                {
+                                                                    order.status
+                                                                }
+                                                            </td>
+                                                            <td className="px-4 py-4">
+                                                                {formatDate(
+                                                                    order.createdAt,
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ),
+                                                )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </section>
+                </>
+            )}
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">

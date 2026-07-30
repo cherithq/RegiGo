@@ -205,6 +205,8 @@ export async function GET(
                         .event,
                 mode:
                     dataset.mode,
+                ticketing:
+                    dataset.ticketing,
                 rows:
                     paged,
                 pagination: {
