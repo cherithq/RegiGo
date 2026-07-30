@@ -282,6 +282,30 @@ export default async function RegisterPage({
               data: [],
           };
 
+    // Ticket selection is deferred to its own step after submission (see
+    // ticketFlowEnabled below), the same as table selection. Some events
+    // still have a legacy "Ticket Type" dropdown seeded directly onto the
+    // registration form from before that redesign — drop it here so guests
+    // never see a duplicate, unused ticket-type question inline in the form.
+    const visibleFields = (
+        fields || []
+    ).filter((field) => {
+        const key = String(
+            field.field_key || "",
+        ).toLowerCase();
+        const label = String(
+            field.field_label || "",
+        )
+            .trim()
+            .toLowerCase();
+
+        return (
+            key !== "ticket_type" &&
+            key !== "ticket_type_id" &&
+            label !== "ticket type"
+        );
+    });
+
     const settings =
         settingsResult.data;
 
@@ -558,8 +582,7 @@ export default async function RegisterPage({
                                     event
                                 }
                                 fields={
-                                    fields ||
-                                    []
+                                    visibleFields
                                 }
                             />
                         </div>

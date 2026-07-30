@@ -544,9 +544,31 @@ async function updateRsvp(
                           formRow.id,
                       )
                 : { data: [] };
+        // Kept in sync with the same "Ticket Type" filter applied below for
+        // rendering — otherwise a legacy required ticket-type field could
+        // fail this required-field check with no matching input to fill it.
         const fields = (
-            fieldRows || []
-        ) as unknown as RegistrationField[];
+            (fieldRows ||
+                []) as unknown as RegistrationField[]
+        ).filter((field) => {
+            const key = String(
+                (field as any).field_key ||
+                    "",
+            ).toLowerCase();
+            const label = String(
+                (field as any)
+                    .field_label || "",
+            )
+                .trim()
+                .toLowerCase();
+
+            return (
+                key !== "ticket_type" &&
+                key !==
+                    "ticket_type_id" &&
+                label !== "ticket type"
+            );
+        });
 
         if (fields.length > 0) {
             const answers: Record<
@@ -1441,9 +1463,29 @@ export default async function InvitePage({
                       },
                   )
             : { data: [] };
+    // Ticket selection has its own dedicated step (see the ticket-selection
+    // action on this page), the same as table selection — drop any legacy
+    // "Ticket Type" field seeded directly onto the form before that
+    // redesign so it isn't shown twice.
     const registrationFields = (
-        registrationFieldsData || []
-    ) as unknown as RegistrationField[];
+        (registrationFieldsData ||
+            []) as unknown as RegistrationField[]
+    ).filter((field) => {
+        const key = String(
+            (field as any).field_key || "",
+        ).toLowerCase();
+        const label = String(
+            (field as any).field_label || "",
+        )
+            .trim()
+            .toLowerCase();
+
+        return (
+            key !== "ticket_type" &&
+            key !== "ticket_type_id" &&
+            label !== "ticket type"
+        );
+    });
 
     // Guest identity is already known from the invitation — only lock a
     // field once we actually have a value on file for it, so a guest whose
